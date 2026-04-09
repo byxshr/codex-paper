@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Viewer"
+  short_description: "Start or rebuild the local paper web viewer"
+  default_prompt: "Use $webui to start the Codex Paper local web viewer and verify that it is healthy."

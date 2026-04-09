@@ -1,0 +1,20 @@
+{
+  "name": "codex-paper",
+  "description": "A plugin for studying research papers with automated material generation and code demonstrations",
+  "owner": {
+    "name": "byxshr"
+  },
+  "plugins": [
+    {
+      "name": "codex-paper",
+      "version": "1.1.1",
+      "description": "A plugin for studying research papers with automated material generation, code demos, and a web viewer",
+      "author": {
+        "name": "byxshr"
+      },
+      "category": "development",
+      "source": "./plugin",
+      "homepage": "https://github.com/byxshr/codex-paper"
+    }
+  ]
+}

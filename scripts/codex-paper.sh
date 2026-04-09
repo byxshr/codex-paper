@@ -1,0 +1,203 @@
+#!/bin/bash
+set -euo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+
+cmd_install() {
+  ensure_node
+  ensure_npm
+  ensure_python
+
+  print_section "Plugin Dependencies"
+  (cd "$PLUGIN_ROOT" && "$NPM_BIN" install)
+
+  print_section "Web Dependencies"
+  (cd "$WEB_ROOT" && "$NPM_BIN" install)
+
+  print_section "Paper Library"
+  bash "$PLUGIN_ROOT/hooks/check-install.sh"
+
+  print_section "PyMuPDF"
+  if "$PYTHON_BIN" -c 'import fitz' >/dev/null 2>&1; then
+    echo "PyMuPDF already installed."
+  else
+    "$PYTHON_BIN" -m pip install --user pymupdf
+  fi
+
+  print_section "Done"
+  echo "Codex Paper dependencies are installed."
+}
+
+cmd_build() {
+  cmd_install
+
+  print_section "Build Web Viewer"
+  (cd "$WEB_ROOT" && "$NPM_BIN" run build)
+  ensure_build_version
+
+  print_section "Done"
+  echo "Build output: $WEB_ROOT/.output/server/index.mjs"
+}
+
+cmd_start() {
+  if [ ! -f "$WEB_ROOT/.output/server/index.mjs" ]; then
+    print_section "Build Missing"
+    cmd_build
+  fi
+
+  print_section "Start Viewer"
+  bash "$PLUGIN_ROOT/scripts/start-webui.sh"
+}
+
+cmd_stop() {
+  print_section "Stop Viewer"
+
+  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    kill "$(cat "$PID_FILE")"
+    rm -f "$PID_FILE"
+    echo "Stopped Codex Paper web UI."
+  else
+    rm -f "$PID_FILE"
+    echo "Codex Paper web UI is not running."
+  fi
+}
+
+cmd_status() {
+  print_section "Status"
+  echo "Repo: $REPO_ROOT"
+  echo "Plugin: $PLUGIN_ROOT"
+  echo "Papers: $PAPERS_DIR"
+  echo "Port: $PORT"
+
+  if [ -f "$WEB_ROOT/.output/server/index.mjs" ]; then
+    echo "Build: present"
+  else
+    echo "Build: missing"
+  fi
+
+  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    echo "Viewer: running (PID $(cat "$PID_FILE"))"
+  else
+    echo "Viewer: stopped"
+  fi
+
+  if curl -sf "http://localhost:$PORT/api/papers" > /dev/null 2>&1; then
+    echo "Health: API reachable"
+  else
+    echo "Health: API not reachable"
+  fi
+}
+
+cmd_smoke_test() {
+  local smoke_pdf="${SMOKE_PDF:-/tmp/codex-paper-smoke.pdf}"
+  local smoke_outdir
+  local smoke_port="${SMOKE_PORT:-5816}"
+  local smoke_pid=""
+
+  smoke_outdir="$(mktemp -d /tmp/codex-paper-images.XXXXXX)"
+
+  cleanup() {
+    local pid="${smoke_pid:-}"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  }
+
+  trap cleanup EXIT
+
+  cmd_build
+
+  print_section "Create Smoke PDF"
+  "$PYTHON_BIN" - <<'PY'
+import fitz
+pdf_path = '/tmp/codex-paper-smoke.pdf'
+doc = fitz.open()
+page = doc.new_page()
+page.insert_text(
+    (72, 72),
+    'Codex Paper Smoke Test\n'
+    'Abstract A minimal test PDF for Codex Paper.\n'
+    'Introduction\n'
+    'This is a smoke test.'
+)
+doc.save(pdf_path)
+doc.close()
+print(pdf_path)
+PY
+
+  print_section "Parse PDF"
+  "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/parse-pdf.js" "$smoke_pdf"
+
+  print_section "Extract Images"
+  "$PYTHON_BIN" "$PLUGIN_ROOT/skills/study/scripts/extract-images.py" "$smoke_pdf" "$smoke_outdir"
+
+  print_section "Start Temporary Viewer"
+  ensure_build_version
+  PORT="$smoke_port" "$NODE_BIN" "$WEB_ROOT/.output/server/index.mjs" > "$LOG_FILE" 2>&1 &
+  smoke_pid=$!
+
+  if ! wait_for_http "http://localhost:$smoke_port/api/papers" 10; then
+    echo "Error: smoke-test viewer failed to become healthy." >&2
+    exit 1
+  fi
+
+  print_section "Verify Viewer"
+  curl -sf "http://localhost:$smoke_port/api/papers"
+  printf '\n---HOME---\n'
+  curl -sf "http://localhost:$smoke_port/" | head -5
+
+  print_section "Done"
+  echo "Smoke test passed."
+  echo "Smoke PDF: $smoke_pdf"
+  echo "Extracted images: $smoke_outdir"
+  trap - EXIT
+  cleanup
+}
+
+cmd_help() {
+  cat <<'EOF'
+Usage:
+  bash scripts/codex-paper.sh <command>
+
+Commands:
+  install      Install plugin, web, and Python dependencies
+  build        Build the production web viewer
+  start        Start the local web viewer
+  stop         Stop the local web viewer
+  status       Show build and viewer status
+  smoke-test   Run an end-to-end local smoke test
+  help         Show this help message
+EOF
+}
+
+command_name="${1:-help}"
+
+case "$command_name" in
+  install)
+    cmd_install
+    ;;
+  build)
+    cmd_build
+    ;;
+  start)
+    cmd_start
+    ;;
+  stop)
+    cmd_stop
+    ;;
+  status)
+    cmd_status
+    ;;
+  smoke-test)
+    cmd_smoke_test
+    ;;
+  help|-h|--help)
+    cmd_help
+    ;;
+  *)
+    echo "Unknown command: $command_name" >&2
+    echo >&2
+    cmd_help >&2
+    exit 1
+    ;;
+esac

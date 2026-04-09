@@ -1,0 +1,48 @@
+{
+  "name": "codex-paper",
+  "version": "1.1.1",
+  "description": "Turn research papers into structured study environments with generated notes, summaries, code demos, and a local web viewer.",
+  "author": {
+    "name": "byxshr",
+    "url": "https://github.com/byxshr"
+  },
+  "homepage": "https://github.com/byxshr/codex-paper",
+  "repository": "https://github.com/byxshr/codex-paper",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "papers",
+    "pdf",
+    "study",
+    "web-viewer"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Codex Paper",
+    "shortDescription": "Study papers with generated materials and a local viewer",
+    "longDescription": "Generate structured study materials for research papers, keep a local paper library, and browse the results through the bundled Nuxt-based web viewer.",
+    "developerName": "byxshr",
+    "category": "Research",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/byxshr/codex-paper",
+    "privacyPolicyURL": "https://github.com/byxshr/codex-paper",
+    "termsOfServiceURL": "https://github.com/byxshr/codex-paper",
+    "defaultPrompt": [
+      "Study a research paper PDF and generate a reusable learning workspace",
+      "Summarize this paper and add it to my local research library",
+      "Launch the Codex Paper web viewer for my saved papers"
+    ],
+    "brandColor": "#2563EB",
+    "composerIcon": "./assets/favicon.svg",
+    "logo": "./assets/favicon.svg",
+    "screenshots": [
+      "./assets/screenshot1.png",
+      "./assets/screenshot2.png"
+    ]
+  }
+}

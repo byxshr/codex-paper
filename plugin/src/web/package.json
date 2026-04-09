@@ -1,0 +1,21 @@
+{
+  "name": "codex-paper-web",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --port 5815",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview"
+  },
+  "dependencies": {
+    "@nuxt/content": "^2.13.0",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.28",
+    "marked": "^12.0.0",
+    "marked-katex-extension": "^5.1.6",
+    "nuxt": "^3.14.0"
+  },
+  "devDependencies": {
+    "vue": "^3.4.0"
+  }
+}

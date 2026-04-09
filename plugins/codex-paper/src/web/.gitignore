@@ -1,0 +1,8 @@
+node_modules/
+.nuxt/
+.output/
+.vitepress/
+.vitepress.backup/
+*.log
+.DS_Store
+.installed

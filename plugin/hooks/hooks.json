@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CODEX_PLUGIN_ROOT}/hooks/check-install.sh",
+            "statusMessage": "Initializing Codex Paper..."
+          }
+        ]
+      }
+    ]
+  }
+}

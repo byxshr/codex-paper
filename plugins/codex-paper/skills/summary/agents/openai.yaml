@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Summary"
+  short_description: "Create a quick summary for a research paper"
+  default_prompt: "Use $summary to produce a concise paper summary and add it to the local paper library."

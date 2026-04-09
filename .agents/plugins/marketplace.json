@@ -1,0 +1,20 @@
+{
+  "name": "codex-paper-local",
+  "interface": {
+    "displayName": "Codex Paper Local"
+  },
+  "plugins": [
+    {
+      "name": "codex-paper",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-paper"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Research"
+    }
+  ]
+}
