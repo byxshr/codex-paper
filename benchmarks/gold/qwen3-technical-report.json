@@ -1,0 +1,18 @@
+{
+  "expectedTitle": "Qwen3 Technical Report",
+  "expectedPrimaryAuthors": [
+    "Qwen Team"
+  ],
+  "expectedPageCount": 35,
+  "requiredAbstractPhrases": [
+    "integration of thinking mode",
+    "119 languages"
+  ],
+  "requiredLinks": [
+    "https://github.com/QwenLM/Qwen3"
+  ],
+  "forbiddenTitlePatterns": [
+    "^\\d{4}-\\d{2}-\\d{2}$",
+    "^arxiv:"
+  ]
+}

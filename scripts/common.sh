@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLUGIN_ROOT="$REPO_ROOT/plugins/codex-paper"
 WEB_ROOT="$PLUGIN_ROOT/src/web"
 PAPERS_DIR="${PAPERS_DIR:-$HOME/codex-papers}"
+BENCHMARK_DIR="${BENCHMARK_DIR:-${CODEX_PAPER_BENCHMARK_DIR:-$PAPERS_DIR/paper-examples}}"
+BENCHMARK_REPORT_FILE="${BENCHMARK_REPORT_FILE:-/tmp/codex-paper-benchmark.json}"
 PID_FILE="${PID_FILE:-/tmp/codex-paper-webui.pid}"
 LOG_FILE="${LOG_FILE:-/tmp/codex-paper-webui.log}"
 PORT="${PORT:-5815}"
@@ -93,6 +95,14 @@ ensure_python() {
     echo "Error: python3 is not available on PATH." >&2
     exit 1
   fi
+}
+
+ensure_pymupdf() {
+  ensure_python
+  if "$PYTHON_BIN" -c 'import fitz' >/dev/null 2>&1; then
+    return 0
+  fi
+  "$PYTHON_BIN" -m pip install pymupdf
 }
 
 plugin_version() {

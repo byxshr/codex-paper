@@ -10,7 +10,7 @@
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
-A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation.
+A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation, plus a parser benchmark and an evidence-first paper preparation pipeline.
 
 <table>
   <tr>
@@ -31,9 +31,11 @@ A research-paper study project that now includes a **Codex plugin skeleton** alo
 
 ## Features
 
-- **Automatic PDF parsing** - Extract title, authors, abstract, and full content
+- **Automatic PDF parsing** - Extract title, authors, abstract, sections, and code links with a layered parser
 - **Smart content truncation** - Handles large papers (50k char limit) intelligently
 - **Code repository detection** - Automatically finds GitHub, arXiv, CodeOcean links
+- **Evidence-first paper prep** - Generates `paper-data.json` and `facts.json` before downstream summaries
+- **Parser benchmark suite** - Regressions are checked against a fixed 5-paper gold set
 - **Adaptive learning materials** - Generates README, summary, insights, Q&A based on paper complexity
 - **Code demonstrations** - Clean implementations with Jupyter notebooks and original code integration
 - **Interactive web viewer** - Nuxt.js interface with math equation support (KaTeX)
@@ -71,7 +73,7 @@ Install from the Codex marketplace:
 ```
 
 **That's it!** The plugin will automatically:
-- Install all dependencies (pdf-parse for PDF processing)
+- Install all dependencies (Node.js packages plus `PyMuPDF` for PDF processing)
 - Create the papers directory at `~/codex-papers/`
 - Initialize the search index
 - Install web viewer dependencies
@@ -141,6 +143,8 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 ├── papers/
 │   └── {paper-slug}/
 │       ├── paper.pdf                     # Original PDF file
+│       ├── paper-data.json               # Canonical parsed paper facts
+│       ├── facts.json                    # Evidence-first claims, results, limitations
 │       ├── meta.json                     # Paper metadata (title, authors, etc.)
 │       ├── README.md                     # Quick navigation and overview
 │       ├── summary.md                    # Detailed summary
@@ -170,37 +174,42 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 codex-paper/
 ├── .codex-plugin/
 │   └── marketplace.json              # Marketplace catalog entry
-├── plugin/
-│   ├── .codex-plugin/
+├── plugin/                           # Legacy copy kept for reference
+├── plugins/
+│   └── codex-paper/
+│       ├── .codex-plugin/
 │   │   └── plugin.json              # Plugin manifest
-│   ├── skills/
-│   │   └── study/
-│   │       ├── SKILL.md             # Study workflow definition
-│   │       └── scripts/
-│   │           ├── parse-pdf.js    # PDF parsing utility
-│   │           └── extract-images.py  # Image extraction
-│   ├── commands/
-│   │   └── webui.md                # /webui command
-│   ├── hooks/
-│   │   ├── hooks.json              # Session lifecycle hooks
-│   │   └── check-install.sh        # Installation verification
-│   ├── src/
-│   │   └── web/                    # Nuxt.js web viewer
-│   │       ├── components/         # Vue components
-│   │       ├── composables/        # Vue composables
-│   │       ├── server/             # API endpoints
-│   │       └── package.json
-│   └── package.json
+│       ├── skills/
+│       │   ├── study/
+│       │   │   ├── SKILL.md             # Study workflow definition
+│       │   │   └── scripts/
+│       │   │       ├── parse-pdf.js     # Stable JSON parser
+│       │   │       ├── prepare-paper.js # Canonical paper preparation pipeline
+│       │   │       └── extract-images.py
+│       │   └── summary/
+│       │       └── SKILL.md             # Evidence-constrained quick summary
+│       ├── hooks/
+│       │   ├── hooks.json               # Session lifecycle hooks
+│       │   └── check-install.sh
+│       ├── src/
+│       │   └── web/                     # Nuxt.js web viewer
+│       └── package.json
+├── benchmarks/
+│   ├── manifest.json                    # Fixed parser benchmark set
+│   ├── gold/                            # Gold expectations for the 5 papers
+│   ├── run-benchmark.mjs                # Benchmark executor
+│   └── benchmark-report.mjs             # Human-readable report formatter
 └── README.md
 ```
 
 ### Key Components
 
 1. **Study Skill** - Main workflow agent that orchestrates paper processing
-2. **PDF Parser** - Extracts text, metadata, and code links using pdf-parse
+2. **PDF Parser** - Uses a layered `PyMuPDF`-first parser with `pdf-parse` fallback and stable JSON output
 3. **Image Extractor** - Python script for PDF figure extraction
-4. **Web Viewer** - Nuxt.js application with Nitro API server
-5. **Hooks System** - Automatic dependency installation and setup
+4. **Preparation Pipeline** - Produces `paper-data.json`, `facts.json`, `meta.json`, and updates `~/codex-papers/index.json`
+5. **Web Viewer** - Nuxt.js application with Nitro API server and facts panel
+6. **Hooks System** - Automatic dependency installation and setup
 
 ---
 
@@ -217,6 +226,8 @@ bash scripts/codex-paper.sh start
 bash scripts/codex-paper.sh stop
 bash scripts/codex-paper.sh status
 bash scripts/codex-paper.sh smoke-test
+bash scripts/codex-paper.sh benchmark
+bash scripts/codex-paper.sh benchmark-report
 ```
 
 This keeps the local workflow in one place while `scripts/common.sh` stays internal.
@@ -225,24 +236,23 @@ This keeps the local workflow in one place while `scripts/common.sh` stays inter
 
 ```bash
 # Test PDF parsing
-node plugin/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
+node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
+
+# Prepare a paper into paper-data.json and facts.json
+node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
+
+# Run the parser regression benchmark
+bash scripts/codex-paper.sh benchmark
 
 # Test web viewer
-cd plugin/src/web
-npm run dev
-
-# Test full workflow
-cd /path/to/codex-paper
-codex --plugin-dir ./plugin
-/codex-paper:study /path/to/paper.pdf
+bash scripts/codex-paper.sh start
 ```
 
 ### Building for Production
 
 ```bash
 # Build web viewer
-cd plugin/src/web
-npm run build
+bash scripts/codex-paper.sh build
 
 # The built viewer will be in .output/
 ```
@@ -256,13 +266,17 @@ npm run build
 No configuration required! The plugin uses sensible defaults:
 
 - **Papers directory**: `~/codex-papers/`
+- **Benchmark directory**: `~/codex-papers/paper-examples`
 - **Web viewer port**: `5815`
 - **Content limit**: `50,000` characters (with intelligent truncation)
 
 ### Advanced Customization
 
-You can modify behavior by editing the skill file at:
-`plugin/skills/study/SKILL.md`
+You can modify behavior by editing:
+
+- `plugins/codex-paper/skills/study/SKILL.md`
+- `plugins/codex-paper/skills/summary/SKILL.md`
+- `benchmarks/gold/*.json`
 
 ---
 
@@ -289,6 +303,6 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 ## Acknowledgments
 
 - Built for Codex
-- PDF parsing powered by [pdf-parse](https://github.com/ffalt/json2csv-converter)
+- PDF parsing powered by [PyMuPDF](https://pymupdf.readthedocs.io/) with [pdf-parse](https://www.npmjs.com/package/pdf-parse) fallback
 - Web viewer built with [Nuxt.js](https://nuxt.com)
 - Math rendering by [KaTeX](https://katex.org)

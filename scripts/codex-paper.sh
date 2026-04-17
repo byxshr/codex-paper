@@ -18,11 +18,8 @@ cmd_install() {
   bash "$PLUGIN_ROOT/hooks/check-install.sh"
 
   print_section "PyMuPDF"
-  if "$PYTHON_BIN" -c 'import fitz' >/dev/null 2>&1; then
-    echo "PyMuPDF already installed."
-  else
-    "$PYTHON_BIN" -m pip install --user pymupdf
-  fi
+  ensure_pymupdf
+  echo "PyMuPDF is available."
 
   print_section "Done"
   echo "Codex Paper dependencies are installed."
@@ -67,6 +64,7 @@ cmd_status() {
   echo "Repo: $REPO_ROOT"
   echo "Plugin: $PLUGIN_ROOT"
   echo "Papers: $PAPERS_DIR"
+  echo "Benchmark Dir: $BENCHMARK_DIR"
   echo "Port: $PORT"
 
   if [ -f "$WEB_ROOT/.output/server/index.mjs" ]; then
@@ -86,6 +84,30 @@ cmd_status() {
   else
     echo "Health: API not reachable"
   fi
+}
+
+cmd_benchmark() {
+  ensure_node
+  ensure_python
+  ensure_pymupdf
+
+  if [ ! -d "$PLUGIN_ROOT/node_modules/pdf-parse" ]; then
+    print_section "Dependencies Missing"
+    cmd_install
+  fi
+
+  print_section "Benchmark"
+  BENCHMARK_DIR="$BENCHMARK_DIR" \
+  BENCHMARK_REPORT_FILE="$BENCHMARK_REPORT_FILE" \
+  "$NODE_BIN" "$REPO_ROOT/benchmarks/run-benchmark.mjs"
+}
+
+cmd_benchmark_report() {
+  ensure_node
+
+  print_section "Benchmark Report"
+  BENCHMARK_REPORT_FILE="$BENCHMARK_REPORT_FILE" \
+  "$NODE_BIN" "$REPO_ROOT/benchmarks/benchmark-report.mjs"
 }
 
 cmd_smoke_test() {
@@ -165,6 +187,8 @@ Commands:
   start        Start the local web viewer
   stop         Stop the local web viewer
   status       Show build and viewer status
+  benchmark    Run the parser benchmark against the local paper examples
+  benchmark-report  Print the latest benchmark report
   smoke-test   Run an end-to-end local smoke test
   help         Show this help message
 EOF
@@ -187,6 +211,12 @@ case "$command_name" in
     ;;
   status)
     cmd_status
+    ;;
+  benchmark)
+    cmd_benchmark
+    ;;
+  benchmark-report)
+    cmd_benchmark_report
     ;;
   smoke-test)
     cmd_smoke_test

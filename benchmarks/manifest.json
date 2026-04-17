@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "papers": [
+    {
+      "id": "gspo",
+      "slug": "group-sequence-policy-optimization",
+      "sourceFilename": "Group Sequence Policy Optimization_dual_Gemini.pdf",
+      "category": "reinforcement-learning"
+    },
+    {
+      "id": "dynamo",
+      "slug": "how-to-allocate-how-to-learn-dynamic-rollout-allocation-and-advantage-modulation-for-policy-optimization",
+      "sourceFilename": "How to Allocate, How to Learn? Dynamic Rollout Allocation and Advantage Modulation for Policy Optimization.pdf",
+      "category": "reinforcement-learning"
+    },
+    {
+      "id": "qwen3",
+      "slug": "qwen3-technical-report",
+      "sourceFilename": "Qwen3_Technical_Report.pdf",
+      "category": "technical-report"
+    },
+    {
+      "id": "websailor",
+      "slug": "websailor-navigating-super-human-reasoning-for-web-agent",
+      "sourceFilename": "WebSailor.pdf",
+      "category": "agentic-llm"
+    },
+    {
+      "id": "olmo",
+      "slug": "olmo-accelerating-the-science-of-language-models",
+      "sourceFilename": "olmo-paper.pdf",
+      "category": "language-models"
+    }
+  ]
+}

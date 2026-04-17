@@ -1,0 +1,16 @@
+{
+  "expectedTitle": "Group Sequence Policy Optimization",
+  "expectedPrimaryAuthors": [
+    "Chujie Zheng"
+  ],
+  "expectedPageCount": 7,
+  "requiredAbstractPhrases": [
+    "Group Sequence Policy Optimization (GSPO)",
+    "sequence-level clipping"
+  ],
+  "requiredLinks": [],
+  "forbiddenTitlePatterns": [
+    "^\\d{4}-\\d{2}-\\d{2}$",
+    "^arxiv:"
+  ]
+}

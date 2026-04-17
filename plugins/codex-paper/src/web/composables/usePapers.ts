@@ -3,11 +3,15 @@ export interface Paper {
   slug: string
   authors: string[]
   abstract: string
+  year?: number | null
   githubLinks?: string[]
   codeLinks?: string[]
   url?: string
   date?: string
   tags?: string[]
+  sourceFilename?: string
+  parserVersion?: string
+  qualityFlags?: string[]
 }
 
 export const usePapers = () => {

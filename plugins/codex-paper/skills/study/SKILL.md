@@ -35,7 +35,7 @@ Before processing a paper, make sure the plugin dependencies are available:
 
 ---
 
-# Step 1: Download and Parse PDF
+# Step 1: Prepare the Paper Workspace
 
 Supports multiple input formats:
 
@@ -43,61 +43,32 @@ Supports multiple input formats:
 * **Direct PDF URL**: `https://arxiv.org/pdf/1706.03762.pdf`
 * **arXiv URL**: `https://arxiv.org/abs/1706.03762`
 
-## Step 1a: Check input type and download if URL
+Use the single preparation entrypoint:
 
 ```bash
 USER_INPUT="<user-input>"
-
-# Check if input is a URL (starts with http:// or https://)
-if [[ "$USER_INPUT" =~ ^https?:// ]]; then
-  # Download PDF from URL
-  INPUT_PATH=$(node ./scripts/download-pdf.cjs "$USER_INPUT")
-else
-  # Use local path directly
-  INPUT_PATH="$USER_INPUT"
-fi
+node ./scripts/prepare-paper.js "$USER_INPUT"
 ```
 
-For URLs, the download script will:
-* Download PDFs to `/tmp/codex-paper-downloads/`
-* Convert arXiv `/abs/` URLs to PDF URLs automatically
-* Validate that URLs point to PDF files
-* Return the local file path for processing
-
-For local paths, use the path directly without downloading.
-
-## Step 1b: Parse PDF
-
-Extract structured information:
-
-```bash
-node ./scripts/parse-pdf.js "$INPUT_PATH"
-```
-
-Output includes:
+The preparation script will resolve URLs when needed, parse the PDF, and write:
 
 * title
 * authors
 * abstract
-* full content
+* sections (`abstract`, `introduction`, `conclusion`)
+* parser warnings
+* quality flags
 * githubLinks
 * codeLinks
-* tags (generated in Step 2.5)
-
-Save to:
+* `paper-data.json`
+* `facts.json`
+* refreshed `meta.json`
+* refreshed `~/codex-papers/index.json`
 
 ```
-~/codex-papers/papers/{paper-slug}/meta.json
+~/codex-papers/papers/{paper-slug}/paper-data.json
+~/codex-papers/papers/{paper-slug}/facts.json
 ```
-
-Copy original PDF:
-
-```bash
-cp <pdf-path> ~/codex-papers/papers/{paper-slug}/paper.pdf
-```
-
-Fallback:
-If structured parsing fails, extract raw text and continue with degraded structure.
 
 ---
 
@@ -172,6 +143,14 @@ Create folder:
 ---
 
 ## Required Files
+
+All generated explanations must be grounded in `paper-data.json` and `facts.json`.
+
+Rules:
+
+* Do not invent metrics, claims, or links that are not present in those files
+* Any quantitative result must include a `Source:` note with the section name from `facts.json`
+* If `qualityFlags` contains `abstract_missing` or `sections_partial`, explicitly mention the parser limitation in `README.md`
 
 ### README.md
 

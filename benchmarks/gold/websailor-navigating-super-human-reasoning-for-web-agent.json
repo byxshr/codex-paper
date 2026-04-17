@@ -1,0 +1,18 @@
+{
+  "expectedTitle": "WebSailor: Navigating Super-human Reasoning for Web Agent",
+  "expectedPrimaryAuthors": [
+    "Kuan Li"
+  ],
+  "expectedPageCount": 23,
+  "requiredAbstractPhrases": [
+    "reduce extreme uncertainty",
+    "Duplicating Sampling Policy Optimization"
+  ],
+  "requiredLinks": [
+    "https://github.com/Alibaba-NLP/WebAgent"
+  ],
+  "forbiddenTitlePatterns": [
+    "^\\d{4}-\\d{2}-\\d{2}$",
+    "^arxiv:"
+  ]
+}

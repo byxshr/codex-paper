@@ -85,6 +85,51 @@
             </div>
           </div>
 
+          <section v-if="facts || qualityFlags.length > 0 || parserWarnings.length > 0" class="facts-panel">
+            <div v-if="facts?.coreClaims?.length" class="facts-card">
+              <h2>Core Claims</h2>
+              <ul>
+                <li v-for="claim in facts.coreClaims" :key="`${claim.text}-${claim.evidence.quote}`">
+                  <span>{{ claim.text }}</span>
+                  <small>Source: {{ claim.evidence.section }}</small>
+                </li>
+              </ul>
+            </div>
+
+            <div v-if="facts?.keyResults?.length" class="facts-card">
+              <h2>Key Results</h2>
+              <ul>
+                <li v-for="result in facts.keyResults" :key="`${result.label}-${result.context}`">
+                  <strong>{{ result.label }}:</strong> {{ result.value }}
+                  <div class="facts-context">{{ result.context }}</div>
+                  <small>Source: {{ result.evidence.section }}</small>
+                </li>
+              </ul>
+            </div>
+
+            <div v-if="facts?.limitations?.length" class="facts-card">
+              <h2>Limitations</h2>
+              <ul>
+                <li v-for="item in facts.limitations" :key="`${item.text}-${item.evidence.quote}`">
+                  <span>{{ item.text }}</span>
+                  <small>Source: {{ item.evidence.section }}</small>
+                </li>
+              </ul>
+            </div>
+
+            <div v-if="qualityFlags.length > 0 || parserWarnings.length > 0" class="facts-card">
+              <h2>Parser Quality</h2>
+              <div v-if="qualityFlags.length" class="facts-flags">
+                <span v-for="flag in qualityFlags" :key="flag" class="facts-flag">
+                  {{ flag.replace(/_/g, ' ') }}
+                </span>
+              </div>
+              <ul v-if="parserWarnings.length" class="facts-warning-list">
+                <li v-for="warning in parserWarnings" :key="warning">{{ warning }}</li>
+              </ul>
+            </div>
+          </section>
+
           <article class="content">
             <div v-if="fileLoading" class="file-loading">
               <div class="shimmer"></div>
@@ -137,6 +182,7 @@ import yaml from 'highlight.js/lib/languages/yaml'
 import xml from 'highlight.js/lib/languages/xml'
 import css from 'highlight.js/lib/languages/css'
 import sql from 'highlight.js/lib/languages/sql'
+import type { Paper } from '~/composables/usePapers'
 
 // Register languages
 hljs.registerLanguage('python', python)
@@ -160,6 +206,33 @@ marked.use(markedKatex({
   output: 'html'
 }))
 
+interface EvidenceRef {
+  section: string
+  quote: string
+}
+
+interface FactClaim {
+  text: string
+  evidence: EvidenceRef
+}
+
+interface FactResult {
+  label: string
+  value: string
+  context: string
+  evidence: EvidenceRef
+}
+
+interface PaperFacts {
+  paperSlug: string
+  parserVersion: string
+  coreClaims: FactClaim[]
+  keyResults: FactResult[]
+  limitations: FactClaim[]
+  warnings?: string[]
+  qualityFlags?: string[]
+}
+
 const route = useRoute()
 const slug = route.params.slug as string
 
@@ -167,7 +240,8 @@ const slug = route.params.slug as string
 const { papers, loadPapers, getPaper } = usePapers()
 const loading = ref(true)
 const error = ref<string | null>(null)
-const paper = ref(null)
+const paper = ref<Paper | null>(null)
+const facts = ref<PaperFacts | null>(null)
 
 // File tree and selection
 const fileTree = ref([])
@@ -199,6 +273,12 @@ onMounted(async () => {
     // Load file tree
     const tree = await $fetch(`/api/papers/${slug}/files`)
     fileTree.value = tree
+
+    try {
+      facts.value = await $fetch<PaperFacts>(`/api/papers/${slug}/facts`)
+    } catch {
+      facts.value = null
+    }
 
     // Load default file (README.md)
     await loadFile('README.md')
@@ -409,6 +489,8 @@ const renderedContent = computed(() => {
 })
 
 const paperPath = computed(() => `~/codex-papers/papers/${slug}`)
+const qualityFlags = computed(() => facts.value?.qualityFlags || paper.value?.qualityFlags || [])
+const parserWarnings = computed(() => facts.value?.warnings || [])
 
 useHead({
   title: paper.value ? `${paper.value.title} - Research Library` : 'Paper - Research Library'
@@ -694,6 +776,70 @@ useHead({
   flex: 1;
   background: #ffffff;
   min-width: 0;
+}
+
+.facts-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  padding: 1rem 3rem 0;
+}
+
+.facts-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.facts-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.facts-card ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.facts-card li {
+  margin-bottom: 0.75rem;
+  color: #374151;
+}
+
+.facts-card small {
+  display: block;
+  margin-top: 0.35rem;
+  color: #6b7280;
+}
+
+.facts-context {
+  margin-top: 0.35rem;
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.facts-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.facts-flag {
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  text-transform: capitalize;
+}
+
+.facts-warning-list {
+  margin: 0;
+  padding-left: 1rem;
 }
 
 .reading-header {

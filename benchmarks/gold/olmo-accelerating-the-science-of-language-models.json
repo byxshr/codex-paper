@@ -1,0 +1,16 @@
+{
+  "expectedTitle": "OLMo: Accelerating the Science of Language Models",
+  "expectedPrimaryAuthors": [
+    "Dirk Groeneveld"
+  ],
+  "expectedPageCount": 21,
+  "requiredAbstractPhrases": [
+    "closed off, gated behind proprietary interfaces",
+    "essential for the research community"
+  ],
+  "requiredLinks": [],
+  "forbiddenTitlePatterns": [
+    "^\\d{4}-\\d{2}-\\d{2}$",
+    "^arxiv:"
+  ]
+}

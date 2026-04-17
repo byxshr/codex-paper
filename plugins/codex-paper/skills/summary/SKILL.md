@@ -35,60 +35,30 @@ Before generating a summary:
 
 ---
 
-# Step 1: Download and Parse PDF
+# Step 1: Prepare the Paper Workspace
 
 Supports multiple input formats:
 - **Local path**: `~/Downloads/paper.pdf`
 - **Direct PDF URL**: `https://arxiv.org/pdf/1706.03762.pdf`
 - **arXiv URL**: `https://arxiv.org/abs/1706.03762`
 
-## Step 1a: Check input type and download if URL
+Use the shared preparation entrypoint:
 
 ```bash
 USER_INPUT="<user-input>"
-
-# Check if input is a URL (starts with http:// or https://)
-if [[ "$USER_INPUT" =~ ^https?:// ]]; then
-  # Download PDF from URL
-  INPUT_PATH=$(node ../study/scripts/download-pdf.cjs "$USER_INPUT")
-else
-  # Use local path directly
-  INPUT_PATH="$USER_INPUT"
-fi
+node ../study/scripts/prepare-paper.js "$USER_INPUT"
 ```
 
-For URLs, the download script will:
-- Download PDFs to `/tmp/codex-paper-downloads/`
-- Convert arXiv `/abs/` URLs to PDF URLs automatically
-- Validate that URLs point to PDF files
-- Return the local file path for processing
+After preparation, treat these files as the only trusted inputs:
 
-## Step 1b: Parse PDF
-
-Extract structured information:
-
-```bash
-node ../study/scripts/parse-pdf.js "$INPUT_PATH"
-```
-
-Output includes:
 - title
 - authors
 - abstract
-- full content
+- sections
 - githubLinks
 - codeLinks
-
-Save to:
-```
-~/codex-papers/papers/{paper-slug}/meta.json
-```
-
-Copy original PDF:
-
-```bash
-cp <pdf-path> ~/codex-papers/papers/{paper-slug}/paper.pdf
-```
+- `paper-data.json`
+- `facts.json`
 
 ---
 
@@ -148,39 +118,17 @@ Generate **quick-summary.md** with the following structure:
 
 **Total length:** ~300-500 words (excluding results table)
 
+Additional constraints:
+
+* Only use facts that already exist in `paper-data.json` or `facts.json`
+* Every quantitative result must append a `Source:` note with the section name from `facts.json`
+* Do not introduce a metric value unless it appears in `facts.json`
+
 ---
 
-# Step 3: Update Index
+# Step 3: Reuse the Prepared Metadata
 
-**CRITICAL**: Read existing index.json first, then append the new paper. Never overwrite the entire file.
-
-If index.json does not exist, create:
-
-```json
-{"papers": []}
-```
-
-Append new entry to the papers array:
-
-```json
-{
-  "id": "paper-slug",
-  "title": "Paper Title",
-  "slug": "paper-slug",
-  "authors": ["Author 1", "Author 2"],
-  "abstract": "Paper abstract...",
-  "year": 2024,
-  "date": "2024-01-01",
-  "tags": ["quick-summary"],
-  "githubLinks": ["https://github.com/..."],
-  "codeLinks": ["https://..."]
-}
-```
-
-**IMPORTANT**: The index.json file must be located at:
-```
-~/codex-papers/index.json
-```
+`prepare-paper.js` already updates `meta.json`, copies the PDF, and preserves the existing `~/codex-papers/index.json` root structure.
 
 ---
 

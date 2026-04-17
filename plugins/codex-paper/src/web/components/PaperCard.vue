@@ -35,6 +35,11 @@
               size="small"
             />
           </div>
+          <div v-if="paper.qualityFlags?.length" class="quality-flags">
+            <span v-for="flag in paper.qualityFlags" :key="flag" class="quality-flag">
+              {{ formatQualityFlag(flag) }}
+            </span>
+          </div>
         </div>
       </template>
 
@@ -50,6 +55,11 @@
             :tag="tag"
             size="small"
           />
+        </div>
+        <div v-if="paper.qualityFlags?.length" class="quality-flags">
+          <span v-for="flag in paper.qualityFlags" :key="flag" class="quality-flag">
+            {{ formatQualityFlag(flag) }}
+          </span>
         </div>
 
         <div v-if="paper.githubLinks?.length || paper.codeLinks?.length" class="code-links">
@@ -141,6 +151,10 @@ const vClickOutside = {
 const getRepoName = (url) => {
   const match = url.match(/github\.com\/(.+?)(?:\.git)?$/)
   return match ? match[1] : url
+}
+
+const formatQualityFlag = (flag: string) => {
+  return flag.replace(/_/g, ' ')
 }
 </script>
 
@@ -244,6 +258,25 @@ const getRepoName = (url) => {
   flex-wrap: wrap;
   gap: 0.375rem;
   margin: 0.75rem 0;
+}
+
+.quality-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.quality-flag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  text-transform: capitalize;
 }
 
 .paper-card h3 {
