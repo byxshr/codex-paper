@@ -59,7 +59,7 @@
 - 插件名：`codex-paper`
 - 深度阅读 skill：`$paper-study`
 - 快速摘要 skill：`$paper-summary`
-- 网页查看器命令：`/codex-paper:webui`
+- 网页查看器 skill：`$paper-webui`
 
 ---
 
@@ -154,8 +154,8 @@ Codex 将自动触发学习工作流程并：
 
 ### 启动网页查看器
 
-```bash
-/codex-paper:webui
+```text
+请使用 $paper-webui 启动 Codex Paper 网页查看器。
 ```
 
 在 **http://localhost:5815** 打开交互式网页界面，您可以：

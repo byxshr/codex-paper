@@ -1,5 +1,5 @@
 ---
-name: webui
+name: paper-webui
 description: Start the Codex Paper web viewer to browse and study papers
 disable-model-invocation: false
 allowed-tools: Bash

@@ -59,7 +59,7 @@ Public names are intentionally explicit:
 - Plugin name: `codex-paper`
 - Deep study skill: `$paper-study`
 - Quick summary skill: `$paper-summary`
-- Web viewer command: `/codex-paper:webui`
+- Web viewer skill: `$paper-webui`
 
 ---
 
@@ -154,8 +154,8 @@ Codex will automatically trigger the study workflow and:
 
 ### Launch Web Viewer
 
-```bash
-/codex-paper:webui
+```text
+Use $paper-webui to start the Codex Paper web viewer.
 ```
 
 Opens the interactive web interface at **http://localhost:5815** where you can:

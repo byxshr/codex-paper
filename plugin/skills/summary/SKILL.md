@@ -199,7 +199,7 @@ Append new entry to the papers array:
 Invoke:
 
 ```
-/codex-paper:webui
+$paper-webui
 ```
 
 ---

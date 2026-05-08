@@ -1,5 +1,5 @@
 ---
-name: webui
+name: paper-webui
 description: Start, rebuild, or restart the Codex Paper local web viewer so the user can browse and study saved papers.
 ---
 
