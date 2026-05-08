@@ -1,5 +1,5 @@
 ---
-name: summary
+name: paper-summary
 description: Use this for a quick summary of a research paper's core ideas and key points. Use when you want to quickly understand a paper without deep study materials. Triggers on PDF paths, arXiv URLs, or paper URLs.
 ---
 
@@ -13,7 +13,7 @@ This skill generates a **concise summary** of a research paper's core ideas and 
 - You're screening papers to decide which to study in depth
 
 **When NOT to use:**
-- You want comprehensive study materials (use the `study` skill instead)
+- You want comprehensive study materials (use `$paper-study` instead)
 - You need code demonstrations
 - You want interactive visualizations
 

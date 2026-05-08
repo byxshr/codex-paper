@@ -10,7 +10,7 @@
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
-A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation, plus a parser benchmark and an evidence-first paper preparation pipeline. The `study` workflow is designed for Codex to read the paper and evidence files, then author a complete study package instead of templating parsed JSON into final user-facing materials.
+A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation, plus a parser benchmark and an evidence-first paper preparation pipeline. The `$paper-study` workflow is designed for Codex to read the paper and evidence files, then author a complete study package instead of templating parsed JSON into final user-facing materials.
 
 <table>
   <tr>
@@ -53,6 +53,13 @@ This repository now includes a Codex-ready skeleton that preserves the current s
 - Original source retained for reference: `plugin/`
 
 The new Codex skeleton is additive: it keeps the original implementation intact while exposing a standard Codex plugin layout that we can keep iterating on.
+
+Public names are intentionally explicit:
+
+- Plugin name: `codex-paper`
+- Deep study skill: `$paper-study`
+- Quick summary skill: `$paper-summary`
+- Web viewer command: `/codex-paper:webui`
 
 ---
 
@@ -97,17 +104,23 @@ Install from the Codex marketplace:
 Simply talk to Codex to study a paper:
 
 ```
-Help me study the paper at ~/Downloads/attention-is-all-you-need.pdf
+Use $paper-study to read ~/Downloads/attention-is-all-you-need.pdf and generate a complete study package.
 ```
 
 You can also use URLs:
 
 ```
 # Direct PDF URL
-Help me study the paper at https://arxiv.org/pdf/1706.03762.pdf
+Use $paper-study to read https://arxiv.org/pdf/1706.03762.pdf
 
 # arXiv abstract URL (automatically converted to PDF)
-Help me study the paper at https://arxiv.org/abs/1706.03762
+Use $paper-study to read https://arxiv.org/abs/1706.03762
+```
+
+For a quick summary only:
+
+```
+Use $paper-summary to summarize https://arxiv.org/abs/1706.03762
 ```
 
 Codex will automatically trigger the study workflow and:

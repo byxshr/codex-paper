@@ -1,5 +1,5 @@
 ---
-name: summary
+name: paper-summary
 description: Use this for a quick summary of a research paper's core ideas and key points. Use when you want to quickly understand a paper without deep study materials. Triggers on PDF paths, arXiv URLs, or paper URLs.
 disable-model-invocation: false
 allowed-tools: Bash, Write, Read
@@ -15,7 +15,7 @@ This skill generates a **concise summary** of a research paper's core ideas and 
 - You're screening papers to decide which to study in depth
 
 **When NOT to use:**
-- You want comprehensive study materials (use `/codex-paper:study` instead)
+- You want comprehensive study materials (use `$paper-study` instead)
 - You need code demonstrations
 - You want interactive visualizations
 
@@ -211,7 +211,7 @@ After generating the summary:
 1. **Show the user the quick-summary.md content** - Display the full summary
 
 2. **Offer next steps:**
-   - "Would you like to study this paper in more depth? Use `/codex-paper:study` for comprehensive materials."
+   - "Would you like to study this paper in more depth? Use `$paper-study` for comprehensive materials."
    - "Do you have questions about specific parts of the paper?"
    - "Would you like me to explain any section in more detail?"
 
@@ -264,6 +264,6 @@ The Transformer eliminated recurrence, enabling massive parallelization and scal
 # Notes
 
 - This skill is intentionally **minimal** - it generates only the summary, no code demos, no interactive HTML, no deep-dive materials
-- For users who want more, they can use `/codex-paper:study` to generate comprehensive materials
+- For users who want more, they can use `$paper-study` to generate comprehensive materials
 - The summary should be **self-contained** and readable in under 5 minutes
 - Focus on **conceptual clarity** over technical details

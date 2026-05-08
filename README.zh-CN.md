@@ -10,7 +10,7 @@
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
-一个研究论文学习项目，现在同时包含一套 **Codex 插件骨架**，并保留原有实现，同时补齐了解析 benchmark 和 evidence-first 的论文准备链路。`study` 工作流的目标是让 Codex 阅读论文与证据文件后主动写作，生成完整学习包，而不是把解析 JSON 直接模板化成最终材料。
+一个研究论文学习项目，现在同时包含一套 **Codex 插件骨架**，并保留原有实现，同时补齐了解析 benchmark 和 evidence-first 的论文准备链路。`$paper-study` 工作流的目标是让 Codex 阅读论文与证据文件后主动写作，生成完整学习包，而不是把解析 JSON 直接模板化成最终材料。
 
 <table>
   <tr>
@@ -53,6 +53,13 @@
 - 原始实现仍保留在：`plugin/`
 
 新的 Codex 骨架是增量式的：它不会破坏原有实现，而是在同一个仓库里补齐一套标准 Codex 插件布局，方便继续演进。
+
+对外使用时，插件名和 skill 名是分开的：
+
+- 插件名：`codex-paper`
+- 深度阅读 skill：`$paper-study`
+- 快速摘要 skill：`$paper-summary`
+- 网页查看器命令：`/codex-paper:webui`
 
 ---
 
@@ -97,17 +104,23 @@
 直接与 Codex 对话来学习论文：
 
 ```
-帮我学习 ~/Downloads/attention-is-all-you-need.pdf 这篇论文
+请使用 $paper-study 阅读 ~/Downloads/attention-is-all-you-need.pdf 这篇论文，并用中文生成完整学习包。
 ```
 
 您也可以使用 URL：
 
 ```
 # 直接 PDF 链接
-帮我学习 https://arxiv.org/pdf/1706.03762.pdf 这篇论文
+请使用 $paper-study 阅读 https://arxiv.org/pdf/1706.03762.pdf 这篇论文
 
 # arXiv 摘要链接（自动转换为 PDF）
-帮我学习 https://arxiv.org/abs/1706.03762 这篇论文
+请使用 $paper-study 阅读 https://arxiv.org/abs/1706.03762 这篇论文
+```
+
+如果只需要快速摘要：
+
+```
+请使用 $paper-summary 快速总结 https://arxiv.org/abs/1706.03762
 ```
 
 Codex 将自动触发学习工作流程并：

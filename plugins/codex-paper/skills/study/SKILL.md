@@ -1,5 +1,5 @@
 ---
-name: study
+name: paper-study
 description: Use this skill when the user wants Codex to read, study, analyze, or deeply understand a research paper from a local PDF, direct PDF URL, or arXiv link, then generate a complete paper learning workspace with Markdown, HTML, code, images, and the original PDF.
 ---
 
