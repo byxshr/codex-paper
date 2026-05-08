@@ -1,7 +1,7 @@
 {
-  "name": "codex-paper-local",
+  "name": "codex-paper",
   "interface": {
-    "displayName": "Codex Paper Local"
+    "displayName": "Codex Paper"
   },
   "plugins": [
     {

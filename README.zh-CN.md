@@ -67,16 +67,35 @@
 
 ### 安装
 
-从 Codex 市场安装：
+将这个仓库注册为 Codex marketplace：
 
 ```bash
-# 添加市场
-/plugin marketplace add byxshr/codex-paper
+git clone https://github.com/byxshr/codex-paper.git ~/codex-paper
+```
 
-# 安装插件
-/plugin install codex-paper
+在 `~/.codex/config.toml` 中添加 marketplace 并启用插件：
 
-# 重启 Codex 使插件生效
+```toml
+[marketplaces.codex-paper]
+source_type = "local"
+source = "/Users/YOUR_USER/codex-paper"
+
+[plugins."codex-paper@codex-paper"]
+enabled = true
+```
+
+把 `/Users/YOUR_USER/codex-paper` 替换成你 clone 后的绝对路径，然后重启 Codex。打开 `/plugins`，搜索 `codex-paper`，如果插件浏览器提示安装或启用，按提示操作即可。
+
+重启后可以这样使用：
+
+```text
+请使用 $paper-study 阅读 ~/Downloads/attention-is-all-you-need.pdf 这篇论文，并用中文生成完整学习包。
+```
+
+如果只需要快速摘要：
+
+```text
+请使用 $paper-summary 快速总结 https://arxiv.org/abs/1706.03762
 ```
 
 **就这样！** 插件将自动：

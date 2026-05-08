@@ -67,16 +67,35 @@ Public names are intentionally explicit:
 
 ### Installation
 
-Install from the Codex marketplace:
+Install by registering this repository as a Codex marketplace:
 
 ```bash
-# Add the marketplace
-/plugin marketplace add byxshr/codex-paper
+git clone https://github.com/byxshr/codex-paper.git ~/codex-paper
+```
 
-# Install the plugin
-/plugin install codex-paper
+Add the marketplace and enable the plugin in `~/.codex/config.toml`:
 
-# Restart Codex for the plugin to take effect
+```toml
+[marketplaces.codex-paper]
+source_type = "local"
+source = "/Users/YOUR_USER/codex-paper"
+
+[plugins."codex-paper@codex-paper"]
+enabled = true
+```
+
+Replace `/Users/YOUR_USER/codex-paper` with the absolute path to your clone, then restart Codex. Open `/plugins`, search for `codex-paper`, and install or enable it from the plugin browser if prompted.
+
+After restart, use:
+
+```text
+Use $paper-study to read ~/Downloads/attention-is-all-you-need.pdf and generate a complete study package.
+```
+
+For a quick summary:
+
+```text
+Use $paper-summary to summarize https://arxiv.org/abs/1706.03762
 ```
 
 **That's it!** The plugin will automatically:
