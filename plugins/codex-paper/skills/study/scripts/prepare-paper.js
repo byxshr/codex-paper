@@ -3,6 +3,7 @@ import path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { parsePdfDetailed } from './parse-pdf.js';
+import { buildAnalysisFromArtifacts } from './build-analysis.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -229,6 +230,7 @@ export async function preparePaper(userInput) {
   };
 
   const facts = buildFacts(paperSlug, parsed);
+  const analysis = buildAnalysisFromArtifacts(paperData, facts);
   const meta = {
     title: parsed.title,
     slug: paperSlug,
@@ -265,6 +267,7 @@ export async function preparePaper(userInput) {
   fs.copyFileSync(inputPath, path.join(paperDir, 'paper.pdf'));
   fs.writeFileSync(path.join(paperDir, 'paper-data.json'), JSON.stringify(paperData, null, 2));
   fs.writeFileSync(path.join(paperDir, 'facts.json'), JSON.stringify(facts, null, 2));
+  fs.writeFileSync(path.join(paperDir, 'analysis.json'), JSON.stringify(analysis, null, 2));
   fs.writeFileSync(path.join(paperDir, 'meta.json'), JSON.stringify(meta, null, 2));
 
   const indexState = readIndexPreserveShape();
@@ -285,7 +288,8 @@ export async function preparePaper(userInput) {
     inputPath,
     sourceFilename,
     paperData,
-    facts
+    facts,
+    analysis
   };
 }
 
@@ -301,7 +305,8 @@ async function runCli() {
     paperSlug: result.paperSlug,
     paperDir: result.paperDir,
     sourceFilename: result.sourceFilename,
-    parserVersion: result.paperData.parserVersion
+    parserVersion: result.paperData.parserVersion,
+    analysisVersion: result.analysis.analysisVersion
   }, null, 2)}\n`);
 }
 

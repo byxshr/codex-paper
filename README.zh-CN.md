@@ -10,7 +10,7 @@
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
-一个研究论文学习项目，现在同时包含一套 **Codex 插件骨架**，并保留原有实现，同时补齐了解析 benchmark 和 evidence-first 的论文准备链路。
+一个研究论文学习项目，现在同时包含一套 **Codex 插件骨架**，并保留原有实现，同时补齐了解析 benchmark 和 evidence-first 的论文准备链路。`study` 工作流的目标是让 Codex 阅读论文与证据文件后主动写作，生成完整学习包，而不是把解析 JSON 直接模板化成最终材料。
 
 <table>
   <tr>
@@ -34,11 +34,11 @@
 - **自动 PDF 解析** - 使用分层解析器提取标题、作者、摘要、章节和代码链接
 - **智能内容截断** - 智能处理大型论文（50k 字符限制）
 - **代码仓库检测** - 自动发现 GitHub、arXiv、CodeOcean 链接
-- **Evidence-first 论文准备** - 在下游摘要前先生成 `paper-data.json` 和 `facts.json`
+- **Evidence-first 论文准备** - 先生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`
 - **解析 benchmark 套件** - 基于固定的 5 篇论文 gold 集做回归检查
-- **自适应学习材料** - 根据论文复杂性生成 README、摘要、洞察力、问答
-- **代码演示** - 清晰实现，带 Jupyter 笔记本和原始代码集成
-- **交互式网页查看器** - Nuxt.js 界面，支持数学公式渲染（KaTeX）
+- **Codex 写作学习包** - 基于论文正文和证据生成 `README.md`、`summary.md`、`insights.md`、`method.md`、`mental-model.md`、`reflection.md`、`qa.md`
+- **代码演示** - 至少生成一个可独立运行、与论文核心概念相关的代码示例
+- **交互式网页查看器** - Nuxt.js 界面，默认展示用户可见材料，隐藏内部 JSON，并支持 `index.html` iframe 交互展示
 - **智能评估** - 难度级别和论文类型检测，实现自适应内容生成
 
 ---
@@ -111,12 +111,12 @@
 ```
 
 Codex 将自动触发学习工作流程并：
-1. 解析 PDF 并提取元数据
-2. 分析论文复杂性和类型
-3. 生成自适应学习材料
-4. 创建代码演示（如适用）
-5. 提取并包含原始代码（如有）
-6. 提取关键图表和图像
+1. 解析 PDF，准备元数据、正文、事实和证据文件
+2. 阅读 `paper-data.json`、`facts.json`、`analysis.json`，必要时分段阅读论文全文
+3. 基于证据写作完整学习材料，而不是直接渲染机器 JSON
+4. 生成自包含的 `index.html` 交互式探索器
+5. 创建至少一个可独立运行的代码演示
+6. 复制原始 `paper.pdf`，并尽量提取关键图表和图像
 7. 更新全局搜索索引
 8. 自动启动网页查看器
 
@@ -128,8 +128,9 @@ Codex 将自动触发学习工作流程并：
 
 在 **http://localhost:5815** 打开交互式网页界面，您可以：
 - 浏览所有已学习的论文
-- 查看生成的材料和数学公式
-- 访问代码演示和笔记本
+- 查看生成的 Markdown、HTML、PDF、图片和代码材料
+- 在 iframe 中交互式查看每篇论文的 `index.html`
+- 访问代码演示
 - 搜索论文库
 
 ---
@@ -142,24 +143,26 @@ Codex 将自动触发学习工作流程并：
 ~/codex-papers/
 ├── papers/
 │   └── {paper-slug}/
-│       ├── paper.pdf                     # 原始 PDF 文件
-│       ├── paper-data.json               # 标准化解析事实源
-│       ├── facts.json                    # 带证据的 claims / results / limitations
-│       ├── meta.json                     # 论文元数据（标题、作者等）
 │       ├── README.md                     # 快速导航和概览
 │       ├── summary.md                    # 详细摘要
 │       ├── insights.md                   # 核心洞察力（最重要！）
-│       ├── method.md                     # 方法论（如复杂）
-│       ├── mental-model.md              # 论文分类（如需要）
-│       ├── reflection.md                # 未来方向（如需要）
-│       ├── qa.md                         # 学习问题
+│       ├── method.md                     # 方法结构、流程、伪代码和复现风险
+│       ├── mental-model.md              # 先验知识、研究地图和论文归类
+│       ├── reflection.md                # 可扩展方向、脆弱假设和未来问题
+│       ├── qa.md                         # 15 个学习问答
 │       ├── index.html                    # 交互式 HTML 探索器
+│       ├── paper.pdf                     # 原始 PDF 文件副本
 │       ├── images/                       # 提取的图表和表格
 │       │   ├── fig1.png
 │       │   └── fig2.png
 │       └── code/                         # 代码演示
-│           ├── core-demo.py              # 清晰的参考实现
-│           └── concept-demo.ipynb        # 交互式 Jupyter 笔记本
+│           └── core-concept-demo.py      # 至少一个可独立运行的核心概念示例
+│
+│       # 以下 JSON 是内部证据文件，Web UI 默认隐藏
+│       ├── paper-data.json               # 标准化解析事实源
+│       ├── facts.json                    # 带证据的 claims / results / limitations
+│       ├── analysis.json                 # 结构化分析草稿
+│       └── meta.json                     # 论文元数据（标题、作者等）
 │
 └── index.json                           # 全局搜索索引
 ```
@@ -204,11 +207,11 @@ codex-paper/
 
 ### 核心组件
 
-1. **学习技能** - 编排论文处理的主要工作流程代理
+1. **学习技能** - Codex 论文阅读和写作 agent，负责生成完整学习包
 2. **PDF 解析器** - 使用 `PyMuPDF` 优先、`pdf-parse` 回退的分层解析器，并稳定输出 JSON
 3. **图像提取器** - PDF 图表提取的 Python 脚本
-4. **准备链路** - 生成 `paper-data.json`、`facts.json`、`meta.json` 并更新 `~/codex-papers/index.json`
-5. **网页查看器** - 带 Nitro API 和 Facts 面板的 Nuxt.js 应用
+4. **准备链路** - 生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 并更新 `~/codex-papers/index.json`
+5. **网页查看器** - 带 Nitro API 的 Nuxt.js 应用，默认展示用户材料并隐藏机器 JSON
 6. **钩子系统** - 自动依赖安装和设置
 
 ---

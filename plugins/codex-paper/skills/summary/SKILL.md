@@ -49,28 +49,43 @@ USER_INPUT="<user-input>"
 node ../study/scripts/prepare-paper.js "$USER_INPUT"
 ```
 
-After preparation, treat these files as the only trusted inputs:
+The preparation step now writes `analysis.json` automatically. If it is missing or needs a refresh, rebuild it explicitly:
 
-- title
-- authors
-- abstract
-- sections
-- githubLinks
-- codeLinks
+```bash
+PAPER_SLUG="<paper-slug>"
+node ../study/scripts/build-analysis.js "$PAPER_SLUG"
+```
+
+After preparation, treat these files as the only trusted inputs, in this order:
+
+- `analysis.json`
 - `paper-data.json`
 - `facts.json`
+
+Use `paper-data.json` and `facts.json` only as fallback context or source-checking inputs when `analysis.json` is not sufficient.
 
 ---
 
 # Step 2: Generate Quick Summary
 
-Create the paper folder:
+Pick the render language:
 
 ```bash
-mkdir -p ~/codex-papers/papers/{paper-slug}
+OUTPUT_LANG="en"   # or "zh"
 ```
 
-Generate **quick-summary.md** with the following structure:
+Read `paperSlug` from the JSON output of `prepare-paper.js`, then render the quick summary from `analysis.json`:
+
+```bash
+PAPER_SLUG="<paper-slug>"
+node ../study/scripts/render-from-analysis.js "$PAPER_SLUG" summary "$OUTPUT_LANG"
+```
+
+This creates `quick-summary.md` from the structured analysis layer. If you make any manual refinement afterward, preserve the same structure and do not add new facts.
+
+If the user language differs from the paper language, use the rendered file as a scaffold and translate the prose sections into the user language while preserving technical terms, metric values, and `Source:` notes.
+
+The rendered **quick-summary.md** follows this structure:
 
 ```markdown
 # Quick Summary: [Paper Title]
@@ -120,15 +135,16 @@ Generate **quick-summary.md** with the following structure:
 
 Additional constraints:
 
-* Only use facts that already exist in `paper-data.json` or `facts.json`
-* Every quantitative result must append a `Source:` note with the section name from `facts.json`
-* Do not introduce a metric value unless it appears in `facts.json`
+* `analysis.json` is the primary source for all sections
+* Only use `paper-data.json` or `facts.json` to clarify wording or verify a source
+* Every quantitative result must keep a `Source:` note derived from `facts.json`
+* Do not introduce a metric value unless it appears in `analysis.json` and remains traceable to `facts.json`
 
 ---
 
 # Step 3: Reuse the Prepared Metadata
 
-`prepare-paper.js` already updates `meta.json`, copies the PDF, and preserves the existing `~/codex-papers/index.json` root structure.
+`prepare-paper.js` already updates `meta.json`, copies the PDF, preserves the existing `~/codex-papers/index.json` root structure, and writes `analysis.json`.
 
 ---
 

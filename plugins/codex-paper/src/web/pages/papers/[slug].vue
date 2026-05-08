@@ -3,15 +3,15 @@
     <!-- Loading State -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
-      <p>Loading research materials...</p>
+      <p>正在加载学习材料...</p>
     </div>
 
     <!-- Error State -->
     <div v-else-if="error" class="error-state">
       <div class="error-icon">⚠</div>
-      <h2>Unable to Load Paper</h2>
+      <h2>无法加载论文</h2>
       <p>{{ error }}</p>
-      <NuxtLink to="/" class="back-home">← Return to Library</NuxtLink>
+      <NuxtLink to="/" class="back-home">← 返回论文库</NuxtLink>
     </div>
 
     <!-- Main Reading Interface -->
@@ -20,7 +20,7 @@
       <nav class="top-bar">
         <NuxtLink to="/" class="back-to-library">
           <span class="back-arrow">←</span>
-          <span class="back-text">Library</span>
+          <span class="back-text">论文库</span>
         </NuxtLink>
 
         <div class="paper-title-nav">
@@ -29,8 +29,8 @@
 
         <div class="actions">
           <VSCodeButton :path="paperPath" />
-          <a v-if="paper?.url" :href="paper.url" target="_blank" class="external-link" title="View original paper">
-            <span>Original Paper</span>
+          <a v-if="paper?.url" :href="paper.url" target="_blank" class="external-link" title="查看原论文">
+            <span>原论文</span>
             <span class="arrow">↗</span>
           </a>
         </div>
@@ -42,13 +42,13 @@
         <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
           <div class="sidebar-inner">
             <div v-if="!sidebarCollapsed" class="sidebar-header">
-              <h3>Study Materials</h3>
-              <button @click="toggleSidebar" class="collapse-btn" title="Collapse">
+              <h3>学习材料</h3>
+              <button @click="toggleSidebar" class="collapse-btn" title="收起">
                 ←
               </button>
             </div>
 
-            <button v-else @click="toggleSidebar" class="expand-btn" title="Expand">
+            <button v-else @click="toggleSidebar" class="expand-btn" title="展开">
               →
             </button>
 
@@ -76,59 +76,14 @@
             <!-- HTML file controls -->
             <div v-if="fileType === 'html'" class="html-controls">
               <button @click="toggleHtmlView" class="control-btn">
-                <span v-if="showHtmlPreview">Code</span>
-                <span v-else>Preview</span>
+                <span v-if="showHtmlPreview">源码</span>
+                <span v-else>预览</span>
               </button>
               <button @click="openHtmlInNewTab" class="control-btn">
-                <span>Open in New Tab</span>
+                <span>新标签打开</span>
               </button>
             </div>
           </div>
-
-          <section v-if="facts || qualityFlags.length > 0 || parserWarnings.length > 0" class="facts-panel">
-            <div v-if="facts?.coreClaims?.length" class="facts-card">
-              <h2>Core Claims</h2>
-              <ul>
-                <li v-for="claim in facts.coreClaims" :key="`${claim.text}-${claim.evidence.quote}`">
-                  <span>{{ claim.text }}</span>
-                  <small>Source: {{ claim.evidence.section }}</small>
-                </li>
-              </ul>
-            </div>
-
-            <div v-if="facts?.keyResults?.length" class="facts-card">
-              <h2>Key Results</h2>
-              <ul>
-                <li v-for="result in facts.keyResults" :key="`${result.label}-${result.context}`">
-                  <strong>{{ result.label }}:</strong> {{ result.value }}
-                  <div class="facts-context">{{ result.context }}</div>
-                  <small>Source: {{ result.evidence.section }}</small>
-                </li>
-              </ul>
-            </div>
-
-            <div v-if="facts?.limitations?.length" class="facts-card">
-              <h2>Limitations</h2>
-              <ul>
-                <li v-for="item in facts.limitations" :key="`${item.text}-${item.evidence.quote}`">
-                  <span>{{ item.text }}</span>
-                  <small>Source: {{ item.evidence.section }}</small>
-                </li>
-              </ul>
-            </div>
-
-            <div v-if="qualityFlags.length > 0 || parserWarnings.length > 0" class="facts-card">
-              <h2>Parser Quality</h2>
-              <div v-if="qualityFlags.length" class="facts-flags">
-                <span v-for="flag in qualityFlags" :key="flag" class="facts-flag">
-                  {{ flag.replace(/_/g, ' ') }}
-                </span>
-              </div>
-              <ul v-if="parserWarnings.length" class="facts-warning-list">
-                <li v-for="warning in parserWarnings" :key="warning">{{ warning }}</li>
-              </ul>
-            </div>
-          </section>
 
           <article class="content">
             <div v-if="fileLoading" class="file-loading">
@@ -155,7 +110,7 @@
             <div v-else-if="fileType === 'notebook'" class="file-viewer notebook-viewer" v-html="renderedNotebook"></div>
             <div v-else-if="fileContent" v-html="renderedContent" class="markdown-body"></div>
             <div v-else class="empty-state">
-              <p>No content available</p>
+              <p>暂无可显示内容</p>
             </div>
           </article>
         </main>
@@ -206,31 +161,11 @@ marked.use(markedKatex({
   output: 'html'
 }))
 
-interface EvidenceRef {
-  section: string
-  quote: string
-}
-
-interface FactClaim {
-  text: string
-  evidence: EvidenceRef
-}
-
-interface FactResult {
-  label: string
-  value: string
-  context: string
-  evidence: EvidenceRef
-}
-
-interface PaperFacts {
-  paperSlug: string
-  parserVersion: string
-  coreClaims: FactClaim[]
-  keyResults: FactResult[]
-  limitations: FactClaim[]
-  warnings?: string[]
-  qualityFlags?: string[]
+interface FileNode {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  children?: FileNode[]
 }
 
 const route = useRoute()
@@ -241,11 +176,10 @@ const { papers, loadPapers, getPaper } = usePapers()
 const loading = ref(true)
 const error = ref<string | null>(null)
 const paper = ref<Paper | null>(null)
-const facts = ref<PaperFacts | null>(null)
 
 // File tree and selection
-const fileTree = ref([])
-const selectedFile = ref('README.md')
+const fileTree = ref<FileNode[]>([])
+const selectedFile = ref('')
 const fileContent = ref('')
 const fileType = ref('markdown')
 const fileLanguage = ref('plaintext')
@@ -266,7 +200,7 @@ onMounted(async () => {
     paper.value = getPaper(slug)
 
     if (!paper.value) {
-      error.value = 'Paper not found'
+      error.value = '未找到论文'
       return
     }
 
@@ -274,21 +208,40 @@ onMounted(async () => {
     const tree = await $fetch(`/api/papers/${slug}/files`)
     fileTree.value = tree
 
-    try {
-      facts.value = await $fetch<PaperFacts>(`/api/papers/${slug}/facts`)
-    } catch {
-      facts.value = null
-    }
-
-    // Load default file (README.md)
-    await loadFile('README.md')
+    await loadFile(pickDefaultFile(fileTree.value))
 
   } catch (e: any) {
-    error.value = e.message || 'Failed to load paper'
+    error.value = e.message || '加载论文失败'
   } finally {
     loading.value = false
   }
 })
+
+const flattenFiles = (nodes: FileNode[]): string[] => {
+  return nodes.flatMap((node) => {
+    if (node.type === 'directory') {
+      return flattenFiles(node.children || [])
+    }
+    return [node.path]
+  })
+}
+
+const pickDefaultFile = (nodes: FileNode[]) => {
+  const files = flattenFiles(nodes)
+  const preferred = [
+    'README.md',
+    'index.html',
+    'summary.md',
+    'insights.md',
+    'method.md',
+    'mental-model.md',
+    'reflection.md',
+    'qa.md',
+    'paper.pdf',
+    'quick-summary.md'
+  ]
+  return preferred.find((path) => files.includes(path)) || files[0] || 'README.md'
+}
 
 // Load a specific file
 const loadFile = async (path: string) => {
@@ -308,7 +261,7 @@ const loadFile = async (path: string) => {
 
   } catch (e: any) {
     console.error('Error loading file:', e)
-    fileContent.value = `Error loading file: ${e.message}`
+    fileContent.value = `文件加载失败: ${e.message}`
     fileType.value = 'text'
   } finally {
     fileLoading.value = false
@@ -489,11 +442,9 @@ const renderedContent = computed(() => {
 })
 
 const paperPath = computed(() => `~/codex-papers/papers/${slug}`)
-const qualityFlags = computed(() => facts.value?.qualityFlags || paper.value?.qualityFlags || [])
-const parserWarnings = computed(() => facts.value?.warnings || [])
 
 useHead({
-  title: paper.value ? `${paper.value.title} - Research Library` : 'Paper - Research Library'
+  title: paper.value ? `${paper.value.title} - 论文库` : '论文 - 论文库'
 })
 </script>
 
@@ -776,70 +727,6 @@ useHead({
   flex: 1;
   background: #ffffff;
   min-width: 0;
-}
-
-.facts-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1rem;
-  padding: 1rem 3rem 0;
-}
-
-.facts-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 1rem;
-}
-
-.facts-card h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-  color: #111827;
-}
-
-.facts-card ul {
-  margin: 0;
-  padding-left: 1rem;
-}
-
-.facts-card li {
-  margin-bottom: 0.75rem;
-  color: #374151;
-}
-
-.facts-card small {
-  display: block;
-  margin-top: 0.35rem;
-  color: #6b7280;
-}
-
-.facts-context {
-  margin-top: 0.35rem;
-  color: #4b5563;
-  font-size: 0.9rem;
-}
-
-.facts-flags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-bottom: 0.75rem;
-}
-
-.facts-flag {
-  border-radius: 999px;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 0.75rem;
-  line-height: 1;
-  padding: 0.3rem 0.55rem;
-  text-transform: capitalize;
-}
-
-.facts-warning-list {
-  margin: 0;
-  padding-left: 1rem;
 }
 
 .reading-header {

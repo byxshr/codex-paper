@@ -1,4 +1,4 @@
 interface:
   display_name: "Paper Study"
-  short_description: "Generate a deep study workspace for a research paper"
-  default_prompt: "Use $study to analyze a research paper PDF or URL, generate study materials, and refresh the paper library."
+  short_description: "Have Codex read a paper and generate a complete learning package"
+  default_prompt: "Use $study to read a research paper PDF or URL, then generate Markdown study materials, an interactive index.html, a runnable code demo, images when possible, and refresh the paper library."

@@ -1,6 +1,9 @@
 {
   "name": "codex-paper-web",
   "type": "module",
+  "imports": {
+    "#internal/nuxt/paths": "./internal-nuxt-paths.mjs"
+  },
   "scripts": {
     "dev": "nuxt dev --port 5815",
     "build": "nuxt build",

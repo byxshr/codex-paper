@@ -10,7 +10,7 @@
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
-A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation, plus a parser benchmark and an evidence-first paper preparation pipeline.
+A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation, plus a parser benchmark and an evidence-first paper preparation pipeline. The `study` workflow is designed for Codex to read the paper and evidence files, then author a complete study package instead of templating parsed JSON into final user-facing materials.
 
 <table>
   <tr>
@@ -34,11 +34,11 @@ A research-paper study project that now includes a **Codex plugin skeleton** alo
 - **Automatic PDF parsing** - Extract title, authors, abstract, sections, and code links with a layered parser
 - **Smart content truncation** - Handles large papers (50k char limit) intelligently
 - **Code repository detection** - Automatically finds GitHub, arXiv, CodeOcean links
-- **Evidence-first paper prep** - Generates `paper-data.json` and `facts.json` before downstream summaries
+- **Evidence-first paper prep** - Generates internal evidence files such as `paper-data.json`, `facts.json`, and `analysis.json`
 - **Parser benchmark suite** - Regressions are checked against a fixed 5-paper gold set
-- **Adaptive learning materials** - Generates README, summary, insights, Q&A based on paper complexity
-- **Code demonstrations** - Clean implementations with Jupyter notebooks and original code integration
-- **Interactive web viewer** - Nuxt.js interface with math equation support (KaTeX)
+- **Codex-authored study package** - Produces `README.md`, `summary.md`, `insights.md`, `method.md`, `mental-model.md`, `reflection.md`, and `qa.md` from the paper and evidence
+- **Code demonstrations** - Generates at least one independently runnable code example tied to the paper's core idea
+- **Interactive web viewer** - Nuxt.js interface that shows user-facing materials by default, hides internal JSON, and renders each paper's `index.html` in an iframe
 - **Intelligent assessment** - Difficulty levels and paper type detection for adaptive content generation
 
 ---
@@ -111,12 +111,12 @@ Help me study the paper at https://arxiv.org/abs/1706.03762
 ```
 
 Codex will automatically trigger the study workflow and:
-1. Parse the PDF and extract metadata
-2. Analyze paper complexity and type
-3. Generate adaptive learning materials
-4. Create code demonstrations (if applicable)
-5. Extract and include original code (if available)
-6. Extract key figures and images
+1. Parse the PDF and prepare metadata, text, facts, and evidence files
+2. Read `paper-data.json`, `facts.json`, `analysis.json`, and paper text chunks as needed
+3. Author complete study materials from evidence instead of directly rendering machine JSON
+4. Generate a self-contained interactive `index.html`
+5. Create at least one independently runnable code demonstration
+6. Copy the original `paper.pdf` and extract key figures and images where possible
 7. Update the global search index
 8. Launch the web viewer automatically
 
@@ -128,8 +128,9 @@ Codex will automatically trigger the study workflow and:
 
 Opens the interactive web interface at **http://localhost:5815** where you can:
 - Browse all studied papers
-- View generated materials with math rendering
-- Access code demonstrations and notebooks
+- View generated Markdown, HTML, PDF, image, and code materials
+- Explore each paper's `index.html` interactively in an iframe
+- Access code demonstrations
 - Search through your paper library
 
 ---
@@ -142,24 +143,26 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 ~/codex-papers/
 ├── papers/
 │   └── {paper-slug}/
-│       ├── paper.pdf                     # Original PDF file
-│       ├── paper-data.json               # Canonical parsed paper facts
-│       ├── facts.json                    # Evidence-first claims, results, limitations
-│       ├── meta.json                     # Paper metadata (title, authors, etc.)
 │       ├── README.md                     # Quick navigation and overview
 │       ├── summary.md                    # Detailed summary
 │       ├── insights.md                   # Key insights (most important!)
-│       ├── method.md                     # Methodology (if complex)
-│       ├── mental-model.md              # Paper categorization (if needed)
-│       ├── reflection.md                # Future directions (if needed)
-│       ├── qa.md                         # Learning questions
+│       ├── method.md                     # Method structure, flow, pseudocode, reproducibility risks
+│       ├── mental-model.md              # Prior knowledge, research map, and paper categorization
+│       ├── reflection.md                # Extensions, fragile assumptions, and future questions
+│       ├── qa.md                         # 15 learning questions and answers
 │       ├── index.html                    # Interactive HTML explorer
+│       ├── paper.pdf                     # Copy of the original PDF
 │       ├── images/                       # Extracted figures and tables
 │       │   ├── fig1.png
 │       │   └── fig2.png
 │       └── code/                         # Code demonstrations
-│           ├── core-demo.py              # Clean reference implementation
-│           └── concept-demo.ipynb        # Interactive Jupyter notebook
+│           └── core-concept-demo.py      # At least one runnable core-concept example
+│
+│       # The following JSON files are internal evidence files and hidden in the Web UI by default
+│       ├── paper-data.json               # Canonical parsed paper facts
+│       ├── facts.json                    # Evidence-first claims, results, limitations
+│       ├── analysis.json                 # Structured analysis draft
+│       └── meta.json                     # Paper metadata (title, authors, etc.)
 │
 └── index.json                           # Global search index
 ```
@@ -204,11 +207,11 @@ codex-paper/
 
 ### Key Components
 
-1. **Study Skill** - Main workflow agent that orchestrates paper processing
+1. **Study Skill** - Codex paper-reading and writing agent that generates the full study package
 2. **PDF Parser** - Uses a layered `PyMuPDF`-first parser with `pdf-parse` fallback and stable JSON output
 3. **Image Extractor** - Python script for PDF figure extraction
-4. **Preparation Pipeline** - Produces `paper-data.json`, `facts.json`, `meta.json`, and updates `~/codex-papers/index.json`
-5. **Web Viewer** - Nuxt.js application with Nitro API server and facts panel
+4. **Preparation Pipeline** - Produces internal evidence files `paper-data.json`, `facts.json`, `analysis.json`, `meta.json`, and updates `~/codex-papers/index.json`
+5. **Web Viewer** - Nuxt.js application with Nitro APIs that displays user materials by default and hides machine JSON
 6. **Hooks System** - Automatic dependency installation and setup
 
 ---
