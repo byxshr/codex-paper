@@ -73,17 +73,69 @@
               <span class="crumb file-name">{{ selectedFile || 'README.md' }}</span>
             </div>
 
-            <!-- HTML file controls -->
-            <div v-if="fileType === 'html'" class="html-controls">
-              <button @click="toggleHtmlView" class="control-btn">
-                <span v-if="showHtmlPreview">源码</span>
-                <span v-else>预览</span>
-              </button>
-              <button @click="openHtmlInNewTab" class="control-btn">
-                <span>新标签打开</span>
+            <div class="reading-actions">
+              <!-- HTML file controls -->
+              <div v-if="fileType === 'html'" class="html-controls">
+                <button @click="toggleHtmlView" class="control-btn">
+                  <span v-if="showHtmlPreview">源码</span>
+                  <span v-else>预览</span>
+                </button>
+                <button @click="openHtmlInNewTab" class="control-btn">
+                  <span>新标签打开</span>
+                </button>
+              </div>
+              <button
+                @click="toggleAskPanel"
+                class="control-btn ask-toggle"
+                :class="{ active: askPanelOpen }"
+              >
+                <span>Ask Codex</span>
               </button>
             </div>
           </div>
+
+          <section v-if="askPanelOpen" class="ask-panel">
+            <div class="ask-panel-header">
+              <div>
+                <h2>向 Codex 提问</h2>
+                <p>回答会优先基于当前学习包和本地论文证据，并追加到 chat-notes.md。</p>
+              </div>
+              <button @click="toggleAskPanel" class="close-ask" title="关闭">×</button>
+            </div>
+
+            <textarea
+              v-model="askQuestion"
+              class="ask-input"
+              rows="4"
+              placeholder="输入你想追问的问题，例如：这篇论文的方法相比 baseline 的关键差异是什么？"
+              :disabled="askLoading"
+              @keydown.meta.enter.prevent="submitAsk"
+              @keydown.ctrl.enter.prevent="submitAsk"
+            ></textarea>
+
+            <div class="ask-actions">
+              <button
+                @click="submitAsk"
+                class="ask-submit"
+                :disabled="askLoading || !askQuestion.trim()"
+              >
+                <span v-if="askLoading">回答中...</span>
+                <span v-else>发送给 Codex</span>
+              </button>
+              <button
+                v-if="fallbackPrompt"
+                @click="copyFallbackPrompt"
+                class="ask-secondary"
+              >
+                复制提示词
+              </button>
+              <span v-if="copyStatus" class="ask-copy-status">{{ copyStatus }}</span>
+            </div>
+
+            <p v-if="askError" class="ask-error">{{ askError }}</p>
+
+            <div v-if="askAnswer" class="ask-answer markdown-body" v-html="renderedAskAnswer"></div>
+          </section>
 
           <article class="content">
             <div v-if="fileLoading" class="file-loading">
@@ -189,6 +241,19 @@ const fileLoading = ref(false)
 // UI state
 const sidebarCollapsed = ref(false)
 const showHtmlPreview = ref(true)
+const askPanelOpen = ref(false)
+const askQuestion = ref('')
+const askAnswer = ref('')
+const askError = ref('')
+const askLoading = ref(false)
+const fallbackPrompt = ref('')
+const copyStatus = ref('')
+
+const loadFileTree = async () => {
+  const tree = await $fetch<FileNode[]>(`/api/papers/${slug}/files`)
+  fileTree.value = tree
+  return tree
+}
 
 // Load paper metadata and file tree
 onMounted(async () => {
@@ -205,8 +270,7 @@ onMounted(async () => {
     }
 
     // Load file tree
-    const tree = await $fetch(`/api/papers/${slug}/files`)
-    fileTree.value = tree
+    await loadFileTree()
 
     await loadFile(pickDefaultFile(fileTree.value))
 
@@ -278,6 +342,50 @@ const toggleSidebar = () => {
 
 const toggleHtmlView = () => {
   showHtmlPreview.value = !showHtmlPreview.value
+}
+
+const toggleAskPanel = () => {
+  askPanelOpen.value = !askPanelOpen.value
+}
+
+const submitAsk = async () => {
+  const question = askQuestion.value.trim()
+  if (!question || askLoading.value) return
+
+  askLoading.value = true
+  askError.value = ''
+  askAnswer.value = ''
+  fallbackPrompt.value = ''
+  copyStatus.value = ''
+
+  try {
+    const response = await $fetch<{ answer: string; savedTo: string }>(`/api/papers/${slug}/ask`, {
+      method: 'POST',
+      body: {
+        question,
+        selectedFile: selectedFile.value
+      }
+    })
+
+    askAnswer.value = response.answer
+    await loadFileTree()
+  } catch (e: any) {
+    askError.value = e.data?.statusMessage || e.statusMessage || e.message || 'Codex 回答失败'
+    fallbackPrompt.value = e.data?.data?.fallbackPrompt || ''
+  } finally {
+    askLoading.value = false
+  }
+}
+
+const copyFallbackPrompt = async () => {
+  if (!fallbackPrompt.value) return
+
+  try {
+    await navigator.clipboard.writeText(fallbackPrompt.value)
+    copyStatus.value = '已复制'
+  } catch {
+    copyStatus.value = '复制失败'
+  }
 }
 
 const openHtmlInNewTab = () => {
@@ -470,6 +578,11 @@ const renderedContent = computed(() => {
     return `<pre>${fileContent.value}</pre>`
   }
   return fileContent.value
+})
+
+const renderedAskAnswer = computed(() => {
+  if (!askAnswer.value) return ''
+  return marked.parse(askAnswer.value) as string
 })
 
 const paperPath = computed(() => `~/codex-papers/papers/${slug}`)
@@ -794,6 +907,7 @@ useHead({
   opacity: 0.4;
 }
 
+.reading-actions,
 .html-controls {
   display: flex;
   gap: 0.5rem;
@@ -823,6 +937,146 @@ useHead({
 
 .control-btn:active {
   transform: translateY(1px);
+}
+
+.ask-toggle.active {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.ask-panel {
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+  padding: 1.25rem 3rem;
+}
+
+.ask-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ask-panel-header h2 {
+  margin: 0;
+  font-family: 'Crimson Pro', serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.ask-panel-header p {
+  margin: 0.25rem 0 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.close-ask {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #6b7280;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.close-ask:hover {
+  color: #111827;
+  border-color: #9ca3af;
+}
+
+.ask-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 96px;
+  max-height: 240px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  color: #111827;
+  background: #ffffff;
+  font: 0.95rem/1.6 'Inter', sans-serif;
+}
+
+.ask-input:focus {
+  outline: none;
+  border-color: #111827;
+  box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+}
+
+.ask-input:disabled {
+  color: #6b7280;
+  background: #f3f4f6;
+}
+
+.ask-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.875rem;
+  flex-wrap: wrap;
+}
+
+.ask-submit,
+.ask-secondary {
+  border-radius: 6px;
+  font: 0.875rem/1 'Inter', sans-serif;
+  cursor: pointer;
+  padding: 0.65rem 1rem;
+  transition: all 0.2s;
+}
+
+.ask-submit {
+  border: 1px solid #111827;
+  background: #111827;
+  color: #ffffff;
+}
+
+.ask-submit:hover:not(:disabled) {
+  background: #374151;
+  border-color: #374151;
+}
+
+.ask-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ask-secondary {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+}
+
+.ask-secondary:hover {
+  border-color: #9ca3af;
+}
+
+.ask-copy-status {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.ask-error {
+  margin: 0.875rem 0 0;
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
+.ask-answer {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 1rem;
+  line-height: 1.7;
 }
 
 /* Content Area */

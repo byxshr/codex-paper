@@ -45,6 +45,7 @@ paper-data.json
 facts.json
 analysis.json
 meta.json
+.codex-paper/answering-pack.md
 ```
 
 Never copy JSON field names, extraction labels, or machine traces into user-facing files. Forbidden visible residues include `analysisVersion`, `evidenceRefs`, `coreClaims`, `keyResults`, `Result 1`, `See evidence`, parser object paths, raw JSON snippets, and template placeholders.
@@ -289,7 +290,27 @@ images/results_table.png
 
 Do not invent or redraw figures unless the user asks for a new explanatory illustration.
 
-## Step 8: Quality Gate
+## Step 8: Answering Pack For Follow-Up Questions
+
+Create a hidden local-only answering pack:
+
+```text
+~/codex-papers/papers/{paper-slug}/.codex-paper/answering-pack.md
+```
+
+This file is not a user-facing study material and should not appear in the Web UI file tree. It is a question-answering navigation layer for `$paper-chat`, so keep it concise, structured, and evidence-oriented. Do not copy raw JSON, machine field names, evidence IDs, or extraction labels.
+
+Include:
+
+* answering rules and the evidence priority: visible study files, answering pack, internal evidence JSON, then `paper-data.rawText` or original paper text
+* paper problem map: problem, assumptions, method modules, experiment modules, limitations
+* evidence index: key conclusions mapped to natural paper locations such as abstract, method section, experiment section, table, appendix, or conclusion
+* common follow-up hooks: why the method works, differences from related work, metric meanings, practical boundaries, implementation risks
+* low-confidence zones: claims the paper does not provide, parser gaps, missing quantitative evidence, or questions that require rereading raw paper text
+
+If parser quality is weak, record the weak areas naturally so `$paper-chat` knows when to read `paper-data.rawText` before answering.
+
+## Step 9: Quality Gate
 
 Before finishing, inspect every user-visible file:
 
@@ -309,6 +330,7 @@ Verify:
 
 * all required files exist
 * `paper.pdf` exists
+* `.codex-paper/answering-pack.md` exists for follow-up questions
 * `code/` contains at least one runnable demo
 * `qa.md` contains Basic, Intermediate, and Advanced sections; default 15 questions, or 9-15 with an explicit reduction explanation
 * Chinese requests produce primarily Chinese user-facing text
@@ -327,11 +349,13 @@ Use `--lang en` for English requests. If validation fails, fix the reported file
 
 Run the code demo if feasible. If it cannot be run, explain why in the final response and in `README.md` only if the limitation matters for future readers.
 
-## Step 9: Web UI
+## Step 10: Web UI
 
 The Web UI displays the generated files. It should not rely on facts or analysis cards as the default paper experience.
 
 After generating or updating a paper package, use the sibling [paper-webui](../webui/SKILL.md) skill if the user asks to view it or if the local viewer needs to be restarted.
+
+The Web UI can ask follow-up questions through [paper-chat](../chat/SKILL.md). New study packages should include `.codex-paper/answering-pack.md` so those answers can recover the paper context quickly and remain grounded in evidence.
 
 ## Follow-Up Learning Loop
 

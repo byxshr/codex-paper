@@ -1,0 +1,5 @@
+version: 1
+interfaces:
+  default_prompt: "Use $paper-chat to answer a follow-up question from an existing Codex Paper study package using local learning materials and paper evidence."
+  display_name: "Paper Chat"
+  short_description: "Answer follow-up questions about saved paper study packages."

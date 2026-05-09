@@ -17,6 +17,40 @@ const HIDDEN_MACHINE_FILES = new Set([
   'paper-data.json'
 ])
 
+const ROOT_ITEM_ORDER = [
+  'README.md',
+  'index.html',
+  'summary.md',
+  'insights.md',
+  'method.md',
+  'mental-model.md',
+  'reflection.md',
+  'qa.md',
+  'chat-notes.md',
+  'paper.pdf',
+  'images',
+  'code',
+  'quick-summary.md'
+]
+
+const NESTED_ITEM_ORDER = [
+  'README.md',
+  'summary.md',
+  'insights.md',
+  'index.html'
+]
+
+function orderForNode(node: FileNode) {
+  const orderedNames = node.path.includes('/') ? NESTED_ITEM_ORDER : ROOT_ITEM_ORDER
+  const index = orderedNames.indexOf(node.name)
+
+  if (index !== -1) {
+    return index
+  }
+
+  return orderedNames.length + (node.type === 'directory' ? 0 : 1)
+}
+
 function buildFileTree(dirPath: string, relativePath: string = ''): FileNode[] {
   const items = fs.readdirSync(dirPath, { withFileTypes: true })
   const nodes: FileNode[] = []
@@ -50,12 +84,15 @@ function buildFileTree(dirPath: string, relativePath: string = ''): FileNode[] {
     }
   }
 
-  // Sort: directories first, then files, alphabetically
+  // Sort root materials in the study-package reading order. Inside nested
+  // folders, keep directories ahead of unknown files after known items.
   return nodes.sort((a, b) => {
-    if (a.type === b.type) {
-      return a.name.localeCompare(b.name)
+    const orderDiff = orderForNode(a) - orderForNode(b)
+    if (orderDiff !== 0) {
+      return orderDiff
     }
-    return a.type === 'directory' ? -1 : 1
+
+    return a.name.localeCompare(b.name)
   })
 }
 

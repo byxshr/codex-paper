@@ -26,6 +26,7 @@ const ROOT_ITEM_ORDER = [
   'mental-model.md',
   'reflection.md',
   'qa.md',
+  'chat-notes.md',
   'paper.pdf',
   'images',
   'code',

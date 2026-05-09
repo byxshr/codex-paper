@@ -1,229 +1,206 @@
 ---
 name: paper-study
-description: Use this skill when the user wants to read, study, analyze, or deeply understand a research paper (PDF).
-disable-model-invocation: false
-allowed-tools: Bash, Write, Edit, Read
+description: Use this skill when the user wants Codex to read, study, analyze, or deeply understand a research paper from a local PDF, direct PDF URL, or arXiv link, then generate a complete paper learning workspace with Markdown, HTML, code, images, and the original PDF.
 ---
 
 # Paper Study Workflow
 
-Invoke this skill with a paper PDF path.
+Use this skill for deep paper study, not quick summarization. The goal is a reusable learning environment authored by Codex after reading the paper evidence.
 
-**Language Detection**: Detect the user's language from their input and generate ALL materials in that language.
-- Example: User says "我们学习一下这篇论文吧" → Generate materials in Chinese
-- Example: User says "Let's study this paper" → Generate materials in English
+Detect the user's language from the request and write every user-facing material in that language. For Chinese requests, use Chinese prose except for proper nouns and established technical terms such as Qwen3, MoE, RAG, DUPO, Transformer, benchmark names, dataset names, and metric names.
 
----
+## Core Contract
 
-# Core Philosophy
+The final deliverable is a complete study package under:
 
-Primary Objective:
-Facilitate deep conceptual understanding and research-level thinking.
-
-Secondary Objective:
-Create a structured, reusable paper knowledge system.
-
-This workflow is not just for summarizing — it builds a learning environment around the paper.
-
----
-
-# Step 0: Check Dependencies (First Run Only)
-
-```bash
-if [ ! -f "${CODEX_PLUGIN_ROOT}/.installed" ]; then
-  echo "First run - installing dependencies..."
-  cd "${CODEX_PLUGIN_ROOT}"
-  npm install || exit 1
-
-  # Install Python dependencies for image extraction
-  python3 -m pip install pymupdf --user 2>/dev/null || pip3 install pymupdf --user 2>/dev/null || echo "Warning: Failed to install pymupdf"
-
-  touch "${CODEX_PLUGIN_ROOT}/.installed"
-  echo "Dependencies installed!"
-fi
-```
-
-Recommended:
-
-* Node >= 18
-* Python 3 with pip (for image extraction)
-
----
-
-# Step 1: Download and Parse PDF
-
-Supports multiple input formats:
-
-* **Local path**: `~/Downloads/paper.pdf`
-* **Direct PDF URL**: `https://arxiv.org/pdf/1706.03762.pdf`
-* **arXiv URL**: `https://arxiv.org/abs/1706.03762`
-
-## Step 1a: Check input type and download if URL
-
-```bash
-USER_INPUT="<user-input>"
-
-# Check if input is a URL (starts with http:// or https://)
-if [[ "$USER_INPUT" =~ ^https?:// ]]; then
-  # Download PDF from URL
-  INPUT_PATH=$(node ${CODEX_PLUGIN_ROOT}/skills/study/scripts/download-pdf.cjs "$USER_INPUT")
-else
-  # Use local path directly
-  INPUT_PATH="$USER_INPUT"
-fi
-```
-
-For URLs, the download script will:
-* Download PDFs to `/tmp/codex-paper-downloads/`
-* Convert arXiv `/abs/` URLs to PDF URLs automatically
-* Validate that URLs point to PDF files
-* Return the local file path for processing
-
-For local paths, use the path directly without downloading.
-
-## Step 1b: Parse PDF
-
-Extract structured information:
-
-```bash
-node ${CODEX_PLUGIN_ROOT}/skills/study/scripts/parse-pdf.js "$INPUT_PATH"
-```
-
-Output includes:
-
-* title
-* authors
-* abstract
-* full content
-* githubLinks
-* codeLinks
-* tags (generated in Step 2.5)
-
-Save to:
-
-```
-~/codex-papers/papers/{paper-slug}/meta.json
-```
-
-Copy original PDF:
-
-```bash
-cp <pdf-path> ~/codex-papers/papers/{paper-slug}/paper.pdf
-```
-
-Fallback:
-If structured parsing fails, extract raw text and continue with degraded structure.
-
----
-
-# Step 2: Assess Paper Before Generating Materials
-
-Before generating any files, evaluate:
-
-1. Difficulty Level
-
-   * Beginner
-   * Intermediate
-   * Advanced
-   * Highly Theoretical
-
-2. Paper Nature
-
-   * Theoretical
-   * Architecture-based
-   * Empirical-heavy
-   * System design
-   * Survey
-
-3. Methodological Complexity
-
-   * Simple pipeline
-   * Multi-stage training
-   * Novel architecture
-   * Heavy mathematical derivation
-
-This assessment determines:
-
-* Whether to create method.md
-* Whether to create .ipynb
-* Explanation depth
-* Code demo complexity
-
----
-
-# Step 2.5: Generate Exactly 2 Semantic Tags (Mandatory)
-
-Before generating files, infer exactly 2 tags from semantic understanding of the paper.
-
-Rules:
-
-* Generate exactly 2 tags, no more and no less
-* Tags must be distinct
-* Each tag should be short (1-3 words)
-* Avoid generic tags: `paper`, `research`, `ai`, `ml`
-* Prefer one tag for problem/domain and one for method/core idea
-
-Examples:
-
-* `machine translation`, `self-attention`
-* `3d detection`, `bev transformer`
-* `protein folding`, `structure prediction`
-
-Persist these 2 tags in both locations:
-
-* `~/codex-papers/papers/{paper-slug}/meta.json` as `tags`
-* `~/codex-papers/index.json` entry as `tags`
-
----
-
-# Step 3: Generate Core Study Materials
-
-Create folder:
-
-```
+```text
 ~/codex-papers/papers/{paper-slug}/
 ```
 
----
+Required user-visible files:
 
-## Required Files
+```text
+README.md
+summary.md
+insights.md
+qa.md
+method.md
+mental-model.md
+reflection.md
+index.html
+paper.pdf
+code/{concept-specific-demo}
+```
+
+Try to also create:
+
+```text
+images/
+```
+
+Internal evidence files may exist but must not be shown as study material:
+
+```text
+paper-data.json
+facts.json
+analysis.json
+meta.json
+.codex-paper/answering-pack.md
+```
+
+Never copy JSON field names, extraction labels, or machine traces into user-facing files. Forbidden visible residues include `analysisVersion`, `evidenceRefs`, `coreClaims`, `keyResults`, `Result 1`, `See evidence`, parser object paths, raw JSON snippets, and template placeholders.
+
+## Step 1: Prepare Evidence
+
+Inputs supported:
+
+* Local PDF path, for example `~/Downloads/paper.pdf`
+* Direct PDF URL
+* arXiv `/abs/` or `/pdf/` URL
+
+Run the preparation entrypoint from the study skill directory:
+
+```bash
+node ./scripts/prepare-paper.js "<user-input>"
+```
+
+The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes `~/codex-papers/index.json`, and writes:
+
+```text
+~/codex-papers/papers/{paper-slug}/paper-data.json
+~/codex-papers/papers/{paper-slug}/facts.json
+~/codex-papers/papers/{paper-slug}/analysis.json
+~/codex-papers/papers/{paper-slug}/meta.json
+```
+
+Treat these JSON files as evidence preparation only. They are not final study material.
+
+## Step 2: Read Before Writing
+
+Before creating or rewriting any final material, read:
+
+* `paper-data.json`: title, authors, abstract, sections, links, parser warnings, quality flags, and `rawText`
+* `facts.json`: extracted claims, results, limitations, and evidence snippets
+* `analysis.json`: low-level structured hints for problem, core idea, contributions, results, limitations, and open questions
+
+If the available sections are sparse, inspect `paper-data.rawText` in chunks and search for method, experiment, results, ablation, limitation, conclusion, appendix, dataset, and metric terms. Prefer the paper text over derived artifacts whenever they conflict.
+
+Assess:
+
+* Difficulty: beginner, intermediate, advanced, or highly theoretical
+* Paper type: theoretical, architecture, empirical, system, survey, benchmark, or post-training recipe
+* Method complexity: simple pipeline, multi-stage training, new architecture, mathematical derivation, agent system, or evaluation framework
+* Evidence quality: complete enough, partial sections, missing abstract, noisy table extraction, or weak quantitative evidence
+
+If parsing quality is limited, say so in `README.md` in natural language. Do not fill gaps with invented template content.
+
+## Step 3: Tags
+
+Infer exactly two semantic tags from the paper:
+
+* exactly 2 tags
+* each tag 1-3 words
+* distinct and specific
+* avoid generic tags such as `paper`, `research`, `ai`, `ml`
+* prefer one domain/problem tag and one method/core-idea tag
+
+Persist the same tags in:
+
+```text
+~/codex-papers/papers/{paper-slug}/meta.json
+~/codex-papers/index.json
+```
+
+## Step 4: Write The Complete Study Package
+
+Codex must author these files directly from the paper evidence. Do not use `render-from-analysis.js` as the final generator. That script is only a quick-summary fallback for the separate quick summary flow.
+
+Ground every claim in `paper-data.json`, `facts.json`, `analysis.json`, or direct `rawText` reading. Do not invent metrics, datasets, model sizes, ablations, code links, training stages, or conclusions. When mentioning quantitative results, use a natural source note such as `来源：实验部分` or `Source: Experiments`; do not expose evidence IDs.
 
 ### README.md
 
-* What the paper is about (one paragraph)
-* Difficulty level
-* How to navigate materials
-* Key takeaways
-* Estimated study time
-* Folder structure overview
+Purpose: orientation and navigation.
 
----
+Include:
+
+* one-paragraph paper overview
+* difficulty level and why
+* recommended reading route
+* estimated study time
+* generated file map
+* key takeaways
+* parser or evidence limitations, if any
 
 ### summary.md
 
-* Background context
-* Problem statement
-* Main contributions
-* Key results
-* Quantitative metrics
+Purpose: complete structured review.
 
----
+Include:
 
-### insights.md (Most Important)
+* background and motivation
+* problem statement
+* method overview
+* training, data, architecture, or system details when applicable
+* experiments and key results, only when evidenced
+* limitations and open questions
+* concise comparison with prior work if supported by the paper
 
-* Core idea explained plainly
-* Why this works
-* What conceptual shift it introduces
-* Trade-offs
-* Limitations
-* Comparison to prior work
-* Practical implications
+### insights.md
 
----
+Purpose: the most important conceptual explanation.
+
+Include:
+
+* core idea in plain language
+* why the idea may work
+* conceptual shift introduced by the paper
+* trade-offs and hidden costs
+* practical meaning for researchers or builders
+* what to remember after one week
+
+### method.md
+
+Purpose: method and implementation understanding.
+
+Include:
+
+* component breakdown
+* process or algorithm flow
+* pseudocode where useful
+* implementation pitfalls
+* reproduction risks
+* hyperparameters, model variants, stages, datasets, or metrics only when present in the paper
+* an ASCII diagram if it clarifies the method
+
+### mental-model.md
+
+Purpose: research map.
+
+Include:
+
+* required prior knowledge
+* what type of problem the paper addresses
+* where it fits in the broader research landscape
+* what category this work belongs to
+* how to mentally compare it with nearby methods
+
+### reflection.md
+
+Purpose: research thinking beyond the paper.
+
+Include:
+
+* fragile assumptions
+* failure modes
+* extension ideas
+* future questions
+* what would make the result stronger or weaker
 
 ### qa.md
 
-Layered Q&A items:
+Purpose: active recall.
+
+Write layered Q&A items:
 
 * Default: exactly 15 items, with 5 basic, 5 intermediate, and 5 advanced questions
 * Flexible fallback: for short papers, position papers, narrow-scope papers, or papers with limited parser evidence, write 9-15 items with at least 3 questions per level
@@ -233,245 +210,163 @@ Layered Q&A items:
 Use this format:
 
 ```markdown
-### Question
+## Basic
+
+### 1. Question
 
 <details>
 <summary>Answer</summary>
 
-Detailed explanation.
+Answer grounded in the paper.
 
 </details>
-
----
 ```
 
----
+## Step 5: Code Demo
 
-## Conditional Files
+Create at least one runnable code demo in:
 
-### method.md (Recommended for most papers)
-
-Include:
-
-* Component breakdown
-* Algorithm flow
-* Architecture diagram (ASCII if needed)
-* Step-by-step explanation
-* Pseudocode (balanced with explanation)
-* Implementation pitfalls
-* Hyperparameter sensitivity
-* Reproduction risks
-
----
-
-### mental-model.md (Recommended for most papers)
-
-* What type of problem is this?
-* What prior knowledge is assumed?
-* How it fits into the broader research map
-* How to mentally categorize this work
-
----
-
-### reflection.md (Optional auto-generated)
-
-* If I were to extend this paper
-* What open problems remain
-* What assumptions are fragile
-* Where it might fail in practice
-
----
-
-# Step 4: Code Demonstrations (Mandatory)
-
-At least one runnable demo must be created.
-
-**All code demos must be placed in:**
-```
+```text
 ~/codex-papers/papers/{paper-slug}/code/
 ```
 
-Create the code directory first:
+Rules:
 
-```bash
-mkdir -p ~/codex-papers/papers/{paper-slug}/code
+* Name the file after a core concept, not `demo.py` or `model_demo.py` unless that is truly specific.
+* Make it self-contained and runnable independently.
+* Prefer a compact educational implementation or visualization of the paper's central mechanism.
+* Include short comments explaining why each step matters.
+* Do not claim to reproduce the paper unless the code actually does so.
+* Add a short run instruction in `README.md`.
+
+Examples of good names:
+
+```text
+code/dupo_sampling_policy_demo.py
+code/moe_routing_tradeoff.py
+code/retrieval_uncertainty_explorer.js
 ```
 
-Guidelines:
-
-* Self-contained
-* Runnable independently
-* Educational comments (explain why)
-* Focus on core contribution
-* Prefer clarity over completeness
-
-Possible types:
-
-* Simplified conceptual implementation
-* Visualization script
-* Minimal architecture demo
-* Interactive notebook (.ipynb)
-
-Name descriptively:
-
-* model_demo.py
-* vectorized_planning_demo.py
-* contrastive_loss_visualization.ipynb
-
-Avoid generic names.
-
----
-
-# Step 5: Generate Interactive HTML Explorer
-
-Create a single self-contained HTML file for interactively exploring the paper's core concepts.
-
-**Output path:**
-```
-~/codex-papers/papers/{paper-slug}/index.html
-```
-
-## Requirements
-
-* Single HTML file, all CSS/JS inline, zero external dependencies
-* Uses **real data from the paper** (actual metrics, hyperparameters, comparisons) — never invent numbers
-* Must work in a sandboxed iframe (no external fetches, no localStorage)
-
-## Guidelines
-
-Choose the interaction pattern that best fits the paper — architecture diagrams, parameter explorers, result dashboards, formula breakdowns, comparison matrices, etc. Let the paper's content dictate the format rather than forcing a fixed layout, focusing on the core ideas of the paper.
-
-Every interactive control (slider, toggle, dropdown) should visibly change the visualization. Include brief explanatory text alongside interactive elements to teach concepts.
-
----
-
-# Step 6: Extract Images
-
-```bash
-mkdir -p ~/codex-papers/papers/{paper-slug}/images
-
-python3 ${CODEX_PLUGIN_ROOT}/skills/study/scripts/extract-images.py \
-  paper.pdf \
-  ~/codex-papers/papers/{paper-slug}/images
-```
-
-Rename key images descriptively:
-
-* architecture.png
-* training_pipeline.png
-* results_table.png
-
----
-
-# Step 7: Update Index
-
-**CRITICAL**: Read existing index.json first, then append the new paper. Never overwrite the entire file.
-
-If index.json does not exist, create:
-
-```json
-{"papers": []}
-```
-
-Append new entry to the papers array:
-
-```json
-{
-  "id": "paper-slug",
-  "title": "Paper Title",
-  "slug": "paper-slug",
-  "authors": ["Author 1", "Author 2"],
-  "abstract": "Paper abstract...",
-  "year": 2024,
-  "date": "2024-01-01",
-  "tags": ["tag-1", "tag-2"],
-  "githubLinks": ["https://github.com/..."],
-  "codeLinks": ["https://..."]
-}
-```
-**IMPORTANT**: The index.json file must be located at:
-```
-~/codex-papers/index.json
-```
-
----
-
-
-# Step 8: Relaunch Web UI
-
-Before relaunching the viewer, validate the generated package:
-
-```bash
-node ${CODEX_PLUGIN_ROOT}/skills/study/scripts/validate-study-package.js "{paper-slug-or-dir}" --lang zh --run-code
-```
-
-Use `--lang en` for English requests. If validation fails, fix the reported files and rerun it before responding.
-
-Invoke:
-
-```
-$paper-webui
-```
-
-
-# Step 9: Interactive Deep Learning Loop
-
-After all files are generated:
-
-## Present to User:
-
-1. Ask:
-
-   * What part is still unclear?
-   * Do you want deeper mathematical breakdown?
-   * Do you want implementation-level analysis?
-   * Do you want comparison with another paper?
-
-2. Allow user to:
-
-   * Ask deeper questions
-   * Summarize their understanding
-   * Propose new ideas
-
----
-
-## If user asks deeper questions:
-
-Generate a new file inside the same folder:
-
-Examples:
-
-* deep-dive-contrastive-loss.md
-* math-derivation-breakdown.md
-* comparison-with-transformers.md
-* extension-ideas.md
-
----
-
-## If user provides their own summary:
-
-1. Refine it.
-2. Improve structure.
-3. Save as:
-
-* user-summary-v1.md
-
-If iterated:
-
-* user-summary-v2.md
-
----
-
-## If user wants structured consolidation:
+## Step 6: Interactive HTML Explorer
 
 Create:
 
-* consolidated-notes.md
-* study-session-1.md
-* exam-review.md
+```text
+~/codex-papers/papers/{paper-slug}/index.html
+```
 
----
+Requirements:
 
-This makes the paper folder a growing knowledge node.
+* single self-contained HTML file
+* inline CSS and JavaScript
+* no external fetch, CDN, localStorage, remote fonts, or network dependency
+* works in a sandboxed iframe
+* contains at least one real interactive control
+* the control visibly changes a diagram, explanation, table, or comparison
+* uses only real paper concepts, metrics, stages, parameters, or comparisons
 
----
+If the paper lacks high-confidence quantitative results, explicitly state that the paper does not provide enough high-confidence quantitative results and build the interaction around qualitative mechanisms instead. Never invent data.
+
+Choose an interaction that fits the paper: architecture explorer, training-stage switcher, result comparison, parameter-scale selector, formula breakdown, pipeline diagram, agent loop explorer, or benchmark dashboard.
+
+## Step 7: Images
+
+Try to extract figures:
+
+```bash
+mkdir -p ~/codex-papers/papers/{paper-slug}/images
+python3 ./scripts/extract-images.py \
+  ~/codex-papers/papers/{paper-slug}/paper.pdf \
+  ~/codex-papers/papers/{paper-slug}/images
+```
+
+If useful figures are found, rename the most important ones descriptively, for example:
+
+```text
+images/architecture.png
+images/training_pipeline.png
+images/results_table.png
+```
+
+Do not invent or redraw figures unless the user asks for a new explanatory illustration.
+
+## Step 8: Answering Pack For Follow-Up Questions
+
+Create a hidden local-only answering pack:
+
+```text
+~/codex-papers/papers/{paper-slug}/.codex-paper/answering-pack.md
+```
+
+This file is not a user-facing study material and should not appear in the Web UI file tree. It is a question-answering navigation layer for `$paper-chat`, so keep it concise, structured, and evidence-oriented. Do not copy raw JSON, machine field names, evidence IDs, or extraction labels.
+
+Include:
+
+* answering rules and the evidence priority: visible study files, answering pack, internal evidence JSON, then `paper-data.rawText` or original paper text
+* paper problem map: problem, assumptions, method modules, experiment modules, limitations
+* evidence index: key conclusions mapped to natural paper locations such as abstract, method section, experiment section, table, appendix, or conclusion
+* common follow-up hooks: why the method works, differences from related work, metric meanings, practical boundaries, implementation risks
+* low-confidence zones: claims the paper does not provide, parser gaps, missing quantitative evidence, or questions that require rereading raw paper text
+
+If parser quality is weak, record the weak areas naturally so `$paper-chat` knows when to read `paper-data.rawText` before answering.
+
+## Step 9: Quality Gate
+
+Before finishing, inspect every user-visible file:
+
+```text
+README.md
+summary.md
+insights.md
+method.md
+mental-model.md
+reflection.md
+qa.md
+index.html
+code/*
+```
+
+Verify:
+
+* all required files exist
+* `paper.pdf` exists
+* `.codex-paper/answering-pack.md` exists for follow-up questions
+* `code/` contains at least one runnable demo
+* `qa.md` contains Basic, Intermediate, and Advanced sections; default 15 questions, or 9-15 with an explicit reduction explanation
+* Chinese requests produce primarily Chinese user-facing text
+* proper nouns and technical terms are preserved
+* no raw JSON, field names, evidence IDs, `Result 1`, `See evidence`, or parser labels appear
+* no unsupported numeric claim appears
+* `index.html` is self-contained and interactive
+
+Run the validation script after generating the package:
+
+```bash
+node ./scripts/validate-study-package.js "{paper-slug-or-dir}" --lang zh --run-code
+```
+
+Use `--lang en` for English requests. If validation fails, fix the reported files and rerun it before responding. Warnings may be reported to the user when they reflect intentional trade-offs, such as a shorter QA set with an explanation.
+
+Run the code demo if feasible. If it cannot be run, explain why in the final response and in `README.md` only if the limitation matters for future readers.
+
+## Step 10: Web UI
+
+The Web UI displays the generated files. It should not rely on facts or analysis cards as the default paper experience.
+
+After generating or updating a paper package, use the sibling [paper-webui](../webui/SKILL.md) skill if the user asks to view it or if the local viewer needs to be restarted.
+
+The Web UI can ask follow-up questions through [paper-chat](../chat/SKILL.md). New study packages should include `.codex-paper/answering-pack.md` so those answers can recover the paper context quickly and remain grounded in evidence.
+
+## Follow-Up Learning Loop
+
+If the user asks deeper questions later, add new files in the same paper folder, for example:
+
+```text
+deep-dive-{topic}.md
+math-derivation-breakdown.md
+comparison-with-{paper-or-method}.md
+extension-ideas.md
+study-session-1.md
+```
+
+Keep these follow-up files grounded in the paper and clearly separate speculation from evidenced claims.

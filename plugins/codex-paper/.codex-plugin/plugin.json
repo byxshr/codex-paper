@@ -1,7 +1,7 @@
 {
   "name": "codex-paper",
-  "version": "1.2.1",
-  "description": "Turn research papers into structured study environments with generated notes, summaries, code demos, and a local web viewer.",
+  "version": "1.3.0",
+  "description": "Turn research papers into structured study environments with generated notes, grounded follow-up Q&A, code demos, and a local web viewer.",
   "author": {
     "name": "byxshr",
     "url": "https://github.com/byxshr"
@@ -20,8 +20,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Codex Paper",
-    "shortDescription": "Study papers with generated materials and a local viewer",
-    "longDescription": "Generate structured study materials for research papers, keep a local paper library, and browse the results through the bundled Nuxt-based web viewer.",
+    "shortDescription": "Study papers with generated materials, follow-up Q&A, and a local viewer",
+    "longDescription": "Generate structured study materials for research papers, keep a local paper library, ask grounded follow-up questions, and browse the results through the bundled Nuxt-based web viewer.",
     "developerName": "byxshr",
     "category": "Research",
     "capabilities": [
@@ -35,7 +35,8 @@
     "defaultPrompt": [
       "Study a research paper PDF and generate a reusable learning workspace",
       "Summarize this paper and add it to my local research library",
-      "Launch the Codex Paper web viewer for my saved papers"
+      "Launch the Codex Paper web viewer for my saved papers",
+      "Ask a grounded follow-up question about a saved paper study package"
     ],
     "brandColor": "#2563EB",
     "composerIcon": "./assets/favicon.svg",

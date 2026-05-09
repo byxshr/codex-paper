@@ -2,6 +2,20 @@ import fs from 'fs'
 import path from 'path'
 import { homedir } from 'os'
 
+const HIDDEN_MACHINE_FILES = new Set([
+  '.study-validation.json',
+  'analysis.json',
+  'facts.json',
+  'meta.json',
+  'paper-data.json'
+])
+
+function hasHiddenPathSegment(relativePath: string) {
+  return relativePath
+    .split(path.sep)
+    .some((segment) => segment.startsWith('.'))
+}
+
 function getFileType(filename: string): string {
   const ext = path.extname(filename).toLowerCase()
 
@@ -180,13 +194,24 @@ export default defineEventHandler((event) => {
 
   try {
     const paperDir = path.join(homedir(), 'codex-papers/papers', slug)
-    const fullPath = path.join(paperDir, filePath)
+    const fullPath = path.resolve(paperDir, filePath)
+    const relativeFullPath = path.relative(paperDir, fullPath)
 
     // Security: ensure the path is within the paper directory
-    if (!fullPath.startsWith(paperDir)) {
+    if (relativeFullPath.startsWith('..') || path.isAbsolute(relativeFullPath)) {
       throw createError({
         statusCode: 403,
         statusMessage: 'Access denied'
+      })
+    }
+
+    if (
+      hasHiddenPathSegment(relativeFullPath) ||
+      (!relativeFullPath.includes(path.sep) && HIDDEN_MACHINE_FILES.has(path.basename(relativeFullPath)))
+    ) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'File not found'
       })
     }
 

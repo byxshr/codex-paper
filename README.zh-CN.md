@@ -39,6 +39,7 @@
 - **Codex 写作学习包** - 基于论文正文和证据生成 `README.md`、`summary.md`、`insights.md`、`method.md`、`mental-model.md`、`reflection.md`、`qa.md`
 - **代码演示** - 至少生成一个可独立运行、与论文核心概念相关的代码示例
 - **交互式网页查看器** - Nuxt.js 界面，默认展示用户可见材料，隐藏内部 JSON，并支持 `index.html` iframe 交互展示
+- **Ask Codex 追问** - 可以在单篇论文页向 Codex 提问，并把回答保存到 `chat-notes.md`
 - **智能评估** - 难度级别和论文类型检测，实现自适应内容生成
 
 ---
@@ -60,6 +61,7 @@
 - 深度阅读 skill：`$paper-study`
 - 快速摘要 skill：`$paper-summary`
 - 网页查看器 skill：`$paper-webui`
+- 追问问答 skill：`$paper-chat`
 
 ---
 
@@ -142,6 +144,13 @@ enabled = true
 请使用 $paper-summary 快速总结 https://arxiv.org/abs/1706.03762
 ```
 
+如果想追问已经生成的学习包：
+
+```
+请使用 $paper-chat 回答 ~/codex-papers/papers/attention-is-all-you-need 这篇论文的问题：
+self-attention 和循环式序列建模的关键差异是什么？
+```
+
 Codex 将自动触发学习工作流程并：
 1. 解析 PDF，准备元数据、正文、事实和证据文件
 2. 阅读 `paper-data.json`、`facts.json`、`analysis.json`，必要时分段阅读论文全文
@@ -149,8 +158,9 @@ Codex 将自动触发学习工作流程并：
 4. 生成自包含的 `index.html` 交互式探索器
 5. 创建至少一个可独立运行的代码演示
 6. 复制原始 `paper.pdf`，并尽量提取关键图表和图像
-7. 更新全局搜索索引
-8. 自动启动网页查看器
+7. 创建隐藏的问答证据导航包，方便后续追问
+8. 更新全局搜索索引
+9. 自动启动网页查看器
 
 ### 启动网页查看器
 
@@ -163,7 +173,10 @@ Codex 将自动触发学习工作流程并：
 - 查看生成的 Markdown、HTML、PDF、图片和代码材料
 - 在 iframe 中交互式查看每篇论文的 `index.html`
 - 访问代码演示
+- 在单篇论文页向 Codex 追问，并把回答保存到 `chat-notes.md`
 - 搜索论文库
+
+Ask Codex 目前是第一阶段的隔离实现：网页中的每次提问都会在对应论文学习包目录下启动一个新的 `codex exec` 进程，并使用只读 sandbox。这样实现更简单、失败后更容易恢复，但回答耗时会包含 Codex CLI 冷启动时间，也不会复用最初生成学习包时的 `$paper-study` 会话。新的学习包会包含 `.codex-paper/answering-pack.md`，让新的 Codex 进程快速恢复论文上下文；旧学习包没有该文件时，会回退到用户可见 Markdown 材料和本地证据文件。
 
 ---
 
@@ -182,6 +195,7 @@ Codex 将自动触发学习工作流程并：
 │       ├── mental-model.md              # 先验知识、研究地图和论文归类
 │       ├── reflection.md                # 可扩展方向、脆弱假设和未来问题
 │       ├── qa.md                         # 分层学习问答
+│       ├── chat-notes.md                 # Web UI 追问产生的问答笔记
 │       ├── index.html                    # 交互式 HTML 探索器
 │       ├── paper.pdf                     # 原始 PDF 文件副本
 │       ├── images/                       # 提取的图表和表格
@@ -195,6 +209,10 @@ Codex 将自动触发学习工作流程并：
 │       ├── facts.json                    # 带证据的 claims / results / limitations
 │       ├── analysis.json                 # 结构化分析草稿
 │       └── meta.json                     # 论文元数据（标题、作者等）
+│
+│       # 用于高质量追问回答的隐藏本地上下文
+│       └── .codex-paper/
+│           └── answering-pack.md         # $paper-chat 使用的证据导航包
 │
 └── index.json                           # 全局搜索索引
 ```
@@ -221,8 +239,12 @@ codex-paper/
 │       │   │       ├── parse-pdf.js     # 稳定 JSON 解析器
 │       │   │       ├── prepare-paper.js # 标准化论文准备入口
 │       │   │       └── extract-images.py
-│       │   └── summary/
-│       │       └── SKILL.md             # 带证据约束的快速摘要
+│       │   ├── summary/
+│       │   │   └── SKILL.md             # 带证据约束的快速摘要
+│       │   ├── chat/
+│       │   │   └── SKILL.md             # 基于证据的追问问答
+│       │   └── webui/
+│       │       └── SKILL.md             # 本地网页查看器启动
 │       ├── hooks/
 │       │   ├── hooks.json               # 会话生命周期钩子
 │       │   └── check-install.sh
@@ -244,7 +266,8 @@ codex-paper/
 3. **图像提取器** - PDF 图表提取的 Python 脚本
 4. **准备链路** - 生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 并更新 `~/codex-papers/index.json`
 5. **网页查看器** - 带 Nitro API 的 Nuxt.js 应用，默认展示用户材料并隐藏机器 JSON
-6. **钩子系统** - 自动依赖安装和设置
+6. **Ask Codex API** - 为基于证据的追问启动 `codex exec`，并将回答追加到 `chat-notes.md`
+7. **钩子系统** - 自动依赖安装和设置
 
 ---
 

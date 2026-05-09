@@ -3,11 +3,18 @@ import path from 'path'
 import { homedir } from 'os'
 
 const HIDDEN_MACHINE_FILES = new Set([
+  '.study-validation.json',
   'analysis.json',
   'facts.json',
   'meta.json',
   'paper-data.json'
 ])
+
+function hasHiddenPathSegment(relativePath: string) {
+  return relativePath
+    .split(path.sep)
+    .some((segment) => segment.startsWith('.'))
+}
 
 export default defineEventHandler((event) => {
   const slug = getRouterParam(event, 'slug')
@@ -34,7 +41,10 @@ export default defineEventHandler((event) => {
       })
     }
 
-    if (!relativeFullPath.includes(path.sep) && HIDDEN_MACHINE_FILES.has(path.basename(relativeFullPath))) {
+    if (
+      hasHiddenPathSegment(relativeFullPath) ||
+      (!relativeFullPath.includes(path.sep) && HIDDEN_MACHINE_FILES.has(path.basename(relativeFullPath)))
+    ) {
       throw createError({
         statusCode: 404,
         statusMessage: 'File not found'

@@ -39,6 +39,7 @@ A research-paper study project that now includes a **Codex plugin skeleton** alo
 - **Codex-authored study package** - Produces `README.md`, `summary.md`, `insights.md`, `method.md`, `mental-model.md`, `reflection.md`, and `qa.md` from the paper and evidence
 - **Code demonstrations** - Generates at least one independently runnable code example tied to the paper's core idea
 - **Interactive web viewer** - Nuxt.js interface that shows user-facing materials by default, hides internal JSON, and renders each paper's `index.html` in an iframe
+- **Ask Codex follow-ups** - Paper pages can send grounded follow-up questions to Codex and save answers in `chat-notes.md`
 - **Intelligent assessment** - Difficulty levels and paper type detection for adaptive content generation
 
 ---
@@ -60,6 +61,7 @@ Public names are intentionally explicit:
 - Deep study skill: `$paper-study`
 - Quick summary skill: `$paper-summary`
 - Web viewer skill: `$paper-webui`
+- Follow-up Q&A skill: `$paper-chat`
 
 ---
 
@@ -142,6 +144,13 @@ For a quick summary only:
 Use $paper-summary to summarize https://arxiv.org/abs/1706.03762
 ```
 
+For follow-up questions about a saved study package:
+
+```
+Use $paper-chat to answer a question about ~/codex-papers/papers/attention-is-all-you-need:
+What is the key difference between self-attention and recurrent sequence modeling?
+```
+
 Codex will automatically trigger the study workflow and:
 1. Parse the PDF and prepare metadata, text, facts, and evidence files
 2. Read `paper-data.json`, `facts.json`, `analysis.json`, and paper text chunks as needed
@@ -149,8 +158,9 @@ Codex will automatically trigger the study workflow and:
 4. Generate a self-contained interactive `index.html`
 5. Create at least one independently runnable code demonstration
 6. Copy the original `paper.pdf` and extract key figures and images where possible
-7. Update the global search index
-8. Launch the web viewer automatically
+7. Create a hidden answering pack for future grounded follow-up questions
+8. Update the global search index
+9. Launch the web viewer automatically
 
 ### Launch Web Viewer
 
@@ -163,7 +173,10 @@ Opens the interactive web interface at **http://localhost:5815** where you can:
 - View generated Markdown, HTML, PDF, image, and code materials
 - Explore each paper's `index.html` interactively in an iframe
 - Access code demonstrations
+- Ask Codex follow-up questions from a paper page and save answers to `chat-notes.md`
 - Search through your paper library
+
+Ask Codex currently uses an isolated first-stage implementation: each web question starts a fresh `codex exec` process in the paper package directory with a read-only sandbox. This keeps the web viewer simple and recoverable, but it means answers include Codex CLI startup time and do not reuse the original `$paper-study` session. New study packages include `.codex-paper/answering-pack.md` so fresh Codex runs can quickly recover the paper context; older packages fall back to the visible Markdown materials and local evidence files.
 
 ---
 
@@ -182,6 +195,7 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │       ├── mental-model.md              # Prior knowledge, research map, and paper categorization
 │       ├── reflection.md                # Extensions, fragile assumptions, and future questions
 │       ├── qa.md                         # Layered learning questions and answers
+│       ├── chat-notes.md                 # Follow-up Q&A notes created by the Web UI
 │       ├── index.html                    # Interactive HTML explorer
 │       ├── paper.pdf                     # Copy of the original PDF
 │       ├── images/                       # Extracted figures and tables
@@ -195,6 +209,10 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │       ├── facts.json                    # Evidence-first claims, results, limitations
 │       ├── analysis.json                 # Structured analysis draft
 │       └── meta.json                     # Paper metadata (title, authors, etc.)
+│
+│       # Hidden local context for grounded follow-up answers
+│       └── .codex-paper/
+│           └── answering-pack.md         # Evidence navigation pack for $paper-chat
 │
 └── index.json                           # Global search index
 ```
@@ -221,8 +239,12 @@ codex-paper/
 │       │   │       ├── parse-pdf.js     # Stable JSON parser
 │       │   │       ├── prepare-paper.js # Canonical paper preparation pipeline
 │       │   │       └── extract-images.py
-│       │   └── summary/
-│       │       └── SKILL.md             # Evidence-constrained quick summary
+│       │   ├── summary/
+│       │   │   └── SKILL.md             # Evidence-constrained quick summary
+│       │   ├── chat/
+│       │   │   └── SKILL.md             # Grounded follow-up Q&A
+│       │   └── webui/
+│       │       └── SKILL.md             # Local viewer launcher
 │       ├── hooks/
 │       │   ├── hooks.json               # Session lifecycle hooks
 │       │   └── check-install.sh
@@ -244,7 +266,8 @@ codex-paper/
 3. **Image Extractor** - Python script for PDF figure extraction
 4. **Preparation Pipeline** - Produces internal evidence files `paper-data.json`, `facts.json`, `analysis.json`, `meta.json`, and updates `~/codex-papers/index.json`
 5. **Web Viewer** - Nuxt.js application with Nitro APIs that displays user materials by default and hides machine JSON
-6. **Hooks System** - Automatic dependency installation and setup
+6. **Ask Codex API** - Starts `codex exec` for grounded follow-up questions, then appends answers to `chat-notes.md`
+7. **Hooks System** - Automatic dependency installation and setup
 
 ---
 
