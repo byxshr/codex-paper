@@ -199,11 +199,12 @@ Include:
 
 Purpose: active recall.
 
-Write exactly 15 Q&A items:
+Write layered Q&A items:
 
-* 5 basic
-* 5 intermediate
-* 5 advanced
+* Default: exactly 15 items, with 5 basic, 5 intermediate, and 5 advanced questions
+* Flexible fallback: for short papers, position papers, narrow-scope papers, or papers with limited parser evidence, write 9-15 items with at least 3 questions per level
+* If writing fewer than 15 items, add one natural sentence before the first level heading explaining why the set is shorter
+* Every answer must be grounded in paper evidence
 
 Use this format:
 
@@ -309,11 +310,20 @@ Verify:
 * all required files exist
 * `paper.pdf` exists
 * `code/` contains at least one runnable demo
+* `qa.md` contains Basic, Intermediate, and Advanced sections; default 15 questions, or 9-15 with an explicit reduction explanation
 * Chinese requests produce primarily Chinese user-facing text
 * proper nouns and technical terms are preserved
 * no raw JSON, field names, evidence IDs, `Result 1`, `See evidence`, or parser labels appear
 * no unsupported numeric claim appears
 * `index.html` is self-contained and interactive
+
+Run the validation script after generating the package:
+
+```bash
+node ./scripts/validate-study-package.js "{paper-slug-or-dir}" --lang zh --run-code
+```
+
+Use `--lang en` for English requests. If validation fails, fix the reported files and rerun it before responding. Warnings may be reported to the user when they reflect intentional trade-offs, such as a shorter QA set with an explanation.
 
 Run the code demo if feasible. If it cannot be run, explain why in the final response and in `README.md` only if the limitation matters for future readers.
 
@@ -321,7 +331,7 @@ Run the code demo if feasible. If it cannot be run, explain why in the final res
 
 The Web UI displays the generated files. It should not rely on facts or analysis cards as the default paper experience.
 
-After generating or updating a paper package, use the sibling [webui](../webui/SKILL.md) skill if the user asks to view it or if the local viewer needs to be restarted.
+After generating or updating a paper package, use the sibling [paper-webui](../webui/SKILL.md) skill if the user asks to view it or if the local viewer needs to be restarted.
 
 ## Follow-Up Learning Loop
 

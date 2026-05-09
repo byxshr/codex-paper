@@ -181,7 +181,7 @@ Codex 将自动触发学习工作流程并：
 │       ├── method.md                     # 方法结构、流程、伪代码和复现风险
 │       ├── mental-model.md              # 先验知识、研究地图和论文归类
 │       ├── reflection.md                # 可扩展方向、脆弱假设和未来问题
-│       ├── qa.md                         # 15 个学习问答
+│       ├── qa.md                         # 分层学习问答
 │       ├── index.html                    # 交互式 HTML 探索器
 │       ├── paper.pdf                     # 原始 PDF 文件副本
 │       ├── images/                       # 提取的图表和表格
@@ -275,6 +275,9 @@ node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 
 # 先准备论文数据和 facts.json
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
+
+# 校验已生成的学习包
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh --run-code
 
 # 跑解析 benchmark
 bash scripts/codex-paper.sh benchmark

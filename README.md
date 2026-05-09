@@ -181,7 +181,7 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │       ├── method.md                     # Method structure, flow, pseudocode, reproducibility risks
 │       ├── mental-model.md              # Prior knowledge, research map, and paper categorization
 │       ├── reflection.md                # Extensions, fragile assumptions, and future questions
-│       ├── qa.md                         # 15 learning questions and answers
+│       ├── qa.md                         # Layered learning questions and answers
 │       ├── index.html                    # Interactive HTML explorer
 │       ├── paper.pdf                     # Copy of the original PDF
 │       ├── images/                       # Extracted figures and tables
@@ -275,6 +275,9 @@ node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 
 # Prepare a paper into paper-data.json and facts.json
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
+
+# Validate a generated study package
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh --run-code
 
 # Run the parser regression benchmark
 bash scripts/codex-paper.sh benchmark

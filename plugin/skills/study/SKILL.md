@@ -223,11 +223,12 @@ Create folder:
 
 ### qa.md
 
-15 questions:
+Layered Q&A items:
 
-* 5 basic
-* 5 intermediate
-* 5 advanced
+* Default: exactly 15 items, with 5 basic, 5 intermediate, and 5 advanced questions
+* Flexible fallback: for short papers, position papers, narrow-scope papers, or papers with limited parser evidence, write 9-15 items with at least 3 questions per level
+* If writing fewer than 15 items, add one natural sentence before the first level heading explaining why the set is shorter
+* Every answer must be grounded in paper evidence
 
 Use this format:
 
@@ -397,6 +398,14 @@ Append new entry to the papers array:
 
 
 # Step 8: Relaunch Web UI
+
+Before relaunching the viewer, validate the generated package:
+
+```bash
+node ${CODEX_PLUGIN_ROOT}/skills/study/scripts/validate-study-package.js "{paper-slug-or-dir}" --lang zh --run-code
+```
+
+Use `--lang en` for English requests. If validation fails, fix the reported files and rerun it before responding.
 
 Invoke:
 

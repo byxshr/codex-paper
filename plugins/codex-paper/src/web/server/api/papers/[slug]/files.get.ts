@@ -10,6 +10,7 @@ interface FileNode {
 }
 
 const HIDDEN_MACHINE_FILES = new Set([
+  '.study-validation.json',
   'analysis.json',
   'facts.json',
   'meta.json',

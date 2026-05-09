@@ -150,7 +150,7 @@ Additional constraints:
 
 # Step 4: Relaunch Web UI
 
-After updating the paper library, invoke the sibling [webui](../webui/SKILL.md) skill so the local viewer reflects the new paper.
+After updating the paper library, invoke the sibling [paper-webui](../webui/SKILL.md) skill so the local viewer reflects the new paper.
 
 ---
 
@@ -161,7 +161,7 @@ After generating the summary:
 1. **Show the user the quick-summary.md content** - Display the full summary
 
 2. **Offer next steps:**
-   - "Would you like to study this paper in more depth? Use the `study` skill for comprehensive materials."
+   - "Would you like to study this paper in more depth? Use `$paper-study` for comprehensive materials."
    - "Do you have questions about specific parts of the paper?"
    - "Would you like me to explain any section in more detail?"
 
@@ -214,6 +214,6 @@ The Transformer eliminated recurrence, enabling massive parallelization and scal
 # Notes
 
 - This skill is intentionally **minimal** - it generates only the summary, no code demos, no interactive HTML, no deep-dive materials
-- For users who want more, they can use the `study` skill to generate comprehensive materials
+- For users who want more, they can use `$paper-study` to generate comprehensive materials
 - The summary should be **self-contained** and readable in under 5 minutes
 - Focus on **conceptual clarity** over technical details

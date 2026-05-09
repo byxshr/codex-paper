@@ -9,6 +9,14 @@ interface FileNode {
   children?: FileNode[]
 }
 
+const HIDDEN_MACHINE_FILES = new Set([
+  '.study-validation.json',
+  'analysis.json',
+  'facts.json',
+  'meta.json',
+  'paper-data.json'
+])
+
 function buildFileTree(dirPath: string, relativePath: string = ''): FileNode[] {
   const items = fs.readdirSync(dirPath, { withFileTypes: true })
   const nodes: FileNode[] = []
@@ -16,6 +24,10 @@ function buildFileTree(dirPath: string, relativePath: string = ''): FileNode[] {
   for (const item of items) {
     // Skip hidden files and node_modules
     if (item.name.startsWith('.') || item.name === 'node_modules') {
+      continue
+    }
+
+    if (HIDDEN_MACHINE_FILES.has(item.name)) {
       continue
     }
 
