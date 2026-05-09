@@ -268,21 +268,51 @@ const highlightedCode = computed(() => {
   }
 })
 
+const paperFileBaseDir = (filePath: string) => {
+  return filePath ? filePath.replace(/[^/]*$/, '') : ''
+}
+
+const normalizePaperAssetPath = (src: string, baseDir = '') => {
+  const combinedPath = src.startsWith('/') ? src : `${baseDir}${src}`
+  const parts: string[] = []
+
+  for (const segment of combinedPath.replace(/\\/g, '/').split('/')) {
+    if (!segment || segment === '.') {
+      continue
+    }
+
+    if (segment === '..') {
+      if (parts.length === 0) {
+        return null
+      }
+      parts.pop()
+      continue
+    }
+
+    parts.push(segment)
+  }
+
+  return parts.join('/')
+}
+
+const rewritePaperImageSrc = (html: string, baseDir = '') => {
+  return html.replace(
+    /(<img\s[^>]*?)src\s*=\s*["'](?!data:|https?:|\/\/|\/api\/)([^"']+)["']/gi,
+    (match, prefix, src) => {
+      const fullPath = normalizePaperAssetPath(src, baseDir)
+      if (!fullPath) {
+        return match
+      }
+      return `${prefix}src="/api/papers/${slug}/raw?path=${encodeURIComponent(fullPath)}"`
+    }
+  )
+}
+
 // Process HTML content to fix HiDPI canvas rendering and rewrite relative image paths
 const processedHtmlContent = computed(() => {
   if (!fileContent.value || fileType.value !== 'html') return ''
 
-  let html = fileContent.value
-
-  // Rewrite relative image src to use the raw API endpoint
-  const htmlDir = selectedFile.value ? selectedFile.value.replace(/[^/]*$/, '') : ''
-  html = html.replace(
-    /(<img\s[^>]*?)src\s*=\s*["'](?!data:|https?:|\/\/|\/api\/)([^"']+)["']/gi,
-    (match, prefix, src) => {
-      const fullPath = htmlDir ? htmlDir + src : src
-      return `${prefix}src="/api/papers/${slug}/raw?path=${encodeURIComponent(fullPath)}"`
-    }
-  )
+  let html = rewritePaperImageSrc(fileContent.value, paperFileBaseDir(selectedFile.value))
 
   // Inject a script before </body> (or at the end) to fix canvas HiDPI rendering
   // and make canvases responsive to viewport resizing via CSS scaling
@@ -394,13 +424,14 @@ const renderedNotebook = computed(() => {
     }
   })
 
-  return html
+  return rewritePaperImageSrc(html, paperFileBaseDir(selectedFile.value))
 })
 
 const renderedContent = computed(() => {
   if (!fileContent.value) return ''
   if (fileType.value === 'markdown') {
-    return marked.parse(fileContent.value)
+    const html = marked.parse(fileContent.value) as string
+    return rewritePaperImageSrc(html, paperFileBaseDir(selectedFile.value))
   }
   if (fileType.value === 'text') {
     return `<pre>${fileContent.value}</pre>`
