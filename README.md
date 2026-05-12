@@ -176,7 +176,7 @@ Opens the interactive web interface at **http://localhost:5815** where you can:
 - Ask Codex follow-up questions from a paper page and save answers to `chat-notes.md`
 - Search through your paper library
 
-Ask Codex currently uses an isolated first-stage implementation: each web question starts a fresh `codex exec` process in the paper package directory with a read-only sandbox. This keeps the web viewer simple and recoverable, but it means answers include Codex CLI startup time and do not reuse the original `$paper-study` session. New study packages include `.codex-paper/answering-pack.md` so fresh Codex runs can quickly recover the paper context; older packages fall back to the visible Markdown materials and local evidence files.
+Ask Codex lazily starts one long-running `codex mcp-server` worker the first time a web question is asked. The web viewer keeps a separate Codex thread per paper, so follow-up questions for the same paper reuse conversation context without starting a new `codex exec` process each time. Answers still run with a read-only sandbox and use `.codex-paper/answering-pack.md` when available, falling back to visible Markdown materials and local evidence files for older packages.
 
 ---
 
@@ -266,7 +266,7 @@ codex-paper/
 3. **Image Extractor** - Python script for PDF figure extraction
 4. **Preparation Pipeline** - Produces internal evidence files `paper-data.json`, `facts.json`, `analysis.json`, `meta.json`, and updates `~/codex-papers/index.json`
 5. **Web Viewer** - Nuxt.js application with Nitro APIs that displays user materials by default and hides machine JSON
-6. **Ask Codex API** - Starts `codex exec` for grounded follow-up questions, then appends answers to `chat-notes.md`
+6. **Ask Codex API** - Reuses a long-running Codex MCP worker for grounded follow-up questions, then appends answers to `chat-notes.md`
 7. **Hooks System** - Automatic dependency installation and setup
 
 ---

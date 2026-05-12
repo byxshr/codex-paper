@@ -176,7 +176,7 @@ Codex 将自动触发学习工作流程并：
 - 在单篇论文页向 Codex 追问，并把回答保存到 `chat-notes.md`
 - 搜索论文库
 
-Ask Codex 目前是第一阶段的隔离实现：网页中的每次提问都会在对应论文学习包目录下启动一个新的 `codex exec` 进程，并使用只读 sandbox。这样实现更简单、失败后更容易恢复，但回答耗时会包含 Codex CLI 冷启动时间，也不会复用最初生成学习包时的 `$paper-study` 会话。新的学习包会包含 `.codex-paper/answering-pack.md`，让新的 Codex 进程快速恢复论文上下文；旧学习包没有该文件时，会回退到用户可见 Markdown 材料和本地证据文件。
+Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-server` worker。网页查看器会为每篇论文保留独立的 Codex thread，因此同一论文的后续追问可以复用对话上下文，不再每次启动新的 `codex exec` 进程。回答仍然运行在只读 sandbox 中，并优先使用 `.codex-paper/answering-pack.md`；旧学习包没有该文件时，会回退到用户可见 Markdown 材料和本地证据文件。
 
 ---
 
@@ -266,7 +266,7 @@ codex-paper/
 3. **图像提取器** - PDF 图表提取的 Python 脚本
 4. **准备链路** - 生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 并更新 `~/codex-papers/index.json`
 5. **网页查看器** - 带 Nitro API 的 Nuxt.js 应用，默认展示用户材料并隐藏机器 JSON
-6. **Ask Codex API** - 为基于证据的追问启动 `codex exec`，并将回答追加到 `chat-notes.md`
+6. **Ask Codex API** - 复用长期运行的 Codex MCP worker 处理基于证据的追问，并将回答追加到 `chat-notes.md`
 7. **钩子系统** - 自动依赖安装和设置
 
 ---
