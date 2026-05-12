@@ -1,12 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import { spawn } from 'child_process'
-import { homedir, tmpdir } from 'os'
+import { homedir } from 'os'
+import { askCodexWorker } from '../../../utils/codexWorker'
 
-const ASK_TIMEOUT_MS = 180_000
 const MAX_QUESTION_LENGTH = 4_000
 const MAX_SELECTED_FILE_LENGTH = 500
-const MAX_BUFFER_BYTES = 8 * 1024 * 1024
 
 const activeRequests = new Set<string>()
 
@@ -17,47 +15,6 @@ const FORBIDDEN_RESIDUES = [
   'Result 1',
   'See evidence'
 ]
-
-function isExecutable(filePath: string) {
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function getNvmCodexCandidates() {
-  const versionsDir = path.join(homedir(), '.nvm/versions/node')
-
-  try {
-    return fs.readdirSync(versionsDir)
-      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
-      .map((version) => path.join(versionsDir, version, 'bin/codex'))
-  } catch {
-    return []
-  }
-}
-
-function resolveCodexBin() {
-  const pathCandidates = (process.env.PATH || '')
-    .split(path.delimiter)
-    .filter(Boolean)
-    .map((dir) => path.join(dir, 'codex'))
-
-  const candidates = [
-    process.env.CODEX_BIN,
-    path.join(path.dirname(process.execPath), 'codex'),
-    ...pathCandidates,
-    ...getNvmCodexCandidates(),
-    path.join(homedir(), '.volta/bin/codex'),
-    path.join(homedir(), '.local/bin/codex'),
-    '/opt/homebrew/bin/codex',
-    '/usr/local/bin/codex'
-  ].filter(Boolean) as string[]
-
-  return Array.from(new Set(candidates)).find(isExecutable) || 'codex'
-}
 
 function validateSlug(slug: string) {
   return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(slug)
@@ -168,67 +125,6 @@ function createFallbackError(statusCode: number, statusMessage: string, fallback
   })
 }
 
-function runCodex(codexBin: string, args: string[], prompt: string, cwd: string, env: NodeJS.ProcessEnv) {
-  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(codexBin, args, {
-      cwd,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe']
-    })
-
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    let timeout: NodeJS.Timeout
-
-    const finish = (error?: Error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-
-      if (error) {
-        reject(error)
-      } else {
-        resolve({ stdout, stderr })
-      }
-    }
-
-    const appendOutput = (target: 'stdout' | 'stderr', chunk: Buffer) => {
-      if (target === 'stdout') {
-        stdout += chunk.toString('utf8')
-      } else {
-        stderr += chunk.toString('utf8')
-      }
-
-      if (Buffer.byteLength(stdout) + Buffer.byteLength(stderr) > MAX_BUFFER_BYTES) {
-        child.kill('SIGTERM')
-        finish(new Error('Codex output exceeded the maximum buffer size.'))
-      }
-    }
-
-    timeout = setTimeout(() => {
-      child.kill('SIGTERM')
-      finish(new Error('Codex timed out before returning an answer.'))
-    }, ASK_TIMEOUT_MS)
-
-    child.stdout.on('data', (chunk) => appendOutput('stdout', chunk))
-    child.stderr.on('data', (chunk) => appendOutput('stderr', chunk))
-    child.on('error', (error) => finish(error))
-    child.on('close', (code) => {
-      if (settled) return
-
-      if (code === 0) {
-        finish()
-      } else {
-        const detail = stderr.trim() || stdout.trim() || `Codex exited with code ${code}`
-        finish(new Error(detail))
-      }
-    })
-
-    child.stdin.end(prompt)
-  })
-}
-
 export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
 
@@ -263,35 +159,12 @@ export default defineEventHandler(async (event) => {
 
   activeRequests.add(slug)
 
-  const outputPath = path.join(tmpdir(), `codex-paper-answer-${slug}-${Date.now()}.md`)
-
   try {
-    const codexBin = resolveCodexBin()
-    const childEnv = {
-      ...process.env,
-      PATH: [
-        path.dirname(process.execPath),
-        path.dirname(codexBin),
-        process.env.PATH || ''
-      ].filter(Boolean).join(path.delimiter)
-    }
-    const args = [
-      'exec',
-      '--skip-git-repo-check',
-      '--sandbox',
-      'read-only',
-      '--cd',
+    const { answer } = await askCodexWorker({
+      slug,
       paperDir,
-      '-o',
-      outputPath,
-      '-'
-    ]
-
-    const { stdout } = await runCodex(codexBin, args, fallbackPrompt, paperDir, childEnv)
-
-    const answer = fs.existsSync(outputPath)
-      ? fs.readFileSync(outputPath, 'utf8').trim()
-      : stdout.trim()
+      prompt: fallbackPrompt
+    })
 
     if (!answer) {
       throw createFallbackError(
@@ -322,18 +195,13 @@ export default defineEventHandler(async (event) => {
       throw e
     }
 
-    const detail = e.killed && e.signal === 'SIGTERM'
-      ? 'Codex timed out before returning an answer.'
-      : e.message
-
     throw createFallbackError(
       502,
       'Failed to run Codex for this question',
       fallbackPrompt,
-      detail
+      e.message
     )
   } finally {
     activeRequests.delete(slug)
-    fs.rmSync(outputPath, { force: true })
   }
 })
