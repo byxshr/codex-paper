@@ -37,6 +37,7 @@
 - **Evidence-first 论文准备** - 先生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`
 - **解析 benchmark 套件** - 基于固定的 5 篇论文 gold 集做回归检查
 - **Codex 写作学习包** - 基于论文正文和证据生成 `README.md`、`summary.md`、`insights.md`、`method.md`、`mental-model.md`、`reflection.md`、`qa.md`
+- **克制的图表学习路径** - 生成 `visual-assets.md`，只在合适位置插入有来源、有解释、能帮助理解的高价值图表和确定性图解
 - **代码演示** - 至少生成一个可独立运行、与论文核心概念相关的代码示例
 - **交互式网页查看器** - Nuxt.js 界面，默认展示用户可见材料，隐藏内部 JSON，并支持 `index.html` iframe 交互展示
 - **Ask Codex 追问** - 可以在单篇论文页向 Codex 提问，并把回答保存到 `chat-notes.md`
@@ -157,7 +158,7 @@ Codex 将自动触发学习工作流程并：
 3. 基于证据写作完整学习材料，而不是直接渲染机器 JSON
 4. 生成自包含的 `index.html` 交互式探索器
 5. 创建至少一个可独立运行的代码演示
-6. 复制原始 `paper.pdf`，并尽量提取关键图表和图像
+6. 复制原始 `paper.pdf`，筛选关键视觉资产，避免把低价值碎图堆进阅读流
 7. 创建隐藏的问答证据导航包，方便后续追问
 8. 更新全局搜索索引
 9. 自动启动网页查看器
@@ -189,6 +190,7 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 ├── papers/
 │   └── {paper-slug}/
 │       ├── README.md                     # 快速导航和概览
+│       ├── visual-assets.md              # 图表导航、来源和推荐阅读位置
 │       ├── summary.md                    # 详细摘要
 │       ├── insights.md                   # 核心洞察力（最重要！）
 │       ├── method.md                     # 方法结构、流程、伪代码和复现风险
@@ -198,7 +200,7 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 │       ├── chat-notes.md                 # Web UI 追问产生的问答笔记
 │       ├── index.html                    # 交互式 HTML 探索器
 │       ├── paper.pdf                     # 原始 PDF 文件副本
-│       ├── images/                       # 提取的图表和表格
+│       ├── images/                       # 筛选后的论文图表、表格和必要页面预览
 │       │   ├── fig1.png
 │       │   └── fig2.png
 │       └── code/                         # 代码演示

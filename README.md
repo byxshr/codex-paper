@@ -37,6 +37,7 @@ A research-paper study project that now includes a **Codex plugin skeleton** alo
 - **Evidence-first paper prep** - Generates internal evidence files such as `paper-data.json`, `facts.json`, and `analysis.json`
 - **Parser benchmark suite** - Regressions are checked against a fixed 5-paper gold set
 - **Codex-authored study package** - Produces `README.md`, `summary.md`, `insights.md`, `method.md`, `mental-model.md`, `reflection.md`, and `qa.md` from the paper and evidence
+- **Curated visual learning path** - Adds `visual-assets.md` and embeds only high-value, source-labeled figures, tables, and deterministic diagrams where they support the prose
 - **Code demonstrations** - Generates at least one independently runnable code example tied to the paper's core idea
 - **Interactive web viewer** - Nuxt.js interface that shows user-facing materials by default, hides internal JSON, and renders each paper's `index.html` in an iframe
 - **Ask Codex follow-ups** - Paper pages can send grounded follow-up questions to Codex and save answers in `chat-notes.md`
@@ -157,7 +158,7 @@ Codex will automatically trigger the study workflow and:
 3. Author complete study materials from evidence instead of directly rendering machine JSON
 4. Generate a self-contained interactive `index.html`
 5. Create at least one independently runnable code demonstration
-6. Copy the original `paper.pdf` and extract key figures and images where possible
+6. Copy the original `paper.pdf`, curate useful visual assets, and avoid dumping low-value extracted fragments into the reading flow
 7. Create a hidden answering pack for future grounded follow-up questions
 8. Update the global search index
 9. Launch the web viewer automatically
@@ -189,6 +190,7 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 ├── papers/
 │   └── {paper-slug}/
 │       ├── README.md                     # Quick navigation and overview
+│       ├── visual-assets.md              # Curated figure/table guide with sources and reading placement
 │       ├── summary.md                    # Detailed summary
 │       ├── insights.md                   # Key insights (most important!)
 │       ├── method.md                     # Method structure, flow, pseudocode, reproducibility risks
@@ -198,7 +200,7 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │       ├── chat-notes.md                 # Follow-up Q&A notes created by the Web UI
 │       ├── index.html                    # Interactive HTML explorer
 │       ├── paper.pdf                     # Copy of the original PDF
-│       ├── images/                       # Extracted figures and tables
+│       ├── images/                       # Curated extracted figures, tables, and necessary page previews
 │       │   ├── fig1.png
 │       │   └── fig2.png
 │       └── code/                         # Code demonstrations

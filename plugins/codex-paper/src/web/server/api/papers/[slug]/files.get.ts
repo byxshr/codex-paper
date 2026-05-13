@@ -19,6 +19,7 @@ const HIDDEN_MACHINE_FILES = new Set([
 
 const ROOT_ITEM_ORDER = [
   'README.md',
+  'visual-assets.md',
   'index.html',
   'summary.md',
   'insights.md',
