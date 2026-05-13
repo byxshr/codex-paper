@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { homedir } from 'os'
 import { askCodexWorker } from '../../../utils/codexWorker'
+import { appendChatNote } from '../../../utils/chatNotes'
 
 const MAX_QUESTION_LENGTH = 4_000
 const MAX_SELECTED_FILE_LENGTH = 500
@@ -85,35 +86,6 @@ function redactForbiddenResidues(text: string) {
   )
 }
 
-function appendChatNote(paperDir: string, question: string, answer: string, selectedFile: string) {
-  const timestamp = new Date().toISOString()
-  const selectedFileLine = selectedFile ? `当前材料：\`${selectedFile}\`` : '当前材料：未指定'
-  const safeQuestion = redactForbiddenResidues(question)
-  const safeAnswer = redactForbiddenResidues(answer)
-  const note = [
-    '',
-    '---',
-    '',
-    `## ${timestamp}`,
-    '',
-    selectedFileLine,
-    '',
-    '### 问题',
-    '',
-    safeQuestion,
-    '',
-    '### 回答',
-    '',
-    safeAnswer.trim(),
-    '',
-    '### 来源说明',
-    '',
-    '本回答由 Codex 基于学习包、隐藏问答导航包和本地论文证据生成。'
-  ].join('\n')
-
-  fs.appendFileSync(path.join(paperDir, 'chat-notes.md'), note, 'utf8')
-}
-
 function createFallbackError(statusCode: number, statusMessage: string, fallbackPrompt: string, detail?: string) {
   return createError({
     statusCode,
@@ -184,11 +156,17 @@ export default defineEventHandler(async (event) => {
       )
     }
 
-    appendChatNote(paperDir, question, answer, selectedFile)
+    const savedNote = appendChatNote(
+      paperDir,
+      redactForbiddenResidues(question),
+      redactForbiddenResidues(answer),
+      selectedFile
+    )
 
     return {
       answer,
-      savedTo: 'chat-notes.md'
+      savedTo: savedNote.savedTo,
+      entryId: savedNote.entryId
     }
   } catch (e: any) {
     if (e.statusCode) {

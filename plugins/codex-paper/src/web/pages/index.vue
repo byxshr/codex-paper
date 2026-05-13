@@ -34,14 +34,51 @@
       <div v-else-if="displayedPapers.length === 0" class="empty-state">
         <p>No papers match your filters.</p>
       </div>
-      <div v-else :class="viewMode === 'grid' ? 'papers-grid' : 'papers-list'">
+      <section v-else class="collection-directory" aria-label="Collection directory">
+        <div class="collection-directory__header">
+          <div>
+            <h2>Collection Directory</h2>
+            <p>{{ displayedPapers.length }} {{ displayedPapers.length === 1 ? 'paper' : 'papers' }} in the current view</p>
+          </div>
+          <button
+            class="collection-directory__toggle"
+            type="button"
+            @click="directoryCollapsed = !directoryCollapsed"
+          >
+            {{ directoryCollapsed ? 'Show' : 'Hide' }}
+          </button>
+        </div>
+
+        <div v-if="!directoryCollapsed" class="collection-directory__groups">
+          <div
+            v-for="group in directoryGroups"
+            :key="group.label"
+            class="collection-directory__group"
+          >
+            <h3>{{ group.label }}</h3>
+            <ol>
+              <li v-for="paper in group.papers" :key="paper.slug">
+                <a :href="`#${paperAnchorId(paper.slug)}`">{{ paper.title }}</a>
+                <span v-if="paper.tags?.length" class="collection-directory__meta">
+                  {{ paper.tags.slice(0, 2).join(' · ') }}
+                </span>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <div v-if="displayedPapers.length > 0" :class="viewMode === 'grid' ? 'papers-grid' : 'papers-list'">
         <PaperCard
           v-for="paper in displayedPapers"
           :key="paper.slug"
+          :id="paperAnchorId(paper.slug)"
           :paper="paper"
           :view-mode="viewMode"
+          :expanded="expandedPaperSlugs.includes(paper.slug)"
           @edit-tags="openTagEditor(paper)"
           @remove="handleRemovePaper"
+          @toggle-expand="togglePaperExpansion(paper.slug)"
         />
       </div>
     </div>
@@ -68,6 +105,8 @@ const sortBy = ref('default')
 const viewMode = ref<'grid' | 'list'>('grid')
 const editingPaper = ref<Paper | null>(null)
 const tagSaveError = ref<string | null>(null)
+const directoryCollapsed = ref(false)
+const expandedPaperSlugs = ref<string[]>([])
 
 onMounted(async () => {
   await loadPapers()
@@ -118,6 +157,30 @@ const displayedPapers = computed(() => {
 
   return result
 })
+
+const paperAnchorId = (slug: string) => `paper-${slug}`
+
+const directoryGroups = computed(() => {
+  const groups = new Map<string, Paper[]>()
+
+  displayedPapers.value.forEach((paper) => {
+    const label = paper.year
+      ? String(paper.year)
+      : paper.date?.slice(0, 4) || 'Undated'
+    groups.set(label, [...(groups.get(label) || []), paper])
+  })
+
+  return Array.from(groups.entries()).map(([label, groupedPapers]) => ({
+    label,
+    papers: groupedPapers
+  }))
+})
+
+const togglePaperExpansion = (slug: string) => {
+  expandedPaperSlugs.value = expandedPaperSlugs.value.includes(slug)
+    ? expandedPaperSlugs.value.filter((item) => item !== slug)
+    : [...expandedPaperSlugs.value, slug]
+}
 
 const handleSearch = (query: string) => {
   searchQuery.value = query
@@ -255,6 +318,7 @@ h1 {
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 1.5rem;
   margin-top: 2rem;
+  align-items: start;
 }
 
 .papers-list {
@@ -262,6 +326,96 @@ h1 {
   flex-direction: column;
   gap: 1rem;
   margin-top: 2rem;
+}
+
+.collection-directory {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  margin-top: 1.5rem;
+}
+
+.collection-directory__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.collection-directory h2 {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.collection-directory p {
+  margin: 0.25rem 0 0 0;
+  color: #6b7280;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
+}
+
+.collection-directory__toggle {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  border-radius: 0.375rem;
+  color: #374151;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.825rem;
+  font-weight: 600;
+  padding: 0.375rem 0.65rem;
+}
+
+.collection-directory__toggle:hover {
+  background: #f3f4f6;
+}
+
+.collection-directory__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem 1.5rem;
+  margin-top: 1rem;
+}
+
+.collection-directory__group h3 {
+  margin: 0 0 0.5rem 0;
+  color: #4b5563;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.collection-directory__group ol {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.collection-directory__group li {
+  color: #6b7280;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  margin: 0.4rem 0;
+}
+
+.collection-directory__group a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.collection-directory__group a:hover {
+  text-decoration: underline;
+}
+
+.collection-directory__meta {
+  color: #9ca3af;
+  display: block;
+  font-size: 0.78rem;
+  margin-top: 0.1rem;
 }
 
 /* States */
@@ -332,5 +486,21 @@ h1 {
   padding: 0.5rem 0.75rem;
   font-family: 'Inter', sans-serif;
   font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+  .library-content {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .papers-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .collection-directory__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 </style>

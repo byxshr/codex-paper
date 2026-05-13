@@ -133,6 +133,10 @@
             </div>
 
             <p v-if="askError" class="ask-error">{{ askError }}</p>
+            <div v-if="askSavedTo" class="ask-saved">
+              <span>已保存到 {{ askSavedTo }}</span>
+              <button type="button" @click="openChatNotes">查看历史</button>
+            </div>
 
             <div v-if="askAnswer" class="ask-answer markdown-body" v-html="renderedAskAnswer"></div>
           </section>
@@ -248,6 +252,8 @@ const askError = ref('')
 const askLoading = ref(false)
 const fallbackPrompt = ref('')
 const copyStatus = ref('')
+const askSavedTo = ref('')
+const askEntryId = ref('')
 
 const loadFileTree = async () => {
   const tree = await $fetch<FileNode[]>(`/api/papers/${slug}/files`)
@@ -357,9 +363,11 @@ const submitAsk = async () => {
   askAnswer.value = ''
   fallbackPrompt.value = ''
   copyStatus.value = ''
+  askSavedTo.value = ''
+  askEntryId.value = ''
 
   try {
-    const response = await $fetch<{ answer: string; savedTo: string }>(`/api/papers/${slug}/ask`, {
+    const response = await $fetch<{ answer: string; savedTo: string; entryId: string }>(`/api/papers/${slug}/ask`, {
       method: 'POST',
       body: {
         question,
@@ -368,7 +376,13 @@ const submitAsk = async () => {
     })
 
     askAnswer.value = response.answer
+    askSavedTo.value = response.savedTo
+    askEntryId.value = response.entryId
     await loadFileTree()
+    if (selectedFile.value === response.savedTo) {
+      await loadFile(response.savedTo)
+      scrollToChatEntry(response.entryId)
+    }
   } catch (e: any) {
     askError.value = e.data?.statusMessage || e.statusMessage || e.message || 'Codex 回答失败'
     fallbackPrompt.value = e.data?.data?.fallbackPrompt || ''
@@ -386,6 +400,23 @@ const copyFallbackPrompt = async () => {
   } catch {
     copyStatus.value = '复制失败'
   }
+}
+
+const scrollToChatEntry = (entryId: string) => {
+  if (!entryId) return
+
+  window.setTimeout(() => {
+    document.getElementById(entryId)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    })
+  }, 100)
+}
+
+const openChatNotes = async () => {
+  const target = askSavedTo.value || 'chat-notes.md'
+  await loadFile(target)
+  scrollToChatEntry(askEntryId.value)
 }
 
 const openHtmlInNewTab = () => {
@@ -1067,6 +1098,30 @@ useHead({
   margin: 0.875rem 0 0;
   color: #b91c1c;
   font-size: 0.9rem;
+}
+
+.ask-saved {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.875rem;
+  color: #166534;
+  font-size: 0.875rem;
+}
+
+.ask-saved button {
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  background: #f0fdf4;
+  color: #166534;
+  cursor: pointer;
+  font: 0.825rem/1 'Inter', sans-serif;
+  font-weight: 600;
+  padding: 0.45rem 0.65rem;
+}
+
+.ask-saved button:hover {
+  background: #dcfce7;
 }
 
 .ask-answer {
