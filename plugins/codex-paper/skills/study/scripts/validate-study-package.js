@@ -6,6 +6,7 @@ import { spawnSync } from 'child_process';
 
 const REQUIRED_FILES = [
   'README.md',
+  'visual-assets.md',
   'summary.md',
   'insights.md',
   'method.md',
@@ -18,6 +19,7 @@ const REQUIRED_FILES = [
 
 const MARKDOWN_FILES = [
   'README.md',
+  'visual-assets.md',
   'summary.md',
   'insights.md',
   'method.md',
@@ -51,6 +53,23 @@ const QA_LEVELS = [
   { key: 'intermediate', labels: ['intermediate', '中级'] },
   { key: 'advanced', labels: ['advanced', '高级'] }
 ];
+
+const EMBEDDED_VISUAL_FILES = [
+  'README.md',
+  'summary.md',
+  'method.md'
+];
+
+const SOURCE_MARKER = /(?:来源|源自|图\s*\d*|表\s*\d*|第\s*\d+\s*页|页码|章节|节|附录|source|figure|fig\.?|table|page|section|appendix|explanatory redraw|teaching redraw|教学重绘|解释性图解)/i;
+const VISUAL_VALUE_MARKER = /(?:帮助|理解|说明|展示|对比|定位|读图|学习价值|用途|推荐|clarif|helps|shows|illustrates|maps|compares|reading|placement|useful|why it matters)/i;
+const NO_USEFUL_VISUALS = /(?:无可用|没有可用|未发现|缺少|不足以|图表质量不足|低置信|no useful|no high-value|not enough|unavailable|insufficient|limited visual)/i;
+const METHOD_OVERVIEW_MARKER = /(?:pipeline|method|mechanism|architecture|formula|benchmark|dashboard|stage|training|agent loop|overview|流程|方法|机制|架构|公式|基准|结果|阶段|训练|总览|探索器)/i;
+const IMAGEGEN_RESIDUE = /(?:\bimagegen\b|\bgenerated_images\b|\bgenerated_pipeline\b|\bgenerated_cover\b|concept poster|AI-generated image|Codex image generation|图片生成提示词|Codex\s*图片生成|生成式封面|概念海报)/i;
+const PREVIEW_ASSET_MARKER = /(?:page[_-]?preview|preview|navigation[_-]?only|page[_-]?\d{1,4}[_-]?preview|页面预览|整页预览|page preview)/i;
+const NAVIGATION_ONLY_MARKER = /(?:navigation[- ]only|navigation only|仅为定位|定位页预览|只用于定位|仅用于定位|不进入正文|不要插入正文|not for body|not embedded|not inserted|body prose)/i;
+const BODY_IMAGE_MIN_WIDTH = 600;
+const BODY_IMAGE_MIN_HEIGHT = 220;
+const BODY_IMAGE_MIN_PIXELS = 160000;
 
 function usage() {
   console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code] [--timeout-ms 20000]');
@@ -108,6 +127,180 @@ function resolvePaperDir(input) {
 
 function readText(filePath) {
   return fs.readFileSync(filePath, 'utf8');
+}
+
+function lineNumberAt(text, index) {
+  return text.slice(0, index).split('\n').length;
+}
+
+function extractMarkdownImageRefs(text) {
+  const refs = [];
+  const markdownPattern = /!\[([^\]]*)\]\(([^)\n]+)\)/g;
+  let match;
+
+  while ((match = markdownPattern.exec(text))) {
+    const rawTarget = match[2].trim().replace(/^<|>$/g, '');
+    const target = rawTarget.replace(/\s+["'][^"']*["']\s*$/, '').trim();
+    refs.push({
+      target,
+      alt: match[1].trim(),
+      lineNumber: lineNumberAt(text, match.index)
+    });
+  }
+
+  const htmlPattern = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+  while ((match = htmlPattern.exec(text))) {
+    refs.push({
+      target: match[1].trim(),
+      alt: '',
+      lineNumber: lineNumberAt(text, match.index)
+    });
+  }
+
+  return refs;
+}
+
+function resolveImageTarget(rawTarget) {
+  const target = String(rawTarget || '').trim();
+  if (!target) {
+    return { kind: 'empty', target };
+  }
+
+  if (/^(?:https?:|data:|mailto:)/i.test(target)) {
+    return { kind: 'external', target };
+  }
+
+  if (target.startsWith('/api/papers/') && target.includes('path=')) {
+    try {
+      const url = new URL(target, 'http://codex-paper.local');
+      const embeddedPath = url.searchParams.get('path');
+      if (embeddedPath) {
+        return { kind: 'local', target: decodeURIComponent(embeddedPath.replace(/#.*$/, '')) };
+      }
+    } catch {
+      return { kind: 'invalid', target };
+    }
+  }
+
+  if (target.startsWith('/')) {
+    return { kind: 'absolute', target };
+  }
+
+  try {
+    return { kind: 'local', target: decodeURIComponent(target.replace(/#.*$/, '')) };
+  } catch {
+    return { kind: 'invalid', target };
+  }
+}
+
+function hasMarkdownTable(text) {
+  return /^\s*\|.+\|\s*$/m.test(text) && /^\s*\|[\s:-]+\|\s*$/m.test(text);
+}
+
+function hasDeterministicDiagram(text) {
+  return /(?:```mermaid|<svg\b|<canvas\b|Mermaid|SVG|HTML\s+diagram|结构化表格|教学重绘|解释性图解|Explanatory redraw)/i.test(text);
+}
+
+function extractImagePathMentions(text) {
+  const mentions = [];
+  const pattern = /`([^`\n]+\.(?:png|jpe?g|gif|webp|bmp|svg))`/gi;
+  let match;
+  while ((match = pattern.exec(text))) {
+    mentions.push({
+      target: match[1].trim(),
+      lineNumber: lineNumberAt(text, match.index)
+    });
+  }
+  return mentions;
+}
+
+function readImageDimensions(filePath) {
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return null;
+  }
+
+  const buffer = fs.readFileSync(filePath);
+  if (buffer.length < 24) {
+    return null;
+  }
+
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20)
+    };
+  }
+
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 9 < buffer.length) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      const length = buffer.readUInt16BE(offset + 2);
+      if (
+        marker === 0xc0 ||
+        marker === 0xc1 ||
+        marker === 0xc2 ||
+        marker === 0xc3 ||
+        marker === 0xc5 ||
+        marker === 0xc6 ||
+        marker === 0xc7 ||
+        marker === 0xc9 ||
+        marker === 0xca ||
+        marker === 0xcb ||
+        marker === 0xcd ||
+        marker === 0xce ||
+        marker === 0xcf
+      ) {
+        return {
+          height: buffer.readUInt16BE(offset + 5),
+          width: buffer.readUInt16BE(offset + 7)
+        };
+      }
+      if (!Number.isFinite(length) || length < 2) {
+        break;
+      }
+      offset += 2 + length;
+    }
+  }
+
+  return null;
+}
+
+function isLikelyFullPagePreview(dimensions) {
+  if (!dimensions) {
+    return false;
+  }
+
+  const { width, height } = dimensions;
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+
+  const aspect = width / height;
+  return aspect >= 0.70 && aspect <= 0.82 && Math.max(width, height) >= 700;
+}
+
+function isSuspiciousOverCrop(dimensions) {
+  if (!dimensions) {
+    return false;
+  }
+
+  const { width, height } = dimensions;
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+
+  const aspect = width / height;
+  return width >= 1200 && height >= 850 && aspect <= 1.85;
 }
 
 function stripMarkdownNoise(text) {
@@ -347,6 +540,217 @@ function checkHtml(paperDir, findings) {
   if (!hasHandler) {
     addFinding(findings, 'errors', 'index.html has no JavaScript event handler for interaction.');
   }
+
+  const visibleHtmlText = stripHtmlNoise(html);
+  if (!METHOD_OVERVIEW_MARKER.test(visibleHtmlText)) {
+    addFinding(findings, 'errors', 'index.html does not appear to include a paper-grounded method overview, mechanism map, formula breakdown, or result dashboard.');
+  }
+}
+
+function checkNoImagegenResidues(paperDir, findings) {
+  for (const filename of USER_VISIBLE_TEXT_FILES) {
+    const filePath = path.join(paperDir, filename);
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+
+    const lines = readText(filePath).split('\n');
+    lines.forEach((line, index) => {
+      if (IMAGEGEN_RESIDUE.test(line)) {
+        addFinding(findings, 'errors', `${filename}:${index + 1} contains image-generation residue; default study packages must use paper figures, structured tables, or deterministic diagrams.`);
+      }
+    });
+  }
+}
+
+function checkImageReferencePath(paperDir, filename, ref, findings) {
+  const resolved = resolveImageTarget(ref.target);
+
+  if (resolved.kind === 'empty' || resolved.kind === 'invalid') {
+    addFinding(findings, 'errors', `${filename}:${ref.lineNumber} has an invalid image target: ${ref.target}`);
+    return null;
+  }
+
+  if (resolved.kind === 'external') {
+    addFinding(findings, 'errors', `${filename}:${ref.lineNumber} uses an external or embedded image target (${ref.target}); study-package visuals should be local package assets.`);
+    return null;
+  }
+
+  if (resolved.kind === 'absolute') {
+    addFinding(findings, 'errors', `${filename}:${ref.lineNumber} uses an absolute image path (${ref.target}); use a package-relative image path or Web UI raw path.`);
+    return null;
+  }
+
+  const normalized = path.normalize(resolved.target);
+  if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
+    addFinding(findings, 'errors', `${filename}:${ref.lineNumber} references an image outside the paper package: ${ref.target}`);
+    return null;
+  }
+
+  const imagePath = path.join(paperDir, normalized);
+  if (!fs.existsSync(imagePath)) {
+    addFinding(findings, 'errors', `${filename}:${ref.lineNumber} references missing image: ${ref.target}`);
+    return null;
+  }
+
+  return imagePath;
+}
+
+function checkBodyImageQuality(filename, ref, imagePath, findings) {
+  const basename = path.basename(ref.target);
+  const dimensions = readImageDimensions(imagePath);
+
+  if (PREVIEW_ASSET_MARKER.test(ref.target) || PREVIEW_ASSET_MARKER.test(basename)) {
+    addFinding(findings, 'errors', `${filename}:${ref.lineNumber} embeds a page preview/navigation preview in body prose. Page previews belong in visual-assets.md as navigation-only assets, not README/summary/method.`);
+  }
+
+  if (dimensions) {
+    const pixels = dimensions.width * dimensions.height;
+    if (dimensions.width < BODY_IMAGE_MIN_WIDTH || dimensions.height < BODY_IMAGE_MIN_HEIGHT || pixels < BODY_IMAGE_MIN_PIXELS) {
+      addFinding(findings, 'errors', `${filename}:${ref.lineNumber} embeds a low-resolution visual (${dimensions.width}x${dimensions.height}); use a readable crop/table/diagram instead.`);
+    }
+
+    if (isLikelyFullPagePreview(dimensions) && /(?:page|preview|导航|定位)/i.test(ref.target)) {
+      addFinding(findings, 'errors', `${filename}:${ref.lineNumber} embeds a likely full-page preview (${dimensions.width}x${dimensions.height}); use a local figure/table crop or teaching redraw in正文.`);
+    }
+
+    if (isSuspiciousOverCrop(dimensions)) {
+      addFinding(findings, 'warnings', `${filename}:${ref.lineNumber} embeds a very tall large visual (${dimensions.width}x${dimensions.height}); check that the crop contains only the target figure/table and its own caption, not neighboring prose or other figures.`);
+    }
+  }
+}
+
+function nearbyVisualContext(lines, lineNumber) {
+  const start = Math.max(0, lineNumber - 4);
+  const end = Math.min(lines.length, lineNumber + 3);
+  return lines.slice(start, end).join(' ');
+}
+
+function checkMarkdownVisualReferences(paperDir, findings) {
+  for (const filename of MARKDOWN_FILES) {
+    const filePath = path.join(paperDir, filename);
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+
+    const text = readText(filePath);
+    const lines = text.split('\n');
+    const refs = extractMarkdownImageRefs(text);
+
+    refs.forEach((ref) => {
+      const imagePath = checkImageReferencePath(paperDir, filename, ref, findings);
+
+      if (!EMBEDDED_VISUAL_FILES.includes(filename)) {
+        return;
+      }
+
+      if (imagePath) {
+        checkBodyImageQuality(filename, ref, imagePath, findings);
+      }
+
+      const context = nearbyVisualContext(lines, ref.lineNumber);
+      if (!SOURCE_MARKER.test(context)) {
+        addFinding(findings, 'errors', `${filename}:${ref.lineNumber} embeds a visual without nearby source text such as figure/table/page/section or explanatory-redraw labeling.`);
+      }
+      if (!VISUAL_VALUE_MARKER.test(context)) {
+        addFinding(findings, 'warnings', `${filename}:${ref.lineNumber} embeds a visual without a nearby explanation of how it helps the reader.`);
+      }
+    });
+  }
+}
+
+function isVisualLine(line) {
+  return /!\[[^\]]*\]\([^)]+\)|<img\b/i.test(line);
+}
+
+function isCaptionOnlyLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return true;
+  }
+  return trimmed.length < 160 && (SOURCE_MARKER.test(trimmed) || /^[_*> -]*(?:图|表|Figure|Fig\.|Table|Source|来源)/i.test(trimmed));
+}
+
+function checkVisualDensity(paperDir, findings) {
+  for (const filename of EMBEDDED_VISUAL_FILES) {
+    const filePath = path.join(paperDir, filename);
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+
+    const lines = readText(filePath).split('\n');
+    let visualRun = 0;
+
+    lines.forEach((line, index) => {
+      if (isVisualLine(line)) {
+        visualRun += 1;
+        if (visualRun > 2) {
+          addFinding(findings, 'errors', `${filename}:${index + 1} has more than two visuals in a row without explanatory prose.`);
+        }
+        return;
+      }
+
+      if (isCaptionOnlyLine(line)) {
+        return;
+      }
+
+      visualRun = 0;
+    });
+  }
+}
+
+function checkVisualAssetsIndex(paperDir, findings) {
+  const filename = 'visual-assets.md';
+  const filePath = path.join(paperDir, filename);
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const text = readText(filePath);
+  const plain = stripMarkdownNoise(text);
+
+  if (plain.trim().length < 80) {
+    addFinding(findings, 'errors', 'visual-assets.md is too short to serve as a curated visual asset guide.');
+  }
+
+  const refs = extractMarkdownImageRefs(text);
+  const hasVisualCandidate = refs.length > 0 || hasMarkdownTable(text) || hasDeterministicDiagram(text);
+  const explainsNoUsefulVisuals = NO_USEFUL_VISUALS.test(text);
+
+  if (!hasVisualCandidate && !explainsNoUsefulVisuals) {
+    addFinding(findings, 'errors', 'visual-assets.md must either list selected visual assets or explain why no useful visuals were available.');
+  }
+
+  if (!SOURCE_MARKER.test(text) && !explainsNoUsefulVisuals) {
+    addFinding(findings, 'errors', 'visual-assets.md must record source locations such as figure/table/page/section, or explain why no useful visuals were available.');
+  }
+
+  if (!VISUAL_VALUE_MARKER.test(text) && !explainsNoUsefulVisuals) {
+    addFinding(findings, 'errors', 'visual-assets.md must explain how selected visuals help readers and where they belong in the reading path.');
+  }
+
+  const visualPathMentions = [
+    ...extractImagePathMentions(text),
+    ...refs.map((ref) => ({ target: ref.target, lineNumber: ref.lineNumber }))
+  ];
+  const lines = text.split('\n');
+  for (const mention of visualPathMentions) {
+    if (!PREVIEW_ASSET_MARKER.test(mention.target)) {
+      continue;
+    }
+
+    const sectionStart = Math.max(0, mention.lineNumber - 6);
+    const sectionEnd = Math.min(lines.length, mention.lineNumber + 7);
+    const sectionText = lines.slice(sectionStart, sectionEnd).join(' ');
+
+    if (!NAVIGATION_ONLY_MARKER.test(sectionText)) {
+      addFinding(findings, 'errors', `visual-assets.md:${mention.lineNumber} lists a page preview without navigation-only labeling.`);
+    }
+
+    if (/(?:推荐阅读位置|recommended reading|reading placement).*(?:README|summary|method)/i.test(sectionText)) {
+      addFinding(findings, 'errors', `visual-assets.md:${mention.lineNumber} recommends a page preview for正文 files; page previews should be navigation-only.`);
+    }
+  }
 }
 
 function commandForCodeFile(filename) {
@@ -410,9 +814,13 @@ function validate(args) {
 
   const codeFiles = checkRequiredFiles(paperDir, findings);
   checkForbiddenResidues(paperDir, findings);
+  checkNoImagegenResidues(paperDir, findings);
   checkQa(paperDir, findings);
   checkLanguage(paperDir, args.lang, findings);
   checkHtml(paperDir, findings);
+  checkVisualAssetsIndex(paperDir, findings);
+  checkMarkdownVisualReferences(paperDir, findings);
+  checkVisualDensity(paperDir, findings);
 
   if (args.runCode) {
     runCodeDemos(paperDir, codeFiles, args.timeoutMs, findings);

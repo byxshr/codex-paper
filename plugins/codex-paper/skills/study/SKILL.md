@@ -21,6 +21,7 @@ Required user-visible files:
 
 ```text
 README.md
+visual-assets.md
 summary.md
 insights.md
 qa.md
@@ -117,6 +118,33 @@ Codex must author these files directly from the paper evidence. Do not use `rend
 
 Ground every claim in `paper-data.json`, `facts.json`, `analysis.json`, or direct `rawText` reading. Do not invent metrics, datasets, model sizes, ablations, code links, training stages, or conclusions. When mentioning quantitative results, use a natural source note such as `来源：实验部分` or `Source: Experiments`; do not expose evidence IDs.
 
+### Rich Media Policy
+
+Use figures, tables, and diagrams to reduce reading effort, not to increase asset volume.
+
+Allowed visual sources:
+
+* original figures or tables extracted from the paper PDF
+* structured Markdown/HTML tables rebuilt from evidenced paper values
+* deterministic Mermaid, SVG, HTML, or CSS diagrams created from paper evidence
+* high-resolution local crops produced from PDF vector content when the crop is readable and semantically correct
+
+Do not use Codex image generation, imagegen, generated posters, generated covers, or AI-created bitmap pipeline figures in the default study workflow.
+
+Insert visuals adaptively:
+
+* architecture, system, and multi-stage training papers may need more visuals
+* theoretical, short empirical, or position papers should stay more text-led
+* no more than two visuals should appear back-to-back without explanatory prose
+* every embedded visual must be next to the paragraph it clarifies
+* every embedded visual needs a short caption or note explaining the source and what it helps readers understand
+* original figure/table crops should include the target figure's own caption when it remains readable and does not pull in unrelated content
+* before embedding or renaming a crop, check that it does not include neighboring prose, another figure/table caption, page headers, or unrelated page content
+* page previews are navigation aids only; do not embed `*_page_preview.*`, `*preview.*`, or `navigation_only_*` assets in `README.md`, `summary.md`, or `method.md`
+* when a PDF figure is vector-only and no reliable local crop is available, use a Mermaid/SVG/HTML teaching redraw in the body and list the page preview only in `visual-assets.md`
+
+Prefer structured tables over screenshots when the paper values can be recovered safely. Use screenshots only when layout matters or table extraction is unreliable.
+
 ### README.md
 
 Purpose: orientation and navigation.
@@ -129,7 +157,26 @@ Include:
 * estimated study time
 * generated file map
 * key takeaways
+* a short note pointing to `visual-assets.md` when figures or tables are used
 * parser or evidence limitations, if any
+
+### visual-assets.md
+
+Purpose: curated visual navigation and visual-quality record.
+
+Include only high-value visual assets, not every extracted image.
+
+For each selected asset, include:
+
+* asset type: original figure/table crop, original figure/table crop with caption, structured table, Mermaid/SVG/HTML teaching redraw, or navigation-only page preview
+* path or section where it appears
+* source location: figure/table number, page, section, appendix, or natural paper location
+* recommended reading location, such as README, summary, method, or index.html
+* one short explanation of how it helps understanding
+
+For navigation-only page previews, explicitly mark them as navigation-only and explain that they should not be inserted into body prose. Do not recommend navigation-only previews for `README.md`, `summary.md`, or `method.md`.
+
+If no useful figure or table is available, explain why and mention whether a small evidence-grounded teaching diagram is used instead.
 
 ### summary.md
 
@@ -170,7 +217,7 @@ Include:
 * implementation pitfalls
 * reproduction risks
 * hyperparameters, model variants, stages, datasets, or metrics only when present in the paper
-* an ASCII diagram if it clarifies the method
+* a compact evidence-grounded Mermaid/SVG/HTML diagram if it clarifies the method
 
 ### mental-model.md
 
@@ -262,6 +309,7 @@ Requirements:
 * no external fetch, CDN, localStorage, remote fonts, or network dependency
 * works in a sandboxed iframe
 * contains at least one real interactive control
+* includes a method overview, mechanism map, formula breakdown, or result dashboard
 * the control visibly changes a diagram, explanation, table, or comparison
 * uses only real paper concepts, metrics, stages, parameters, or comparisons
 
@@ -269,7 +317,7 @@ If the paper lacks high-confidence quantitative results, explicitly state that t
 
 Choose an interaction that fits the paper: architecture explorer, training-stage switcher, result comparison, parameter-scale selector, formula breakdown, pipeline diagram, agent loop explorer, or benchmark dashboard.
 
-## Step 7: Images
+## Step 7: Visual Assets
 
 Try to extract figures:
 
@@ -288,7 +336,18 @@ images/training_pipeline.png
 images/results_table.png
 ```
 
-Do not invent or redraw figures unless the user asks for a new explanatory illustration.
+After extraction:
+
+* discard or ignore tiny fragments, decorative icons, duplicate crops, low-resolution previews, and low-information page previews
+* keep only visuals that help explain the method, main results, architecture, formula, data construction, or evaluation
+* write `visual-assets.md` as the curated index
+* embed only readable local crops, structured tables, or deterministic teaching redraws near the relevant prose in `README.md`, `summary.md`, or `method.md`
+* prefer local figure/table crops that include the target caption, but reject crops that include another figure's caption, page headers, or unrelated body prose
+* avoid image dumps; if several visuals are useful, spread them across the reading path with explanatory text
+* label deterministic redraws as `教学重绘` or `Explanatory redraw`
+* keep full-page previews only as navigation-only entries in `visual-assets.md`
+
+Do not invent paper figures. Do not use Codex image generation or bitmap image generation for pipeline figures in this workflow. If a new explanatory diagram is useful, create it as Mermaid, SVG, or self-contained HTML/CSS from evidenced paper concepts.
 
 ## Step 8: Answering Pack For Follow-Up Questions
 
@@ -316,6 +375,7 @@ Before finishing, inspect every user-visible file:
 
 ```text
 README.md
+visual-assets.md
 summary.md
 insights.md
 method.md
@@ -330,6 +390,7 @@ Verify:
 
 * all required files exist
 * `paper.pdf` exists
+* `visual-assets.md` exists and explains selected visuals or why no useful visuals were available
 * `.codex-paper/answering-pack.md` exists for follow-up questions
 * `code/` contains at least one runnable demo
 * `qa.md` contains Basic, Intermediate, and Advanced sections; default 15 questions, or 9-15 with an explicit reduction explanation
@@ -337,7 +398,9 @@ Verify:
 * proper nouns and technical terms are preserved
 * no raw JSON, field names, evidence IDs, `Result 1`, `See evidence`, or parser labels appear
 * no unsupported numeric claim appears
-* `index.html` is self-contained and interactive
+* embedded visuals use existing local paths and have source/explanation text
+* no Codex image generation, imagegen prompt, generated bitmap pipeline, cover, or poster appears in the package
+* `index.html` is self-contained, interactive, and contains a paper-grounded method overview
 
 Run the validation script after generating the package:
 
