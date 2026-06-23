@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { validateReasoningPackage } from './validate-reasoning.js';
+import { REQUIRED_REFLECTION_HEADINGS } from '../profiles/profile-rules.js';
 
 const REQUIRED_FILES = [
   'README.md',
@@ -40,9 +41,13 @@ const FORBIDDEN_RESIDUES = [
   /\bcoreClaims\b/i,
   /\bkeyResults\b/i,
   /\bopenQuestions\b/i,
+  /\bsourceType\b/i,
   /\bparserVersion\b/i,
   /\bpaperSlug\b/i,
   /\brawText\b/i,
+  /\bevidence-ledger(?:\.json)?\b/i,
+  /\breasoning-analysis(?:\.json)?\b/i,
+  /\bev-p\d{3}-[a-z]+-[a-f0-9]{10}\b/i,
   /\bResult\s+\d+\b/i,
   /\bSee evidence\b/i,
   /\b(?:claim|result|limitation):\d+\b/i,
@@ -739,6 +744,114 @@ function checkVisualDensity(paperDir, findings) {
   }
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasExactSecondLevelHeading(text, heading) {
+  const pattern = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, 'm');
+  return pattern.test(text);
+}
+
+function checkV2Reflection(paperDir, findings) {
+  const filePath = path.join(paperDir, 'reflection.md');
+  if (!fs.existsSync(filePath)) return;
+  const text = readText(filePath);
+  for (const heading of REQUIRED_REFLECTION_HEADINGS) {
+    if (!hasExactSecondLevelHeading(text, heading)) {
+      addFinding(findings, 'errors', `reflection.md is missing required v2 heading: ## ${heading}`);
+    }
+  }
+}
+
+function checkV2MethodContract(paperDir, findings) {
+  const filePath = path.join(paperDir, 'method.md');
+  if (!fs.existsSync(filePath)) return;
+  const text = stripMarkdownNoise(readText(filePath));
+  if (!/(?:support criteria|支持标准|支持判据|支持条件)/i.test(text)) {
+    addFinding(findings, 'errors', 'method.md must include minimal reproduction support criteria.');
+  }
+  if (!/(?:falsification criteria|证伪标准|反证标准|证伪条件|falsify)/i.test(text)) {
+    addFinding(findings, 'errors', 'method.md must include minimal reproduction falsification criteria.');
+  }
+}
+
+function checkV2QaContract(paperDir, findings) {
+  const filePath = path.join(paperDir, 'qa.md');
+  if (!fs.existsSync(filePath)) return;
+  const text = stripMarkdownNoise(readText(filePath));
+  const required = [
+    ['author reasoning', /(?:作者推理|reasoning path|author reasoning)/i],
+    ['paper claim vs inference', /(?:论文主张|paper claim).*(?:分析推断|inference)|(?:分析推断|inference).*(?:论文主张|paper claim)/is],
+    ['weakest assumption', /(?:最弱假设|weakest assumption)/i],
+    ['falsification', /(?:证伪|falsification|falsify)/i],
+    ['evidence boundary', /(?:证据范围|超出证据|evidence boundary|beyond the evidence)/i]
+  ];
+
+  for (const [label, pattern] of required) {
+    if (!pattern.test(text)) {
+      addFinding(findings, 'errors', `qa.md must include a v2 question about ${label}.`);
+    }
+  }
+}
+
+function hasNaturalEvidenceMarker(line) {
+  return /(?:论文\s*p\.?\s*\d+|p\.?\s*\d+|第\s*\d+\s*页|§|section|table\s*\d+|figure\s*\d+|fig\.?\s*\d+|表\s*\d+|图\s*\d+|实验部分|结果部分|附录|appendix)/i.test(line);
+}
+
+function hasSubstantiveNumericClaim(line) {
+  if (!/(?:\d+(?:\.\d+)?\s?%|\d+\.\d+|\d+(?:\.\d+)?\s?(?:x|ms|gb|mb|billion|million|tokens?|parameters?|bleu|points?))/i.test(line)) {
+    return false;
+  }
+  return /(?:improve|outperform|achieve|accuracy|score|result|benchmark|提升|优于|达到|准确率|结果|基准|指标)/i.test(line);
+}
+
+function checkV2NaturalEvidenceLocations(paperDir, findings) {
+  for (const filename of ['README.md', 'summary.md', 'insights.md', 'method.md', 'reflection.md']) {
+    const filePath = path.join(paperDir, filename);
+    if (!fs.existsSync(filePath)) continue;
+    const lines = stripMarkdownNoise(readText(filePath)).split('\n');
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('|')) return;
+      if (hasSubstantiveNumericClaim(trimmed) && !hasNaturalEvidenceMarker(trimmed)) {
+        addFinding(
+          findings,
+          'errors',
+          `${filename}:${index + 1} has a numeric conclusion without a natural paper location.`
+        );
+      }
+    });
+  }
+}
+
+function checkV2IndexContract(paperDir, findings) {
+  const filePath = path.join(paperDir, 'index.html');
+  if (!fs.existsSync(filePath)) return;
+  const text = stripHtmlNoise(readText(filePath));
+  const required = [
+    ['paper claims', /(?:论文主张|paper claims?|paper_claim)/i],
+    ['inferences', /(?:分析推断|推断|inferences?)/i],
+    ['speculations', /(?:研究猜想|猜测|speculations?)/i],
+    ['weakest assumption', /(?:最弱假设|weakest assumption)/i],
+    ['counterexample', /(?:最强反例|counterexample)/i]
+  ];
+
+  for (const [label, pattern] of required) {
+    if (!pattern.test(text)) {
+      addFinding(findings, 'errors', `index.html v2 interaction is missing ${label}.`);
+    }
+  }
+}
+
+function checkV2VisibleContentContract(paperDir, findings) {
+  checkV2Reflection(paperDir, findings);
+  checkV2MethodContract(paperDir, findings);
+  checkV2QaContract(paperDir, findings);
+  checkV2NaturalEvidenceLocations(paperDir, findings);
+  checkV2IndexContract(paperDir, findings);
+}
+
 function checkVisualAssetsIndex(paperDir, findings) {
   const filename = 'visual-assets.md';
   const filePath = path.join(paperDir, filename);
@@ -852,6 +965,7 @@ function validate(args) {
     return { paperDir, findings };
   }
 
+  const v2Package = isV2Package(paperDir);
   checkReasoningLayer(paperDir, args, findings);
 
   const codeFiles = checkRequiredFiles(paperDir, findings);
@@ -863,6 +977,9 @@ function validate(args) {
   checkVisualAssetsIndex(paperDir, findings);
   checkMarkdownVisualReferences(paperDir, findings);
   checkVisualDensity(paperDir, findings);
+  if (v2Package) {
+    checkV2VisibleContentContract(paperDir, findings);
+  }
 
   if (args.runCode) {
     runCodeDemos(paperDir, codeFiles, args.timeoutMs, findings);
