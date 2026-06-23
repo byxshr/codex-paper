@@ -10,7 +10,7 @@
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
-A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation, plus parser benchmarks, an evidence ledger, and an evidence-first research reasoning pipeline. The `$paper-study` workflow is designed for Codex to read the paper evidence files, complete a validated reasoning analysis, then author a complete study package instead of templating parsed JSON into final user-facing materials.
+Codex Paper is a Codex plugin that turns research papers into local study workspaces. It first builds a paper-only evidence record and a structured reasoning analysis, then has Codex write grounded notes, explanations, code demos, visuals, an interactive page, and follow-up Q&A context from that evidence instead of templating raw parser output into study materials.
 
 <table>
   <tr>
@@ -93,6 +93,8 @@ enabled = true
 ```
 
 Replace `/Users/YOUR_USER/codex-paper` with the absolute path to your clone, then restart Codex. Open `/plugins`, search for `codex-paper`, and install or enable it from the plugin browser if prompted.
+
+If you already installed an older Codex Paper plugin, update or reinstall it from `/plugins` after pulling this repository. Prefer the local marketplace entry that points at this checkout. If both an old `codex-paper@codex-paper` entry and a local `codex-paper@codex-paper-local` entry are enabled, disable the stale one so Codex loads the intended version.
 
 After restart, use:
 
@@ -211,14 +213,14 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │       ├── images/                       # Curated extracted figures, tables, and necessary page previews
 │       │   ├── fig1.png
 │       │   └── fig2.png
-│       └── code/                         # Code demonstrations
-│           └── core-concept-demo.py      # At least one runnable core-concept example
+│       ├── code/                         # Code demonstrations
+│       │   └── core-concept-demo.py      # At least one runnable core-concept example
 │
 │       # The following JSON files are internal evidence files and hidden in the Web UI by default
 │       ├── paper-data.json               # Canonical parsed paper facts
 │       ├── facts.json                    # Evidence-first claims, results, limitations
 │       ├── analysis.json                 # Structured analysis draft
-│       └── meta.json                     # Paper metadata (title, authors, etc.)
+│       ├── meta.json                     # Paper metadata (title, authors, etc.)
 │
 │       # Hidden local context for grounded follow-up answers
 │       └── .codex-paper/
@@ -255,6 +257,18 @@ Migrate a v1 package to v2 draft evidence/reasoning files without inventing high
 bash scripts/codex-paper.sh migrate ~/codex-papers/papers/{paper-slug}
 ```
 
+Out-of-library package directories must be migrated explicitly:
+
+```bash
+bash scripts/codex-paper.sh migrate /path/to/package --external-path
+```
+
+Before filling the draft reasoning analysis, you can sanity-check the migrated package:
+
+```bash
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --allow-draft
+```
+
 See [docs/evidence-ledger.md](docs/evidence-ledger.md), [docs/reasoning-analysis.md](docs/reasoning-analysis.md), [docs/package-v2.md](docs/package-v2.md), and [docs/migration-v1-to-v2.md](docs/migration-v1-to-v2.md) for the v2 contracts.
 
 ---
@@ -271,7 +285,7 @@ codex-paper/
 ├── plugins/
 │   └── codex-paper/
 │       ├── .codex-plugin/
-│   │   └── plugin.json              # Plugin manifest
+│       │   └── plugin.json              # Plugin manifest
 │       ├── skills/
 │       │   ├── study/
 │       │   │   ├── SKILL.md             # Study workflow definition
@@ -294,7 +308,11 @@ codex-paper/
 ├── benchmarks/
 │   ├── manifest.json                    # Fixed parser benchmark set
 │   ├── gold/                            # Gold expectations for the 5 papers
+│   ├── reasoning/                       # Reasoning validator fixtures
+│   ├── packages/                        # Visible package quality fixtures
 │   ├── run-benchmark.mjs                # Benchmark executor
+│   ├── run-reasoning-benchmark.mjs      # Reasoning benchmark entrypoint
+│   ├── run-package-benchmark.mjs        # Package benchmark entrypoint
 │   └── benchmark-report.mjs             # Human-readable report formatter
 └── README.md
 ```
@@ -304,10 +322,11 @@ codex-paper/
 1. **Study Skill** - Codex paper-reading and writing agent that generates the full study package
 2. **PDF Parser** - Uses a layered `PyMuPDF`-first parser with `pdf-parse` fallback and stable JSON output
 3. **Image Extractor** - Python script for PDF figure extraction
-4. **Preparation Pipeline** - Produces internal evidence files `paper-data.json`, `facts.json`, `analysis.json`, `meta.json`, and updates `~/codex-papers/index.json`
-5. **Web Viewer** - Nuxt.js application with Nitro APIs that displays user materials by default and hides machine JSON
-6. **Ask Codex API** - Reuses a long-running Codex MCP worker for grounded follow-up questions, then appends answers to `chat-notes.md`
-7. **Hooks System** - Automatic dependency installation and setup
+4. **Preparation Pipeline** - Produces internal evidence files `paper-data.json`, `facts.json`, `analysis.json`, `meta.json`, and v2 `evidence-ledger.json`, then updates `~/codex-papers/index.json`
+5. **Research Reasoning Validation** - Uses `reasoning-analysis.json`, paper profiles, and `validate-reasoning.js` to check evidence refs, source types, numeric grounding, reasoning DAGs, and critical analysis
+6. **Web Viewer** - Nuxt.js application with Nitro APIs that displays user materials by default, hides machine JSON, and shows v2 evidence audit and reasoning views
+7. **Ask Codex API** - Reuses a long-running Codex MCP worker for grounded follow-up questions, then appends answers to `chat-notes.md`
+8. **Hooks System** - Automatic dependency installation and setup
 
 ---
 
@@ -325,6 +344,7 @@ bash scripts/codex-paper.sh stop
 bash scripts/codex-paper.sh status
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh benchmark
+bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh benchmark-report
 ```
 
@@ -336,14 +356,17 @@ This keeps the local workflow in one place while `scripts/common.sh` stays inter
 # Test PDF parsing
 node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 
-# Prepare a paper into paper-data.json and facts.json
+# Prepare a paper into paper-data.json, facts.json, and evidence-ledger.json
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
+
+# Validate v2 research reasoning
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug --strict
 
 # Validate a generated study package
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh --run-code
 
-# Run the parser regression benchmark
-bash scripts/codex-paper.sh benchmark
+# Run parser, reasoning, and package benchmarks
+bash scripts/codex-paper.sh benchmark-all
 
 # Test web viewer
 bash scripts/codex-paper.sh start
