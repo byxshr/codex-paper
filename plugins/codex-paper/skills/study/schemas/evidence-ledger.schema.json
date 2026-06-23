@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-paper.local/schemas/evidence-ledger.schema.json",
+  "title": "Codex Paper Evidence Ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "paperSlug",
+    "parserVersion",
+    "generatedAt",
+    "document",
+    "sections",
+    "pages",
+    "evidence",
+    "quality"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "paperSlug": { "type": "string", "minLength": 1 },
+    "parserVersion": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "authors", "pageCount", "language", "sourceUrl", "sha256"],
+      "properties": {
+        "title": { "type": "string" },
+        "authors": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "pageCount": { "type": "integer", "minimum": 0 },
+        "language": { "type": "string" },
+        "sourceUrl": { "type": ["string", "null"] },
+        "sha256": { "type": ["string", "null"] }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "pages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/page" }
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parser", "readingOrder", "sectionCoverage", "tableExtraction", "warnings"],
+      "properties": {
+        "parser": { "enum": ["pymupdf", "pdf-parse", "unknown"] },
+        "readingOrder": { "enum": ["high", "medium", "low"] },
+        "sectionCoverage": { "enum": ["high", "partial", "none"] },
+        "tableExtraction": { "enum": ["structured", "text-only", "none"] },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "canonicalRole": {
+      "enum": [
+        "abstract",
+        "introduction",
+        "related_work",
+        "background",
+        "method",
+        "theory",
+        "experiments",
+        "evaluation",
+        "results",
+        "ablation",
+        "discussion",
+        "limitations",
+        "conclusion",
+        "appendix",
+        "references",
+        "other"
+      ]
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "normalizedTitle",
+        "canonicalRole",
+        "level",
+        "pageStart",
+        "pageEnd",
+        "startOffset",
+        "endOffset",
+        "confidence"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^sec-p\\d{3}-[a-z0-9_]+-\\d{2}$" },
+        "title": { "type": "string" },
+        "normalizedTitle": { "type": "string" },
+        "canonicalRole": { "$ref": "#/$defs/canonicalRole" },
+        "level": { "type": "integer", "minimum": 1 },
+        "pageStart": { "type": "integer", "minimum": 1 },
+        "pageEnd": { "type": "integer", "minimum": 1 },
+        "startOffset": { "type": "integer", "minimum": 0 },
+        "endOffset": { "type": "integer", "minimum": 0 },
+        "confidence": { "enum": ["high", "medium", "low"] }
+      }
+    },
+    "pageBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "text"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string" },
+        "bbox": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "fontSizeMedian": { "type": ["number", "null"] },
+        "isHeadingCandidate": { "type": "boolean" }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page", "text", "rawTextStart", "rawTextEnd", "blockCount"],
+      "properties": {
+        "page": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string" },
+        "rawTextStart": { "type": "integer", "minimum": 0 },
+        "rawTextEnd": { "type": "integer", "minimum": 0 },
+        "blockCount": { "type": "integer", "minimum": 0 },
+        "blocks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pageBlock" }
+        }
+      }
+    },
+    "evidenceKind": {
+      "enum": [
+        "paragraph",
+        "heading",
+        "abstract",
+        "caption",
+        "table",
+        "figure",
+        "equation",
+        "footnote",
+        "reference"
+      ]
+    },
+    "evidenceRole": {
+      "enum": [
+        "problem",
+        "motivation",
+        "prior_work",
+        "gap",
+        "claim_candidate",
+        "method",
+        "mechanism",
+        "assumption",
+        "experiment_setup",
+        "result",
+        "ablation",
+        "limitation",
+        "future_work",
+        "definition"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "roles", "text", "quote", "location", "labels", "source", "confidence"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^ev-p\\d{3}-[a-z]+-[a-f0-9]{10}$" },
+        "kind": { "$ref": "#/$defs/evidenceKind" },
+        "roles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidenceRole" },
+          "uniqueItems": true
+        },
+        "text": { "type": "string" },
+        "quote": { "type": "string" },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["page", "sectionId", "charStart", "charEnd"],
+          "properties": {
+            "page": { "type": "integer", "minimum": 1 },
+            "sectionId": { "type": ["string", "null"] },
+            "charStart": { "type": "integer", "minimum": 0 },
+            "charEnd": { "type": "integer", "minimum": 0 },
+            "blockIndex": { "type": ["integer", "null"], "minimum": 0 },
+            "bbox": {
+              "type": ["array", "null"],
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          }
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["figureNumber", "tableNumber", "equationNumber"],
+          "properties": {
+            "figureNumber": { "type": ["string", "null"] },
+            "tableNumber": { "type": ["string", "null"] },
+            "equationNumber": { "type": ["string", "null"] }
+          }
+        },
+        "source": { "const": "paper" },
+        "confidence": { "enum": ["high", "medium", "low"] }
+      }
+    }
+  }
+}
