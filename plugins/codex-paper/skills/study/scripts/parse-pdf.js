@@ -4,6 +4,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import pdf from 'pdf-parse';
+import { buildSectionTree } from './build-evidence-ledger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -355,6 +356,7 @@ function readWithPyMuPdf(pdfPath) {
   const script = `
 import json
 import sys
+import statistics
 import fitz
 
 doc = fitz.open(sys.argv[1])
@@ -371,8 +373,47 @@ if len(doc) > 0:
         if text:
             payload["firstPageBlocks"].append(text)
 
-for page in doc:
-    payload["pages"].append(page.get_text("text").replace("\\x00", " "))
+for page_index, page in enumerate(doc):
+    text = page.get_text("text").replace("\\x00", " ")
+    blocks = []
+    raw_blocks = page.get_text("dict").get("blocks", [])
+    font_sizes = []
+    for raw_block in raw_blocks:
+        if raw_block.get("type") != 0:
+            continue
+        lines = raw_block.get("lines", [])
+        block_text_parts = []
+        block_sizes = []
+        for line in lines:
+            line_parts = []
+            for span in line.get("spans", []):
+                span_text = str(span.get("text", "")).replace("\\x00", " ")
+                if span_text:
+                    line_parts.append(span_text)
+                    block_sizes.append(float(span.get("size", 0) or 0))
+            if line_parts:
+                block_text_parts.append("".join(line_parts))
+        block_text = "\\n".join(block_text_parts).strip()
+        if not block_text:
+            continue
+        if block_sizes:
+            font_sizes.extend(block_sizes)
+        median_size = statistics.median(block_sizes) if block_sizes else None
+        blocks.append({
+            "index": len(blocks),
+            "text": block_text,
+            "bbox": [float(value) for value in raw_block.get("bbox", [])[:4]],
+            "fontSizeMedian": median_size,
+            "isHeadingCandidate": bool(
+                median_size and block_sizes and median_size >= max(11.5, statistics.median(font_sizes or block_sizes) * 1.08)
+                and len(block_text) <= 140
+            )
+        })
+    payload["pages"].append({
+        "page": page_index + 1,
+        "text": text,
+        "blocks": blocks
+    })
 
 with open(sys.argv[2], "w", encoding="utf-8") as handle:
     json.dump(payload, handle, ensure_ascii=False)
@@ -444,12 +485,42 @@ async function extractRawPdfData(pdfPath) {
 
   try {
     const { raw, warnings } = readWithPyMuPdf(pdfPath);
+    let offset = 0;
+    const pages = (raw.pages || []).map((page, index) => {
+      const text = String(page.text || '');
+      const rawTextStart = offset;
+      const rawTextEnd = rawTextStart + text.length;
+      offset = rawTextEnd + 2;
+      return {
+        page: Number(page.page) || index + 1,
+        text,
+        rawTextStart,
+        rawTextEnd,
+        blockCount: Array.isArray(page.blocks) ? page.blocks.length : 0,
+        blocks: Array.isArray(page.blocks)
+          ? page.blocks.map((block, blockIndex) => ({
+            index: Number(block.index) || blockIndex,
+            text: cleanLine(block.text || ''),
+            bbox: Array.isArray(block.bbox) && block.bbox.length === 4 ? block.bbox : undefined,
+            fontSizeMedian: typeof block.fontSizeMedian === 'number' ? block.fontSizeMedian : null,
+            isHeadingCandidate: Boolean(block.isHeadingCandidate)
+          })).filter((block) => block.text)
+          : []
+      };
+    });
+
     return {
       metadata: raw.metadata || {},
       pageCount: raw.pageCount || 0,
       firstPageBlocks: (raw.firstPageBlocks || []).map(cleanLine).filter(Boolean),
-      pages: raw.pages || [],
-      warnings: warnings || parserWarnings
+      pages,
+      warnings: warnings || parserWarnings,
+      parserMetadata: {
+        parser: 'pymupdf',
+        parserVersion: PARSER_VERSION,
+        hasLayout: true,
+        warnings: warnings || parserWarnings
+      }
     };
   } catch (error) {
     parserWarnings.push(`PyMuPDF unavailable: ${error.message}`);
@@ -463,8 +534,20 @@ async function extractRawPdfData(pdfPath) {
     metadata: result.info || {},
     pageCount: result.numpages || 0,
     firstPageBlocks: lines.slice(0, 12),
-    pages: [result.text || ''],
-    warnings
+    pages: [{
+      page: 1,
+      text: result.text || '',
+      rawTextStart: 0,
+      rawTextEnd: String(result.text || '').length,
+      blockCount: result.text ? 1 : 0
+    }],
+    warnings,
+    parserMetadata: {
+      parser: 'pdf-parse',
+      parserVersion: PARSER_VERSION,
+      hasLayout: false,
+      warnings: warnings.concat('pdf-parse fallback has no page layout blocks or bounding boxes')
+    }
   };
 }
 
@@ -474,7 +557,7 @@ function buildFallbackTitle(pdfPath) {
 }
 
 function buildFactsTextSource(pages) {
-  return normalizeText(pages.join('\n\n'));
+  return normalizeText(pages.map((page) => typeof page === 'string' ? page : page.text || '').join('\n\n'));
 }
 
 export async function parsePdfDetailed(pdfPath) {
@@ -487,7 +570,7 @@ export async function parsePdfDetailed(pdfPath) {
   const firstPageBlocks = source.firstPageBlocks.map(cleanLine).filter(Boolean);
   const firstPageLines = uniq([
     ...firstPageBlocks.flatMap((block) => safeSplitLines(block)),
-    ...safeSplitLines(source.pages[0] || '').slice(0, 40)
+    ...safeSplitLines(source.pages[0]?.text || '').slice(0, 40)
   ]);
 
   const titleInfo = buildTitleFromBlocks(
@@ -532,16 +615,29 @@ export async function parsePdfDetailed(pdfPath) {
     parserVersion: PARSER_VERSION
   };
 
+  const sectionTree = buildSectionTree({
+    pages: source.pages,
+    rawText,
+    parserMetadata: source.parserMetadata || {}
+  });
+
   return {
-    ...publicData,
-    rawText
+    publicData,
+    rawText,
+    pages: source.pages,
+    sectionTree,
+    parserMetadata: source.parserMetadata || {
+      parser: 'unknown',
+      parserVersion: PARSER_VERSION,
+      hasLayout: false,
+      warnings: source.warnings || []
+    }
   };
 }
 
 export async function parsePdf(pdfPath) {
   const detailed = await parsePdfDetailed(pdfPath);
-  const { rawText: _rawText, ...publicData } = detailed;
-  return publicData;
+  return detailed.publicData;
 }
 
 async function runCli() {

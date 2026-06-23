@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { parsePdfDetailed } from './parse-pdf.js';
 import { buildAnalysisFromArtifacts } from './build-analysis.js';
+import { buildEvidenceLedger } from './build-evidence-ledger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +41,52 @@ function buildEvidenceItem(section, text) {
     section,
     quote: text
   };
+}
+
+function normalizeForEvidenceMatch(value) {
+  return String(value || '')
+    .replace(/\u0000/g, ' ')
+    .normalize('NFC')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function sha256File(filePath) {
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(filePath));
+  return hash.digest('hex');
+}
+
+function findEvidenceRefForQuote(ledger, quote) {
+  const normalizedQuote = normalizeForEvidenceMatch(quote);
+  if (!normalizedQuote || normalizedQuote.length < 24) {
+    return [];
+  }
+
+  const exact = ledger.evidence.find((item) => {
+    const normalizedText = normalizeForEvidenceMatch(item.text);
+    return normalizedText === normalizedQuote || normalizedText.includes(normalizedQuote) || normalizedQuote.includes(normalizedText);
+  });
+
+  return exact ? [exact.id] : [];
+}
+
+function attachLedgerEvidenceRefs(facts, ledger) {
+  const withRefs = structuredClone(facts);
+
+  for (const key of ['coreClaims', 'keyResults', 'limitations']) {
+    const items = Array.isArray(withRefs[key]) ? withRefs[key] : [];
+    for (const item of items) {
+      const quote = item.evidence?.quote || item.text || item.context || '';
+      const evidenceRefs = findEvidenceRefForQuote(ledger, quote);
+      if (evidenceRefs.length > 0) {
+        item.evidenceRefs = evidenceRefs;
+      }
+    }
+  }
+
+  return withRefs;
 }
 
 function extractCoreClaims(parsed) {
@@ -202,11 +250,13 @@ export async function preparePaper(userInput) {
     throw new Error(`PDF not found: ${inputPath}`);
   }
 
-  const parsed = await parsePdfDetailed(inputPath);
+  const detailed = await parsePdfDetailed(inputPath);
+  const parsed = detailed.publicData;
   const sourceFilename = path.basename(inputPath);
   const paperSlug = slugify(parsed.title || path.basename(inputPath, path.extname(inputPath)));
   const paperDir = path.join(PAPERS_ROOT, paperSlug);
   const today = new Date().toISOString().slice(0, 10);
+  const sourceSha256 = sha256File(inputPath);
 
   ensureDir(paperDir);
 
@@ -226,10 +276,19 @@ export async function preparePaper(userInput) {
     warnings: parsed.warnings,
     qualityFlags: parsed.qualityFlags,
     parserVersion: parsed.parserVersion,
-    rawText: parsed.rawText
+    rawText: detailed.rawText
   };
 
-  const facts = buildFacts(paperSlug, parsed);
+  const ledger = buildEvidenceLedger({
+    parsed: detailed,
+    source: {
+      sourceUrl,
+      sourceFilename,
+      sha256: sourceSha256
+    },
+    paperSlug
+  });
+  const facts = attachLedgerEvidenceRefs(buildFacts(paperSlug, parsed), ledger);
   const analysis = buildAnalysisFromArtifacts(paperData, facts);
   const meta = {
     title: parsed.title,
@@ -243,6 +302,13 @@ export async function preparePaper(userInput) {
     codeLinks: parsed.codeLinks,
     sourceFilename,
     parserVersion: parsed.parserVersion,
+    packageVersion: '2.0.0',
+    evidenceSchemaVersion: '2.0.0',
+    contextMode: 'paper-only',
+    generatedWith: {
+      pluginVersion: parsed.parserVersion,
+      parserVersion: parsed.parserVersion
+    },
     qualityFlags: parsed.qualityFlags,
     url: sourceUrl
   };
@@ -266,6 +332,7 @@ export async function preparePaper(userInput) {
 
   fs.copyFileSync(inputPath, path.join(paperDir, 'paper.pdf'));
   fs.writeFileSync(path.join(paperDir, 'paper-data.json'), JSON.stringify(paperData, null, 2));
+  fs.writeFileSync(path.join(paperDir, 'evidence-ledger.json'), JSON.stringify(ledger, null, 2));
   fs.writeFileSync(path.join(paperDir, 'facts.json'), JSON.stringify(facts, null, 2));
   fs.writeFileSync(path.join(paperDir, 'analysis.json'), JSON.stringify(analysis, null, 2));
   fs.writeFileSync(path.join(paperDir, 'meta.json'), JSON.stringify(meta, null, 2));
@@ -288,6 +355,7 @@ export async function preparePaper(userInput) {
     inputPath,
     sourceFilename,
     paperData,
+    ledger,
     facts,
     analysis
   };
@@ -306,6 +374,7 @@ async function runCli() {
     paperDir: result.paperDir,
     sourceFilename: result.sourceFilename,
     parserVersion: result.paperData.parserVersion,
+    evidenceCount: result.ledger.evidence.length,
     analysisVersion: result.analysis.analysisVersion
   }, null, 2)}\n`);
 }
