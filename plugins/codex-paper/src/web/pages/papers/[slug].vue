@@ -141,7 +141,20 @@
             <div v-if="askAnswer" class="ask-answer markdown-body" v-html="renderedAskAnswer"></div>
           </section>
 
-          <article class="content">
+          <nav v-if="reasoning?.available" class="reader-tabs" aria-label="v2 evidence views">
+            <button
+              v-for="tab in readerTabs"
+              :key="tab.key"
+              type="button"
+              class="reader-tab"
+              :class="{ active: activeReaderTab === tab.key }"
+              @click="activeReaderTab = tab.key"
+            >
+              {{ tab.label }}
+            </button>
+          </nav>
+
+          <article v-if="activeReaderTab === 'materials'" class="content">
             <div v-if="fileLoading" class="file-loading">
               <div class="shimmer"></div>
             </div>
@@ -169,9 +182,81 @@
               <p>暂无可显示内容</p>
             </div>
           </article>
+
+          <article v-else class="content evidence-content">
+            <section v-if="activeReaderTab === 'audit'" class="evidence-view">
+              <header class="evidence-view__header">
+                <div>
+                  <h2>证据审计</h2>
+                  <p>{{ reasoning.paperType }} · {{ reasoning.contextMode }} · {{ reasoning.evidenceQuality }}</p>
+                </div>
+                <span class="validation-pill">{{ reasoning.validationStatus || 'not validated' }}</span>
+              </header>
+
+              <div class="audit-grid">
+                <article v-for="claim in reasoning.centralClaims || []" :key="claim.id" class="audit-card">
+                  <div class="audit-card__top">
+                    <EvidenceBadge :source-type="claim.sourceType" />
+                    <span>{{ claim.confidence }}</span>
+                  </div>
+                  <h3>{{ claim.statement }}</h3>
+                  <p v-if="claim.scope">Scope: {{ claim.scope }}</p>
+                  <div class="evidence-buttons">
+                    <button v-for="ref in claim.evidenceRefs" :key="ref" type="button" @click="openEvidence(ref)">
+                      查看证据
+                    </button>
+                  </div>
+                </article>
+              </div>
+
+              <h3 class="section-label">验证链</h3>
+              <article v-for="validation in reasoning.validations || []" :key="validation.id" class="audit-card">
+                <div class="audit-card__top">
+                  <span class="node-type">{{ validation.kind }}</span>
+                  <EvidenceBadge :source-type="validation.sourceType" />
+                </div>
+                <p><strong>问题:</strong> {{ validation.question }}</p>
+                <p><strong>设计:</strong> {{ validation.design }}</p>
+                <p><strong>观察:</strong> {{ validation.observation }}</p>
+                <p><strong>结论:</strong> {{ validation.conclusion }}</p>
+                <div class="evidence-buttons">
+                  <button v-for="ref in validation.evidenceRefs" :key="ref" type="button" @click="openEvidence(ref)">
+                    查看证据
+                  </button>
+                </div>
+              </article>
+            </section>
+
+            <section v-else-if="activeReaderTab === 'reasoning'" class="evidence-view">
+              <header class="evidence-view__header">
+                <div>
+                  <h2>作者推理</h2>
+                  <p>从观察、约束或失败模式到设计和验证的路径。</p>
+                </div>
+              </header>
+              <ReasoningPath :nodes="reasoning.authorReasoningPath || []" @select-evidence="openEvidence" />
+            </section>
+
+            <section v-else-if="activeReaderTab === 'reviewer'" class="evidence-view">
+              <header class="evidence-view__header">
+                <div>
+                  <h2>审稿人视图</h2>
+                  <p>最弱假设、最小复现、最强反例和不确定区域。</p>
+                </div>
+              </header>
+              <ReviewerPanel :reasoning="reasoning" />
+            </section>
+          </article>
         </main>
       </div>
     </div>
+
+    <EvidenceDrawer
+      :open="evidenceDrawerOpen"
+      :evidence="selectedEvidence"
+      :slug="slug"
+      @close="evidenceDrawerOpen = false"
+    />
   </div>
 </template>
 
@@ -254,6 +339,17 @@ const fallbackPrompt = ref('')
 const copyStatus = ref('')
 const askSavedTo = ref('')
 const askEntryId = ref('')
+const activeReaderTab = ref<'materials' | 'audit' | 'reasoning' | 'reviewer'>('materials')
+const evidenceDrawerOpen = ref(false)
+const selectedEvidence = ref<any | null>(null)
+const { reasoning, loadReasoning, loadEvidence } = usePaperEvidence(slug)
+
+const readerTabs = [
+  { key: 'materials', label: '学习材料' },
+  { key: 'audit', label: '证据审计' },
+  { key: 'reasoning', label: '作者推理' },
+  { key: 'reviewer', label: '审稿人视图' }
+] as const
 
 const loadFileTree = async () => {
   const tree = await $fetch<FileNode[]>(`/api/papers/${slug}/files`)
@@ -277,6 +373,7 @@ onMounted(async () => {
 
     // Load file tree
     await loadFileTree()
+    await loadReasoning()
 
     await loadFile(pickDefaultFile(fileTree.value))
 
@@ -339,7 +436,22 @@ const loadFile = async (path: string) => {
 }
 
 const selectFile = (path: string) => {
+  activeReaderTab.value = 'materials'
   loadFile(path)
+}
+
+const openEvidence = async (evidenceId: string) => {
+  try {
+    selectedEvidence.value = await loadEvidence(evidenceId)
+    evidenceDrawerOpen.value = true
+  } catch (e: any) {
+    selectedEvidence.value = {
+      id: evidenceId,
+      quote: e.data?.statusMessage || e.statusMessage || e.message || '证据加载失败',
+      location: {}
+    }
+    evidenceDrawerOpen.value = true
+  }
 }
 
 const toggleSidebar = () => {
@@ -1134,12 +1246,140 @@ useHead({
   line-height: 1.7;
 }
 
+.reader-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 3rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+  overflow-x: auto;
+}
+
+.reader-tab {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  font: 0.875rem/1 Inter, sans-serif;
+  padding: 0.55rem 0.8rem;
+  white-space: nowrap;
+}
+
+.reader-tab:hover {
+  background: #f9fafb;
+}
+
+.reader-tab.active {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
 /* Content Area */
 .content {
   max-width: 920px;
   margin: 0 auto;
   padding: 3rem;
   animation: fadeIn 0.4s ease;
+}
+
+.evidence-content {
+  max-width: 1040px;
+  font-family: Inter, sans-serif;
+}
+
+.evidence-view {
+  display: grid;
+  gap: 1rem;
+}
+
+.evidence-view__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 1rem;
+}
+
+.evidence-view__header h2 {
+  margin: 0;
+  color: #111827;
+  font: 700 1.35rem/1.25 Inter, sans-serif;
+}
+
+.evidence-view__header p {
+  margin: 0.35rem 0 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.validation-pill {
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  color: #374151;
+  background: #ffffff;
+  font-size: 0.8rem;
+}
+
+.audit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.audit-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  background: #ffffff;
+}
+
+.audit-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+.audit-card h3,
+.section-label {
+  margin: 0;
+  color: #111827;
+  font: 700 1rem/1.4 Inter, sans-serif;
+}
+
+.audit-card p {
+  color: #374151;
+  line-height: 1.55;
+}
+
+.evidence-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.evidence-buttons button {
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  font: 0.78rem/1 Inter, sans-serif;
+  padding: 0.35rem 0.6rem;
+}
+
+.node-type {
+  color: #6b7280;
+  font: 700 0.75rem/1 Inter, sans-serif;
+  text-transform: uppercase;
 }
 
 /* Full-width content for HTML files */

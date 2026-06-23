@@ -13,6 +13,9 @@ const FORBIDDEN_RESIDUES = [
   'analysisVersion',
   'evidenceRefs',
   'coreClaims',
+  'sourceType',
+  'evidence-ledger',
+  'reasoning-analysis',
   'Result 1',
   'See evidence'
 ]
@@ -66,17 +69,23 @@ ${question}
 
 Answering rules:
 1. Answer in the same language as the user question. For Chinese questions, use Chinese prose except for proper nouns and established technical terms.
-2. Prefer evidence in this order: user-visible study materials, .codex-paper/answering-pack.md, facts.json / analysis.json / paper-data.json, then paper-data.rawText or the local paper.pdf text if needed.
+2. Prefer evidence in this order: user-visible study materials, reasoning-analysis.json, .codex-paper/answering-pack.md, evidence-ledger.json, facts.json / analysis.json / paper-data.json, then paper-data.rawText or the local paper.pdf text if needed.
 3. Only move to the next evidence layer when the previous layer is insufficient.
 4. Do not use live web search. Use only local files in the paper package.
 5. Do not write or modify files; the Web UI will save the final answer.
-6. Do not expose internal JSON field names, evidence IDs, parser object paths, or extraction labels such as analysisVersion, evidenceRefs, coreClaims, Result 1, or See evidence.
+6. Do not expose internal JSON field names, evidence IDs, parser object paths, or extraction labels such as analysisVersion, evidenceRefs, coreClaims, sourceType, Result 1, or See evidence.
 7. If the available learning package and paper evidence cannot answer the question with confidence, say that the evidence is insufficient and explain what is missing.
-8. Keep the answer focused and cite sources naturally, such as "基于 summary.md" or "根据实验部分", without exposing machine IDs.`
+8. Keep the answer focused and cite sources naturally, such as "基于 summary.md", "根据实验部分", or "论文 p.8，Table 3", without exposing machine IDs.
+9. When using reasoning-analysis, distinguish paper claims, external facts, analysis inferences, and research speculations in natural language.
+10. Do not turn an inference or speculation into a statement that the paper itself made.`
 }
 
 function findForbiddenResidues(text: string) {
-  return FORBIDDEN_RESIDUES.filter((residue) => text.includes(residue))
+  const residues = FORBIDDEN_RESIDUES.filter((residue) => text.includes(residue))
+  if (/\bev-p\d{3}-[a-z]+-[a-f0-9]{10}\b/.test(text)) {
+    residues.push('ev-*')
+  }
+  return residues
 }
 
 function redactForbiddenResidues(text: string) {

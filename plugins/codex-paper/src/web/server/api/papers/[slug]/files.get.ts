@@ -12,9 +12,11 @@ interface FileNode {
 const HIDDEN_MACHINE_FILES = new Set([
   '.study-validation.json',
   'analysis.json',
+  'evidence-ledger.json',
   'facts.json',
   'meta.json',
-  'paper-data.json'
+  'paper-data.json',
+  'reasoning-analysis.json'
 ])
 
 const ROOT_ITEM_ORDER = [

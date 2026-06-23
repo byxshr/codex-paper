@@ -5,9 +5,11 @@ import { homedir } from 'os'
 const HIDDEN_MACHINE_FILES = new Set([
   '.study-validation.json',
   'analysis.json',
+  'evidence-ledger.json',
   'facts.json',
   'meta.json',
-  'paper-data.json'
+  'paper-data.json',
+  'reasoning-analysis.json'
 ])
 
 function hasHiddenPathSegment(relativePath: string) {
