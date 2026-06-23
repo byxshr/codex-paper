@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import { validateReasoningPackage } from './validate-reasoning.js';
 
 const REQUIRED_FILES = [
   'README.md',
@@ -72,7 +73,7 @@ const BODY_IMAGE_MIN_HEIGHT = 220;
 const BODY_IMAGE_MIN_PIXELS = 160000;
 
 function usage() {
-  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code] [--timeout-ms 20000]');
+  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code] [--legacy-ok] [--timeout-ms 20000]');
 }
 
 function parseArgs(argv) {
@@ -80,6 +81,7 @@ function parseArgs(argv) {
     input: null,
     lang: null,
     runCode: false,
+    legacyOk: false,
     timeoutMs: 20000
   };
 
@@ -90,6 +92,8 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg === '--run-code') {
       args.runCode = true;
+    } else if (arg === '--legacy-ok') {
+      args.legacyOk = true;
     } else if (arg === '--timeout-ms') {
       args.timeoutMs = Number(argv[index + 1]);
       index += 1;
@@ -127,6 +131,17 @@ function resolvePaperDir(input) {
 
 function readText(filePath) {
   return fs.readFileSync(filePath, 'utf8');
+}
+
+function readJsonIfExists(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function lineNumberAt(text, index) {
@@ -353,6 +368,31 @@ function suspiciousEnglishLines(text) {
 
 function addFinding(findings, level, message) {
   findings[level].push(message);
+}
+
+function isV2Package(paperDir) {
+  const meta = readJsonIfExists(path.join(paperDir, 'meta.json'));
+  return meta?.packageVersion === '2.0.0'
+    || fs.existsSync(path.join(paperDir, 'reasoning-analysis.json'))
+    || fs.existsSync(path.join(paperDir, 'evidence-ledger.json'));
+}
+
+function checkReasoningLayer(paperDir, args, findings) {
+  if (!isV2Package(paperDir)) {
+    const message = args.legacyOk
+      ? 'Legacy v1 package: v2 reasoning validation was skipped because --legacy-ok was provided.'
+      : 'Legacy v1 package: v2 reasoning files are absent; existing package checks continue.';
+    addFinding(findings, 'warnings', message);
+    return;
+  }
+
+  const result = validateReasoningPackage(paperDir, { strict: false });
+  for (const error of result.report.errors) {
+    addFinding(findings, 'errors', `Reasoning ${error.code} at ${error.path}: ${error.message}`);
+  }
+  for (const warning of result.report.warnings) {
+    addFinding(findings, 'warnings', `Reasoning ${warning.code} at ${warning.path}: ${warning.message}`);
+  }
 }
 
 function checkRequiredFiles(paperDir, findings) {
@@ -811,6 +851,8 @@ function validate(args) {
     addFinding(findings, 'errors', `Paper directory not found: ${paperDir}`);
     return { paperDir, findings };
   }
+
+  checkReasoningLayer(paperDir, args, findings);
 
   const codeFiles = checkRequiredFiles(paperDir, findings);
   checkForbiddenResidues(paperDir, findings);
