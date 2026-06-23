@@ -8,6 +8,9 @@ const __dirname = path.dirname(__filename);
 const manifestPath = path.join(__dirname, 'manifest.json');
 const benchmarkDir = process.env.BENCHMARK_DIR || process.env.CODEX_PAPER_BENCHMARK_DIR || path.join(process.env.HOME || '', 'codex-papers', 'paper-examples');
 const reportPath = process.env.BENCHMARK_REPORT_FILE || '/tmp/codex-paper-benchmark.json';
+const allowMissingBenchmarkPdfs = ['1', 'true', 'yes'].includes(
+  String(process.env.CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS || '').toLowerCase()
+);
 
 function normalize(value) {
   return String(value || '')
@@ -59,6 +62,7 @@ async function main() {
         ...entry,
         pdfPath,
         error: `Missing PDF: ${pdfPath}`,
+        skipped: allowMissingBenchmarkPdfs,
         pass: false
       });
       continue;
@@ -86,7 +90,8 @@ async function main() {
   const totals = {
     papers: papers.length,
     passed: papers.filter((paper) => paper.pass).length,
-    failed: papers.filter((paper) => !paper.pass).length
+    skipped: papers.filter((paper) => paper.skipped).length,
+    failed: papers.filter((paper) => !paper.pass && !paper.skipped).length
   };
 
   const report = {
@@ -102,9 +107,13 @@ async function main() {
   console.log(`Benchmark directory: ${benchmarkDir}`);
   console.log(`Report written to: ${reportPath}`);
   console.log(`Passed: ${totals.passed}/${totals.papers}`);
+  if (totals.skipped > 0) {
+    console.log(`Skipped: ${totals.skipped}/${totals.papers}`);
+  }
 
   for (const paper of papers) {
-    console.log(`- ${paper.slug}: ${paper.pass ? 'PASS' : 'FAIL'}`);
+    const status = paper.skipped ? 'SKIP' : paper.pass ? 'PASS' : 'FAIL';
+    console.log(`- ${paper.slug}: ${status}`);
     if (paper.error) {
       console.log(`  error: ${paper.error}`);
       continue;

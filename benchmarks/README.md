@@ -12,6 +12,8 @@ The benchmark PDFs are intentionally kept outside the repository. By default the
 
 Override the location with either `BENCHMARK_DIR` or `CODEX_PAPER_BENCHMARK_DIR`.
 
+CI can set `CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS=1` to mark missing external PDFs as skipped while still running the deterministic reasoning and package benchmark suites. Local runs remain strict by default.
+
 ## Files
 
 - `manifest.json`: the fixed benchmark set

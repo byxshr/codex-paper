@@ -33,6 +33,8 @@ jobs:
         run: bash scripts/codex-paper.sh test
 
       - name: Benchmarks
+        env:
+          CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS: "1"
         run: bash scripts/codex-paper.sh benchmark-all
 
       - name: Smoke test
