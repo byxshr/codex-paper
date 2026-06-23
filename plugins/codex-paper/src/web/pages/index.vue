@@ -55,8 +55,11 @@
             :key="group.label"
             class="collection-directory__group"
           >
-            <h3>{{ group.label }}</h3>
-            <ol>
+            <div class="collection-directory__year">
+              <h3>{{ group.label }}</h3>
+              <span>{{ group.papers.length }} {{ group.papers.length === 1 ? 'paper' : 'papers' }}</span>
+            </div>
+            <ol class="collection-directory__papers">
               <li v-for="paper in group.papers" :key="paper.slug">
                 <a :href="`#${paperAnchorId(paper.slug)}`">{{ paper.title }}</a>
                 <span v-if="paper.tags?.length" class="collection-directory__meta">
@@ -170,10 +173,21 @@ const directoryGroups = computed(() => {
     groups.set(label, [...(groups.get(label) || []), paper])
   })
 
-  return Array.from(groups.entries()).map(([label, groupedPapers]) => ({
-    label,
-    papers: groupedPapers
-  }))
+  return Array.from(groups.entries())
+    .map(([label, groupedPapers]) => ({
+      label,
+      papers: groupedPapers
+    }))
+    .sort((a, b) => {
+      if (a.label === 'Undated') return 1
+      if (b.label === 'Undated') return -1
+      const yearA = Number(a.label)
+      const yearB = Number(b.label)
+      if (Number.isNaN(yearA) && Number.isNaN(yearB)) return a.label.localeCompare(b.label)
+      if (Number.isNaN(yearA)) return 1
+      if (Number.isNaN(yearB)) return -1
+      return yearB - yearA
+    })
 })
 
 const togglePaperExpansion = (slug: string) => {
@@ -279,7 +293,7 @@ useHead({
 /* Library Content */
 .library-content {
   padding-top: 64px;
-  max-width: 1400px;
+  max-width: 1280px;
   margin: 0 auto;
   padding-left: 2rem;
   padding-right: 2rem;
@@ -332,8 +346,8 @@ h1 {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #ffffff;
-  padding: 1.25rem;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   margin-top: 1.5rem;
 }
 
@@ -375,21 +389,45 @@ h1 {
 }
 
 .collection-directory__groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem 1.5rem;
-  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
 }
 
-.collection-directory__group h3 {
-  margin: 0 0 0.5rem 0;
+.collection-directory__group {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.collection-directory__group:last-child {
+  border-bottom: 0;
+  padding-bottom: 0.25rem;
+}
+
+.collection-directory__year h3 {
+  margin: 0;
   color: #4b5563;
   font-family: 'Inter', sans-serif;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 700;
 }
 
-.collection-directory__group ol {
+.collection-directory__year span {
+  display: block;
+  margin-top: 0.15rem;
+  color: #9ca3af;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+}
+
+.collection-directory__papers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.5rem 1.25rem;
   margin: 0;
   padding-left: 1.2rem;
 }
@@ -399,12 +437,18 @@ h1 {
   font-family: 'Inter', sans-serif;
   font-size: 0.875rem;
   line-height: 1.45;
-  margin: 0.4rem 0;
+  margin: 0;
+  min-width: 0;
 }
 
 .collection-directory__group a {
   color: #2563eb;
+  display: -webkit-box;
+  line-height: 1.35;
+  overflow: hidden;
   text-decoration: none;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .collection-directory__group a:hover {
@@ -501,6 +545,15 @@ h1 {
   .collection-directory__header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .collection-directory__group {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .collection-directory__papers {
+    grid-template-columns: 1fr;
   }
 }
 </style>

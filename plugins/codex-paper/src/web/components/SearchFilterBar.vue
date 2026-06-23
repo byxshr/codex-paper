@@ -1,35 +1,21 @@
 <template>
   <div class="search-filter-bar">
-    <div class="search-filter-bar__search">
-      <input
-        v-model="searchQuery"
-        type="text"
-        placeholder="Search papers by title, author, or abstract..."
-        class="search-filter-bar__input"
-        @input="onSearchInput"
-      />
-      <button
-        v-if="searchQuery"
-        class="search-filter-bar__clear"
-        @click="clearSearch"
-        type="button"
-      >
-        ×
-      </button>
-    </div>
-
-    <div class="search-filter-bar__row">
-      <div v-if="availableTags.length > 0" class="search-filter-bar__tags">
-        <span class="search-filter-bar__label">Filter by tags:</span>
+    <div class="search-filter-bar__top">
+      <div class="search-filter-bar__search">
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search papers by title, author, or abstract..."
+          class="search-filter-bar__input"
+          @input="onSearchInput"
+        />
         <button
-          v-for="tag in availableTags"
-          :key="tag"
-          class="search-filter-bar__tag"
-          :class="{ 'search-filter-bar__tag--active': selectedTags.includes(tag) }"
-          @click="toggleTag(tag)"
+          v-if="searchQuery"
+          class="search-filter-bar__clear"
+          @click="clearSearch"
           type="button"
         >
-          {{ tag }}
+          ×
         </button>
       </div>
 
@@ -74,6 +60,22 @@
           type="button"
         >
           Clear All
+        </button>
+      </div>
+    </div>
+
+    <div v-if="availableTags.length > 0" class="search-filter-bar__tags">
+      <span class="search-filter-bar__label">Tags</span>
+      <div class="search-filter-bar__tag-list">
+        <button
+          v-for="tag in availableTags"
+          :key="tag"
+          class="search-filter-bar__tag"
+          :class="{ 'search-filter-bar__tag--active': selectedTags.includes(tag) }"
+          @click="toggleTag(tag)"
+          type="button"
+        >
+          {{ tag }}
         </button>
       </div>
     </div>
@@ -152,21 +154,30 @@ const setViewMode = (mode: 'grid' | 'list') => {
 <style scoped>
 .search-filter-bar {
   background: white;
+  border: 1px solid #e5e7eb;
   border-radius: 0.5rem;
-  padding: 1rem 1.25rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  padding: 0.875rem 1rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   margin-bottom: 1.5rem;
+}
+
+.search-filter-bar__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.875rem;
 }
 
 .search-filter-bar__search {
   position: relative;
-  margin: 0 auto 0.75rem auto;
+  min-width: 0;
 }
 
 .search-filter-bar__input {
   width: 100%;
   box-sizing: border-box;
-  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  height: 2.5rem;
+  padding: 0.65rem 2.25rem 0.65rem 0.875rem;
   border: 1px solid #d1d5db;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -196,19 +207,22 @@ const setViewMode = (mode: 'grid' | 'list') => {
   color: #374151;
 }
 
-.search-filter-bar__row {
+.search-filter-bar__tags {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: flex-start;
-  gap: 0.75rem 1.25rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
 }
 
-.search-filter-bar__tags {
+.search-filter-bar__tag-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
+  gap: 0.375rem;
   min-width: 0;
+  max-height: 5.25rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 
 .search-filter-bar__label {
@@ -218,11 +232,12 @@ const setViewMode = (mode: 'grid' | 'list') => {
 }
 
 .search-filter-bar__tag {
-  padding: 0.25rem 0.75rem;
+  padding: 0.2rem 0.625rem;
   border: 1px solid #d1d5db;
   background: white;
   border-radius: 1rem;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
   color: #374151;
   cursor: pointer;
   transition: all 0.15s;
@@ -248,7 +263,7 @@ const setViewMode = (mode: 'grid' | 'list') => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 1rem;
+  gap: 0.75rem;
   white-space: nowrap;
 }
 
@@ -314,7 +329,7 @@ const setViewMode = (mode: 'grid' | 'list') => {
 }
 
 @media (max-width: 768px) {
-  .search-filter-bar__row {
+  .search-filter-bar__top {
     grid-template-columns: 1fr;
   }
 
@@ -322,6 +337,10 @@ const setViewMode = (mode: 'grid' | 'list') => {
     justify-content: flex-start;
     flex-wrap: wrap;
     white-space: normal;
+  }
+
+  .search-filter-bar__tags {
+    grid-template-columns: 1fr;
   }
 }
 </style>
