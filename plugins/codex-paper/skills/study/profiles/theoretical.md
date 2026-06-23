@@ -23,6 +23,8 @@ The paper's core contribution is a theorem, proof, formal bound, derivation, or 
 ## Minimal reproduction
 Build a proof dependency map and run a boundary-case or numerical sanity check.
 
+Support and falsification criteria may be formal boundary checks, violated assumptions, limiting constructions, or proof-dependency failures; do not invent conventional experiments.
+
 ## Strong counterexample
 A construction that violates the weakest assumption while preserving the problem setting.
 

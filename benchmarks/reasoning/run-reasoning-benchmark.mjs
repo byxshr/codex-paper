@@ -160,7 +160,7 @@ const fixtures = [
   { name: 'valid-empirical', reasoning: baseReasoning('empirical'), expect: { status: 'pass' } },
   { name: 'valid-theoretical', reasoning: baseReasoning('theoretical'), expect: { status: 'pass' } },
   { name: 'valid-survey', reasoning: baseReasoning('survey'), expect: { status: 'pass' } },
-  { name: 'missing-evidence-ref', mutate: (r) => { r.centralClaims[0].evidenceRefs = ['ev-p999-par-missing']; }, expectCode: 'EVIDENCE_REF_NOT_FOUND' },
+  { name: 'missing-evidence-ref', mutate: (r) => { r.centralClaims[0].evidenceRefs = ['ev-p999-par-bbbbbbbbbb']; }, expectCode: 'EVIDENCE_REF_NOT_FOUND' },
   { name: 'literature-in-paper-only', mutate: (r) => { r.centralClaims[0].sourceType = 'literature_fact'; }, expectCode: 'LITERATURE_FACT_WITHOUT_EXTERNAL_EVIDENCE' },
   { name: 'speculation-high', mutate: (r) => { r.followUpIdea.confidence = 'high'; }, expectCode: 'SPECULATION_MARKED_HIGH_CONFIDENCE' },
   { name: 'dag-cycle', mutate: (r) => { r.authorReasoningPath[0].dependsOn = ['reason-04']; }, expectCode: 'REASONING_PATH_CYCLE' },

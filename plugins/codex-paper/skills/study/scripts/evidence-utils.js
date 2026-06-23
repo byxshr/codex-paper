@@ -38,9 +38,14 @@ function padOrdinal(value) {
 
 export function makeEvidenceId({ page, kind, text, charStart }) {
   const normalizedText = compactForId(text);
+  const stableFields = [
+    normalizedText,
+    String(Number(page) || 0),
+    String(Number(charStart) || 0)
+  ].join('\u001f');
   const digest = crypto
     .createHash('sha1')
-    .update(`${normalizedText}${Number(page) || 0}${Number(charStart) || 0}`)
+    .update(stableFields)
     .digest('hex')
     .slice(0, 10);
   const kindAbbrev = KIND_ABBREVIATIONS[kind] || KIND_ABBREVIATIONS.paragraph;

@@ -23,6 +23,8 @@ The paper does not fit the other profiles or combines several modes without one 
 ## Minimal reproduction
 Choose the smallest artifact that tests the central claim in its actual modality.
 
+Support and falsification criteria should follow the paper's dominant modality rather than defaulting to empirical experiments.
+
 ## Strong counterexample
 A case that directly challenges the core claim rather than an implementation detail.
 

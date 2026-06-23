@@ -53,7 +53,7 @@ meta.json
 .codex-paper/answering-pack.md
 ```
 
-Never copy JSON field names, extraction labels, or machine traces into user-facing files. Forbidden visible residues include `analysisVersion`, `evidenceRefs`, `coreClaims`, `keyResults`, `Result 1`, `See evidence`, parser object paths, raw JSON snippets, and template placeholders.
+Never copy JSON field names, extraction labels, or machine traces into user-facing files. Forbidden visible residues include `analysisVersion`, `evidenceRefs`, `coreClaims`, `keyResults`, parser object paths, raw JSON snippets, machine evidence IDs, and template placeholders.
 
 ## V2 Evidence And Reasoning Contract
 
@@ -146,7 +146,7 @@ profiles/position.md
 profiles/other.md
 ```
 
-Use the profile to decide the appropriate validation kinds and reproduction artifact. Do not force experiments onto theoretical, survey, or position papers.
+Use the profile to decide the appropriate validation kinds and reproduction artifact. Do not force experiments onto theoretical, survey, or position papers. For non-empirical profiles, interpret failure and falsification fields in the paper's own modality: proof-boundary checks for theory, taxonomy/coverage checks for surveys, argument-map or decision-consequence checks for position papers, and the smallest relevant artifact for mixed papers.
 
 ## Step 4: Fill And Validate Reasoning
 
@@ -169,7 +169,8 @@ Rules:
 * Every numeric paper claim cites evidence containing the same number.
 * Evidence gaps go into `uncertaintyZones`; never smooth them over with plausible text.
 * `weakestAssumption` is one object, not a list.
-* `minimalReproduction` includes both support and falsification criteria.
+* `minimalReproduction` includes both support and falsification criteria; for non-empirical papers these may be formal, taxonomic, argumentative, or decision-oriented criteria rather than experiments.
+* `strongestCounterexample.predictedObservation` means the most concrete thing that would be observed if the counterexample held; it can be a proof failure, misclassification, omitted cluster, or wrong decision, not only a metric change.
 * `followUpIdea` must not be just more data, bigger models, or hyperparameter tuning.
 
 Run:
@@ -487,7 +488,7 @@ Verify:
 * `qa.md` contains Basic, Intermediate, and Advanced sections; default 15 questions, or 9-15 with an explicit reduction explanation
 * Chinese requests produce primarily Chinese user-facing text
 * proper nouns and technical terms are preserved
-* no raw JSON, field names, evidence IDs, `Result 1`, `See evidence`, or parser labels appear
+* no raw JSON, field names, evidence IDs, or parser labels appear
 * no unsupported numeric claim appears
 * embedded visuals use existing local paths and have source/explanation text
 * no Codex image generation, imagegen prompt, generated bitmap pipeline, cover, or poster appears in the package

@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { homedir } from 'os'
+import { requirePaperDir, validateSlug } from '../../../utils/paperAccess'
 
 const HIDDEN_MACHINE_FILES = new Set([
   '.study-validation.json',
@@ -17,6 +17,10 @@ function hasHiddenPathSegment(relativePath: string) {
   return relativePath
     .split(path.sep)
     .some((segment) => segment.startsWith('.'))
+}
+
+function isHiddenMachinePath(relativePath: string) {
+  return HIDDEN_MACHINE_FILES.has(path.basename(relativePath))
 }
 
 function getFileType(filename: string): string {
@@ -181,10 +185,10 @@ export default defineEventHandler((event) => {
   const query = getQuery(event)
   const filePath = query.path as string
 
-  if (!slug) {
+  if (!validateSlug(slug)) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Slug is required'
+      statusMessage: 'Valid paper slug is required'
     })
   }
 
@@ -196,7 +200,7 @@ export default defineEventHandler((event) => {
   }
 
   try {
-    const paperDir = path.join(homedir(), 'codex-papers/papers', slug)
+    const paperDir = requirePaperDir(slug!)
     const fullPath = path.resolve(paperDir, filePath)
     const relativeFullPath = path.relative(paperDir, fullPath)
 
@@ -210,7 +214,7 @@ export default defineEventHandler((event) => {
 
     if (
       hasHiddenPathSegment(relativeFullPath) ||
-      (!relativeFullPath.includes(path.sep) && HIDDEN_MACHINE_FILES.has(path.basename(relativeFullPath)))
+      isHiddenMachinePath(relativeFullPath)
     ) {
       throw createError({
         statusCode: 404,

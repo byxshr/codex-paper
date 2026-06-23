@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { collectEvidenceRefs } from './evidence-utils.js';
+import { profileForType } from '../profiles/profile-rules.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,18 +14,21 @@ const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const SCHEMA_PATH = path.join(__dirname, '../schemas/reasoning-analysis.schema.json');
 const EXTERNAL_SCHEMA_PATH = path.join(__dirname, '../schemas/external-evidence.schema.json');
 
+const PAPER_EVIDENCE_ID_PATTERN = /^ev-p\d{3,}-[a-z]+-[a-f0-9]{10}$/;
+const EXTERNAL_EVIDENCE_ID_PATTERN = /^ext-[a-z0-9][a-z0-9-]*-[a-f0-9]{10}$/;
 const TEMPLATE_RESIDUE = /\b(?:TODO|TBD|placeholder|fill me|lorem ipsum|待填写|占位|这里填写)\b/i;
 const INCREMENTAL_FOLLOWUP = /\b(?:more data|larger model|bigger model|more parameters|scale up|tune hyperparameters|更多数据|更大模型|更多参数|调参)\b/i;
 
 function usage() {
-  console.error('Usage: node validate-reasoning.js <paper-dir-or-slug> [--json] [--strict]');
+  console.error('Usage: node validate-reasoning.js <paper-dir-or-slug> [--json] [--strict] [--allow-draft]');
 }
 
 function parseArgs(argv) {
   const args = {
     input: null,
     json: false,
-    strict: false
+    strict: false,
+    allowDraft: false
   };
 
   for (const arg of argv) {
@@ -32,6 +36,8 @@ function parseArgs(argv) {
       args.json = true;
     } else if (arg === '--strict') {
       args.strict = true;
+    } else if (arg === '--allow-draft') {
+      args.allowDraft = true;
     } else if (!args.input) {
       args.input = arg;
     } else {
@@ -123,7 +129,18 @@ export function validateEvidenceRefs(reasoning, ledger, externalEvidence) {
   traverse(reasoning, (node, nodePath) => {
     if (!Array.isArray(node.evidenceRefs)) return;
     node.evidenceRefs.forEach((ref, index) => {
-      const found = ref.startsWith('ext-') ? externalRefs.has(ref) : ledgerRefs.has(ref);
+      const isPaperRef = PAPER_EVIDENCE_ID_PATTERN.test(ref);
+      const isExternalRef = EXTERNAL_EVIDENCE_ID_PATTERN.test(ref);
+      if (!isPaperRef && !isExternalRef) {
+        addFinding(
+          errors,
+          'EVIDENCE_REF_INVALID',
+          `${nodePath}.evidenceRefs[${index}]`,
+          `Evidence ref has an invalid format: ${ref}`
+        );
+        return;
+      }
+      const found = isExternalRef ? externalRefs.has(ref) : ledgerRefs.has(ref);
       if (!found) {
         addFinding(
           errors,
@@ -199,11 +216,11 @@ export function validateSourceTypes(reasoning, contextMode) {
     }
 
     const refs = Array.isArray(node.evidenceRefs) ? node.evidenceRefs : [];
-    if (node.sourceType === 'paper_claim' && !refs.some((ref) => ref.startsWith('ev-'))) {
+    if (node.sourceType === 'paper_claim' && !refs.some((ref) => PAPER_EVIDENCE_ID_PATTERN.test(ref))) {
       addFinding(errors, 'PAPER_CLAIM_WITHOUT_EVIDENCE', `${nodePath}.evidenceRefs`, 'paper_claim must cite at least one paper evidence ref');
     }
 
-    if (node.sourceType === 'literature_fact' && !refs.some((ref) => ref.startsWith('ext-'))) {
+    if (node.sourceType === 'literature_fact' && !refs.some((ref) => EXTERNAL_EVIDENCE_ID_PATTERN.test(ref))) {
       addFinding(errors, 'LITERATURE_FACT_WITHOUT_EXTERNAL_EVIDENCE', `${nodePath}.evidenceRefs`, 'literature_fact must cite external evidence');
     }
 
@@ -357,6 +374,8 @@ export function validateCriticalAnalysis(reasoning) {
   const errors = [];
   const warnings = [];
   const claimIds = centralClaimIds(reasoning);
+  const profile = profileForType(reasoning?.paperType);
+  const allowedValidationKinds = new Set(profile.validationKinds || []);
 
   (reasoning.centralClaims || []).forEach((claim, index) => {
     if (!claim.scope) {
@@ -392,6 +411,9 @@ export function validateCriticalAnalysis(reasoning) {
   });
 
   (reasoning.validations || []).forEach((validation, index) => {
+    if (validation.kind && allowedValidationKinds.size > 0 && !allowedValidationKinds.has(validation.kind)) {
+      addFinding(errors, 'VALIDATION_KIND_PROFILE_MISMATCH', `validations[${index}].kind`, `${validation.kind} is not expected for ${reasoning.paperType || 'other'} papers`);
+    }
     if (!validation.question) addFinding(errors, 'VALIDATION_WITHOUT_QUESTION', `validations[${index}].question`, 'Validation unit must ask a question');
     if (!validation.design) addFinding(errors, 'VALIDATION_WITHOUT_DESIGN', `validations[${index}].design`, 'Validation unit must include a design');
     if (!validation.observation) addFinding(errors, 'VALIDATION_WITHOUT_OBSERVATION', `validations[${index}].observation`, 'Validation unit must include an observation');
@@ -532,6 +554,21 @@ export function validateReasoningPackage(input, options = {}) {
   externalEvidence = loadExternalEvidence(paperDir);
 
   if (reasoning) {
+    if (options.allowDraft && reasoning.status === 'draft' && errors.length === 0) {
+      const report = {
+        status: 'draft',
+        errors: [],
+        warnings: [{
+          code: 'REASONING_DRAFT_NOT_VALIDATED',
+          path: 'reasoning-analysis.json',
+          message: 'Draft reasoning skeleton was accepted because --allow-draft was provided; fill it and run strict validation before publishing.'
+        }],
+        stats: calculateCoverageStats(reasoning)
+      };
+      writeReport(paperDir, report);
+      return { paperDir, report };
+    }
+
     errors.push(...validateSchema(reasoning));
     const sourceFindings = validateSourceTypes(reasoning, reasoning.contextMode || 'paper-only');
     errors.push(...sourceFindings.errors);
@@ -615,7 +652,7 @@ function printHuman(result) {
 async function runCli() {
   try {
     const args = parseArgs(process.argv.slice(2));
-    const result = validateReasoningPackage(args.input, { strict: args.strict });
+    const result = validateReasoningPackage(args.input, { strict: args.strict, allowDraft: args.allowDraft });
     if (args.json) {
       process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
     } else {

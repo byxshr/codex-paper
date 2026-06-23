@@ -6,6 +6,12 @@ Use the migration tool to add v2 evidence and draft reasoning files to an existi
 bash scripts/codex-paper.sh migrate ~/codex-papers/papers/{paper-slug}
 ```
 
+By default, the tool only migrates packages inside `~/codex-papers/papers`. To migrate a deliberately out-of-library package directory, pass `--external-path`:
+
+```bash
+bash scripts/codex-paper.sh migrate /path/to/package --external-path
+```
+
 The migration is conservative:
 
 - If `paper.pdf` exists, it reparses the PDF and builds a page-aware evidence ledger.
@@ -20,6 +26,12 @@ After migration, Codex or a reviewer must fill the reasoning file from the evide
 ```bash
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js "<paper-dir>" --strict
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js "<paper-dir>" --run-code
+```
+
+Before filling the draft, you may sanity-check the migration output with:
+
+```bash
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js "<paper-dir>" --allow-draft
 ```
 
 For old packages that have not been migrated, v1 compatibility remains available:

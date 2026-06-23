@@ -362,7 +362,7 @@ export function buildEvidenceLedger({ parsed, source = {}, paperSlug }) {
     pages: detailed.pages,
     rawText: detailed.rawText || publicData.rawText || ''
   });
-  const rawText = String(detailed.rawText || pages.map((page) => page.text).join('\n\n'));
+  const rawText = pages.map((page) => page.text).join('\n\n') || String(detailed.rawText || publicData.rawText || '');
   const parserMetadata = detailed.parserMetadata || {};
   const sections = Array.isArray(detailed.sectionTree) && detailed.sectionTree.length > 0
     ? detailed.sectionTree

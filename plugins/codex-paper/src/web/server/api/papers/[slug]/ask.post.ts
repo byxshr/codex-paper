@@ -16,9 +16,12 @@ const FORBIDDEN_RESIDUES = [
   'sourceType',
   'evidence-ledger',
   'external-evidence',
-  'reasoning-analysis',
-  'Result 1',
-  'See evidence'
+  'reasoning-analysis'
+]
+
+const FORBIDDEN_RESIDUE_PATTERNS = [
+  { label: 'ev-*', pattern: /\bev-p\d{3,}-[a-z]+-[a-f0-9]{10}\b/g },
+  { label: 'ext-*', pattern: /\bext-[a-zA-Z0-9._-]+\b/g }
 ]
 
 function validateSlug(slug: string) {
@@ -74,7 +77,7 @@ Answering rules:
 3. Only move to the next evidence layer when the previous layer is insufficient.
 4. Do not use live web search. Use only local files in the paper package.
 5. Do not write or modify files; the Web UI will save the final answer.
-6. Do not expose internal JSON field names, evidence IDs, parser object paths, or extraction labels such as analysisVersion, evidenceRefs, coreClaims, sourceType, Result 1, or See evidence.
+6. Do not expose internal JSON field names, evidence IDs, parser object paths, or extraction labels such as analysisVersion, evidenceRefs, coreClaims, or sourceType.
 7. If the available learning package and paper evidence cannot answer the question with confidence, say that the evidence is insufficient and explain what is missing.
 8. Keep the answer focused and cite sources naturally, such as "基于 summary.md", "根据实验部分", or "论文 p.8，Table 3", without exposing machine IDs.
 9. When using reasoning-analysis, distinguish paper claims, external facts, analysis inferences, and research speculations in natural language.
@@ -83,17 +86,24 @@ Answering rules:
 
 function findForbiddenResidues(text: string) {
   const residues = FORBIDDEN_RESIDUES.filter((residue) => text.includes(residue))
-  if (/\bev-p\d{3}-[a-z]+-[a-f0-9]{10}\b/.test(text)) {
-    residues.push('ev-*')
+  for (const { label, pattern } of FORBIDDEN_RESIDUE_PATTERNS) {
+    pattern.lastIndex = 0
+    if (pattern.test(text)) {
+      residues.push(label)
+    }
   }
   return residues
 }
 
 function redactForbiddenResidues(text: string) {
-  return FORBIDDEN_RESIDUES.reduce(
+  const withoutFieldNames = FORBIDDEN_RESIDUES.reduce(
     (current, residue) => current.split(residue).join('[internal field]'),
     text
   )
+  return FORBIDDEN_RESIDUE_PATTERNS.reduce((current, { pattern }) => {
+    pattern.lastIndex = 0
+    return current.replace(pattern, '[internal evidence id]')
+  }, withoutFieldNames)
 }
 
 function createFallbackError(statusCode: number, statusMessage: string, fallbackPrompt: string, detail?: string) {

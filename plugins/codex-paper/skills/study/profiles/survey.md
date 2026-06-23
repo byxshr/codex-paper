@@ -23,6 +23,8 @@ The paper synthesizes a field, taxonomy, trend, or literature map rather than pr
 ## Minimal reproduction
 Reclassify a small sample of papers and check whether the taxonomy remains stable.
 
+Support and falsification criteria may be coverage, inclusion/exclusion, classification-stability, or omitted-cluster checks.
+
 ## Strong counterexample
 A cluster of omitted or misclassified work that changes the main synthesis.
 

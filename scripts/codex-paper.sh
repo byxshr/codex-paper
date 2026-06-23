@@ -133,7 +133,7 @@ cmd_migrate() {
   ensure_node
 
   if [ "$#" -lt 1 ]; then
-    echo "Usage: bash scripts/codex-paper.sh migrate <paper-dir-or-slug> [--force] [--context paper-only|canonical|literature] [--profile ...]" >&2
+    echo "Usage: bash scripts/codex-paper.sh migrate <paper-dir-or-slug> [--force] [--external-path] [--context paper-only|canonical|literature] [--profile ...]" >&2
     exit 1
   fi
 

@@ -47,9 +47,9 @@ const FORBIDDEN_RESIDUES = [
   /\brawText\b/i,
   /\bevidence-ledger(?:\.json)?\b/i,
   /\breasoning-analysis(?:\.json)?\b/i,
-  /\bev-p\d{3}-[a-z]+-[a-f0-9]{10}\b/i,
-  /\bResult\s+\d+\b/i,
-  /\bSee evidence\b/i,
+  /\bev-p\d{3,}-[a-z]+-[a-f0-9]{10}\b/i,
+  /\bext-[a-zA-Z0-9._-]+\b/i,
+  // Machine references such as "claim:3"; natural prose like "Result 1" is allowed.
   /\b(?:claim|result|limitation):\d+\b/i,
   /^\s*"[^"]+"\s*:\s*[{["0-9tfn-]/i
 ];
@@ -335,6 +335,11 @@ function stripMarkdownNoise(text) {
     .replace(/\[[^\]]+\]\([^)]+\)/g, ' ');
 }
 
+function stripMarkdownMachineScanNoise(text) {
+  return stripMarkdownNoise(text)
+    .replace(/^ {0,3}~~~[\s\S]*?^ {0,3}~~~/gm, '\n');
+}
+
 function stripHtmlNoise(text) {
   return text
     .replace(/<script[\s\S]*?<\/script>/gi, '\n')
@@ -439,7 +444,7 @@ function checkForbiddenResidues(paperDir, findings) {
     }
 
     const raw = readText(filePath);
-    const visibleText = /\.html?$/i.test(filename) ? stripHtmlNoise(raw) : raw;
+    const visibleText = /\.html?$/i.test(filename) ? stripHtmlNoise(raw) : stripMarkdownMachineScanNoise(raw);
     const lines = visibleText.split('\n');
     lines.forEach((line, index) => {
       for (const pattern of FORBIDDEN_RESIDUES) {

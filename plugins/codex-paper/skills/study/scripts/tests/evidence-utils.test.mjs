@@ -23,10 +23,24 @@ test('makeEvidenceId is stable and sensitive to page and charStart', () => {
   assert.notEqual(first, makeEvidenceId({ ...input, charStart: 18421 }));
 });
 
+test('makeEvidenceId separates hash fields and supports long page numbers', () => {
+  const text = 'Repeated boilerplate evidence.';
+  const first = makeEvidenceId({ page: 1, kind: 'paragraph', text, charStart: 2345 });
+  const second = makeEvidenceId({ page: 12, kind: 'paragraph', text, charStart: 345 });
+  const longPage = makeEvidenceId({ page: 1000, kind: 'paragraph', text, charStart: 1 });
+
+  assert.notEqual(first.split('-').at(-1), second.split('-').at(-1));
+  assert.match(longPage, /^ev-p1000-par-[a-f0-9]{10}$/);
+});
+
 test('makeSectionId uses stable page, role, and ordinal components', () => {
   assert.equal(
     makeSectionId({ pageStart: 4, canonicalRole: 'method', ordinal: 1 }),
     'sec-p004-method-01'
+  );
+  assert.equal(
+    makeSectionId({ pageStart: 1000, canonicalRole: 'appendix', ordinal: 12 }),
+    'sec-p1000-appendix-12'
   );
 });
 

@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { homedir } from 'os'
+import { requirePaperDir, validateSlug } from '../../../utils/paperAccess'
 
 interface FileNode {
   name: string
@@ -65,7 +65,7 @@ function buildFileTree(dirPath: string, relativePath: string = ''): FileNode[] {
       continue
     }
 
-    if (HIDDEN_MACHINE_FILES.has(item.name)) {
+    if (HIDDEN_MACHINE_FILES.has(path.basename(item.name))) {
       continue
     }
 
@@ -103,22 +103,15 @@ function buildFileTree(dirPath: string, relativePath: string = ''): FileNode[] {
 export default defineEventHandler((event) => {
   const slug = getRouterParam(event, 'slug')
 
-  if (!slug) {
+  if (!validateSlug(slug)) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Slug is required'
+      statusMessage: 'Valid paper slug is required'
     })
   }
 
   try {
-    const paperDir = path.join(homedir(), 'codex-papers/papers', slug)
-
-    if (!fs.existsSync(paperDir)) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Paper directory not found'
-      })
-    }
+    const paperDir = requirePaperDir(slug!)
 
     const fileTree = buildFileTree(paperDir)
 

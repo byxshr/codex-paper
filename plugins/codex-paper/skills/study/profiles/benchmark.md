@@ -23,6 +23,8 @@ The paper introduces or analyzes a dataset, evaluation suite, metric, leaderboar
 ## Minimal reproduction
 Audit a sample of items, recompute the metric, or test a metric-sensitivity perturbation.
 
+Support and falsification criteria may be dataset, scoring, annotation, or construct-validity checks; they do not need to be model-training experiments.
+
 ## Strong counterexample
 Contamination, construct mismatch, or a scoring change that reverses rankings.
 

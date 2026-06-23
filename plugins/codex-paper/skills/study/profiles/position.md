@@ -23,6 +23,8 @@ The paper primarily argues for a framing, agenda, warning, or research direction
 ## Minimal reproduction
 Build an argument map and identify one falsifiable prediction or decision consequence.
 
+Support and falsification criteria may be conceptual consistency checks, concrete decision consequences, or cases that would make the framing recommend the wrong action.
+
 ## Strong counterexample
 A concrete case where the framing predicts the wrong action or ignores a decisive factor.
 

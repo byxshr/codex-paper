@@ -233,7 +233,7 @@ test('validateReasoningPackage reports missing refs and paper-only literature fa
       scope: 'Reported benchmark only.',
       sourceType: 'literature_fact',
       confidence: 'high',
-      evidenceRefs: ['ev-p999-par-missing']
+      evidenceRefs: ['ev-p999-par-bbbbbbbbbb']
     }]
   });
   const dir = writePackage(reasoning);
@@ -243,6 +243,80 @@ test('validateReasoningPackage reports missing refs and paper-only literature fa
     assert.ok(codes.includes('EVIDENCE_REF_NOT_FOUND'));
     assert.ok(codes.includes('LITERATURE_FACT_WITHOUT_EXTERNAL_EVIDENCE'));
     assert.ok(codes.includes('LITERATURE_FACT_IN_PAPER_ONLY_MODE'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('validateReasoningPackage rejects non-canonical evidence refs and profile mismatches', () => {
+  const reasoning = makeReasoning({
+    centralClaims: [{
+      id: 'claim-core-01',
+      statement: 'The method reports a 3% improvement on the benchmark.',
+      scope: 'Reported benchmark only.',
+      sourceType: 'paper_claim',
+      confidence: 'high',
+      evidenceRefs: ['ev-fake']
+    }],
+    paperType: 'survey',
+    validations: [{
+      id: 'validation-01',
+      kind: 'experiment',
+      question: 'Does the method improve?',
+      design: 'Compare against the benchmark baseline.',
+      observation: 'The paper reports a 3% improvement.',
+      conclusion: 'The scoped claim is supported in the reported setting.',
+      scope: 'Reported benchmark only.',
+      supportsClaimIds: ['claim-core-01'],
+      alternativeExplanation: 'A hidden baseline mismatch could also explain the gain.',
+      sourceType: 'paper_claim',
+      confidence: 'high',
+      evidenceRefs: [EVIDENCE_ID]
+    }]
+  });
+  const dir = writePackage(reasoning);
+  try {
+    const result = validateReasoningPackage(dir);
+    const codes = result.report.errors.map((error) => error.code);
+    assert.ok(codes.includes('EVIDENCE_REF_INVALID'));
+    assert.ok(codes.includes('PAPER_CLAIM_WITHOUT_EVIDENCE'));
+    assert.ok(codes.includes('VALIDATION_KIND_PROFILE_MISMATCH'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('validateReasoningPackage can acknowledge draft skeletons without full schema noise', () => {
+  const reasoning = {
+    schemaVersion: '2.0.0',
+    status: 'draft',
+    paperSlug: 'valid-paper',
+    generatedAt: '2026-06-23T00:00:00.000Z',
+    contextMode: 'paper-only',
+    paperType: 'empirical',
+    difficulty: 'advanced',
+    evidenceQuality: 'complete_enough',
+    centralClaims: [],
+    researchQuestion: {},
+    priorWorkGap: {},
+    authorReasoningPath: [],
+    coreIntuition: {},
+    methodModel: { inputs: [], components: [], pipeline: [], outputs: [], equations: [] },
+    validations: [],
+    takeaways: [],
+    weakestAssumption: {},
+    minimalReproduction: {},
+    strongestCounterexample: {},
+    followUpIdea: {},
+    limitations: [],
+    uncertaintyZones: []
+  };
+  const dir = writePackage(reasoning);
+  try {
+    const result = validateReasoningPackage(dir, { allowDraft: true });
+    assert.equal(result.report.status, 'draft');
+    assert.equal(result.report.errors.length, 0);
+    assert.equal(result.report.warnings[0].code, 'REASONING_DRAFT_NOT_VALIDATED');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

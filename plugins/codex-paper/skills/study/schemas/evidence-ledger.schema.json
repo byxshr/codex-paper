@@ -101,7 +101,7 @@
         "confidence"
       ],
       "properties": {
-        "id": { "type": "string", "pattern": "^sec-p\\d{3}-[a-z0-9_]+-\\d{2}$" },
+        "id": { "type": "string", "pattern": "^sec-p\\d{3,}-[a-z0-9_]+-\\d{2}$" },
         "title": { "type": "string" },
         "normalizedTitle": { "type": "string" },
         "canonicalRole": { "$ref": "#/$defs/canonicalRole" },
@@ -182,7 +182,7 @@
       "additionalProperties": false,
       "required": ["id", "kind", "roles", "text", "quote", "location", "labels", "source", "confidence"],
       "properties": {
-        "id": { "type": "string", "pattern": "^ev-p\\d{3}-[a-z]+-[a-f0-9]{10}$" },
+        "id": { "type": "string", "pattern": "^ev-p\\d{3,}-[a-z]+-[a-f0-9]{10}$" },
         "kind": { "$ref": "#/$defs/evidenceKind" },
         "roles": {
           "type": "array",

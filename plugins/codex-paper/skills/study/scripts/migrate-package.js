@@ -17,21 +17,24 @@ const CONTEXT_MODES = new Set(['paper-only', 'canonical', 'literature']);
 const PAPER_PROFILES = new Set(['auto', 'empirical', 'theoretical', 'architecture', 'system', 'benchmark', 'survey', 'post-training', 'position', 'other']);
 
 function usage() {
-  console.error('Usage: node migrate-package.js <paper-dir-or-slug> [--force] [--context paper-only|canonical|literature] [--profile auto|empirical|theoretical|architecture|system|benchmark|survey|post-training|position|other]');
+  console.error('Usage: node migrate-package.js <paper-dir-or-slug> [--force] [--external-path] [--context paper-only|canonical|literature] [--profile auto|empirical|theoretical|architecture|system|benchmark|survey|post-training|position|other]');
 }
 
 function parseArgs(argv) {
   const args = {
     input: null,
     force: false,
-    contextMode: 'paper-only',
-    profile: 'auto'
+    externalPath: false,
+    contextMode: null,
+    profile: null
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--force') {
       args.force = true;
+    } else if (arg === '--external-path') {
+      args.externalPath = true;
     } else if (arg === '--context') {
       args.contextMode = argv[index + 1];
       index += 1;
@@ -48,22 +51,35 @@ function parseArgs(argv) {
   if (!args.input) {
     throw new Error('Missing paper directory or slug');
   }
-  if (!CONTEXT_MODES.has(args.contextMode)) {
+  if (args.contextMode && !CONTEXT_MODES.has(args.contextMode)) {
     throw new Error('--context must be paper-only, canonical, or literature');
   }
-  if (!PAPER_PROFILES.has(args.profile)) {
+  if (args.profile && !PAPER_PROFILES.has(args.profile)) {
     throw new Error('--profile is not recognized');
   }
   return args;
 }
 
-function resolvePaperDir(input) {
+function isInsidePaperRoot(candidatePath) {
+  const relative = path.relative(PAPERS_ROOT, candidatePath);
+  return relative === '' || (relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function resolvePaperDir(input, options = {}) {
   const expanded = String(input || '').replace(/^~(?=$|\/)/, os.homedir());
   const direct = path.resolve(expanded);
   if (fs.existsSync(direct)) {
-    return fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
+    const paperDir = fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
+    if (!options.externalPath && !isInsidePaperRoot(paperDir)) {
+      throw new Error(`Refusing to migrate a directory outside ${PAPERS_ROOT}. Pass --external-path for an explicit out-of-library migration.`);
+    }
+    return paperDir;
   }
-  return path.join(PAPERS_ROOT, input);
+  const libraryPath = path.resolve(PAPERS_ROOT, input);
+  if (!isInsidePaperRoot(libraryPath)) {
+    throw new Error(`Invalid paper slug or path outside ${PAPERS_ROOT}: ${input}`);
+  }
+  return libraryPath;
 }
 
 function readJson(filePath, fallback = {}) {
@@ -71,6 +87,12 @@ function readJson(filePath, fallback = {}) {
     return fallback;
   }
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function writeJsonAtomic(filePath, value) {
+  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`);
+  fs.renameSync(tmpPath, filePath);
 }
 
 function sha256File(filePath) {
@@ -126,6 +148,26 @@ function publicDataFromLegacy(paperDir, meta, paperData) {
     qualityFlags: ['legacy-migration'],
     parserVersion: paperData.parserVersion || meta.parserVersion || 'legacy-migration',
     rawText
+  };
+}
+
+function normalizedPaperDataFromLegacy(paperDir, meta, paperData) {
+  const publicData = publicDataFromLegacy(paperDir, meta, paperData);
+  return {
+    ...paperData,
+    paperSlug: paperData.paperSlug || meta.slug || path.basename(paperDir),
+    title: paperData.title || publicData.title,
+    authors: Array.isArray(paperData.authors) ? paperData.authors : publicData.authors,
+    abstract: paperData.abstract || publicData.abstract,
+    pageCount: paperData.pageCount || publicData.pageCount,
+    year: paperData.year || publicData.year,
+    githubLinks: paperData.githubLinks || publicData.githubLinks,
+    codeLinks: paperData.codeLinks || publicData.codeLinks,
+    sections: paperData.sections || publicData.sections || {},
+    warnings: Array.isArray(paperData.warnings) ? paperData.warnings : publicData.warnings,
+    qualityFlags: Array.isArray(paperData.qualityFlags) ? paperData.qualityFlags : publicData.qualityFlags,
+    parserVersion: paperData.parserVersion || publicData.parserVersion,
+    rawText: paperData.rawText || publicData.rawText
   };
 }
 
@@ -185,7 +227,7 @@ async function buildLedgerForPackage(paperDir, meta, paperData) {
 }
 
 export async function migratePackage(input, options = {}) {
-  const paperDir = resolvePaperDir(input);
+  const paperDir = resolvePaperDir(input, options);
   if (!fs.existsSync(paperDir) || !fs.statSync(paperDir).isDirectory()) {
     throw new Error(`Paper directory not found: ${paperDir}`);
   }
@@ -197,37 +239,36 @@ export async function migratePackage(input, options = {}) {
   const meta = readJson(metaPath);
   const paperData = readJson(paperDataPath, {});
   const paperSlug = meta.slug || paperData.paperSlug || path.basename(paperDir);
-  const contextMode = options.contextMode || meta.contextMode || 'paper-only';
-  const profile = options.profile || meta.requestedPaperProfile || 'auto';
-
-  const wrote = [];
-  if (!fs.existsSync(ledgerPath) || options.force) {
-    const ledger = await buildLedgerForPackage(paperDir, meta, paperData);
-    fs.writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-    wrote.push('evidence-ledger.json');
+  const contextMode = options.contextMode ?? meta.contextMode ?? 'paper-only';
+  const profile = options.profile ?? meta.requestedPaperProfile ?? 'auto';
+  if (!CONTEXT_MODES.has(contextMode)) {
+    throw new Error(`Invalid contextMode in migration input or meta.json: ${contextMode}`);
+  }
+  if (!PAPER_PROFILES.has(profile)) {
+    throw new Error(`Invalid profile in migration input or meta.json: ${profile}`);
   }
 
-  const nextMeta = {
-    ...meta,
-    title: meta.title || paperData.title || paperSlug,
-    slug: paperSlug,
-    packageVersion: PACKAGE_VERSION,
-    evidenceSchemaVersion: PACKAGE_VERSION,
-    reasoningSchemaVersion: PACKAGE_VERSION,
-    contextMode,
-    requestedPaperProfile: profile,
-    migrationStatus: 'reasoning-draft',
-    migratedAt: new Date().toISOString()
-  };
-  fs.writeFileSync(metaPath, `${JSON.stringify(nextMeta, null, 2)}\n`);
-  wrote.push('meta.json');
+  const wrote = [];
+  let scaffoldedReasoning = false;
+  const paperDataForMigration = normalizedPaperDataFromLegacy(paperDir, meta, paperData);
+
+  if (!fs.existsSync(paperDataPath)) {
+    writeJsonAtomic(paperDataPath, paperDataForMigration);
+    wrote.push('paper-data.json');
+  }
+
+  if (!fs.existsSync(ledgerPath) || options.force) {
+    const ledger = await buildLedgerForPackage(paperDir, meta, paperDataForMigration);
+    writeJsonAtomic(ledgerPath, ledger);
+    wrote.push('evidence-ledger.json');
+  }
 
   if (contextMode !== 'paper-only') {
     const codexDir = path.join(paperDir, '.codex-paper');
     fs.mkdirSync(codexDir, { recursive: true });
     const externalPath = path.join(codexDir, 'external-evidence.json');
     if (!fs.existsSync(externalPath) || options.force) {
-      fs.writeFileSync(externalPath, `${JSON.stringify(buildExternalEvidenceManifest({ paperSlug, contextMode }), null, 2)}\n`);
+      writeJsonAtomic(externalPath, buildExternalEvidenceManifest({ paperSlug, contextMode }));
       wrote.push('.codex-paper/external-evidence.json');
     }
   }
@@ -238,8 +279,24 @@ export async function migratePackage(input, options = {}) {
       contextMode,
       profile
     });
+    scaffoldedReasoning = true;
     wrote.push('reasoning-analysis.json', '.codex-paper/reasoning-review.md');
   }
+
+  const nextMeta = {
+    ...meta,
+    title: meta.title || paperDataForMigration.title || paperSlug,
+    slug: paperSlug,
+    packageVersion: PACKAGE_VERSION,
+    evidenceSchemaVersion: PACKAGE_VERSION,
+    reasoningSchemaVersion: PACKAGE_VERSION,
+    contextMode,
+    requestedPaperProfile: profile,
+    migrationStatus: scaffoldedReasoning ? 'reasoning-draft' : (meta.migrationStatus || 'reasoning-draft'),
+    migratedAt: new Date().toISOString()
+  };
+  writeJsonAtomic(metaPath, nextMeta);
+  wrote.push('meta.json');
 
   return {
     paperDir,

@@ -9,7 +9,7 @@ export function validateSlug(slug: string | undefined) {
 }
 
 export function validateEvidenceId(evidenceId: string | undefined) {
-  return Boolean(evidenceId && /^(?:ev-p\d{3}-[a-z]+-[a-f0-9]{10}|ext-[a-zA-Z0-9._-]+)$/.test(evidenceId))
+  return Boolean(evidenceId && /^(?:ev-p\d{3,}-[a-z]+-[a-f0-9]{10}|ext-[a-z0-9][a-z0-9-]*-[a-f0-9]{10})$/.test(evidenceId))
 }
 
 export function resolvePaperDir(slug: string) {

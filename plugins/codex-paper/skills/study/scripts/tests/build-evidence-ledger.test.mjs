@@ -137,6 +137,44 @@ test('buildSectionTree recognizes Chinese and English section titles', () => {
   assert.ok(roles.includes('method'));
 });
 
+test('buildEvidenceLedger schema accepts page numbers beyond 999', () => {
+  const pageText = '1000 Appendix\nLong document evidence appears here.';
+  const parsed = {
+    publicData: {
+      title: 'Long Paper',
+      authors: [],
+      abstract: '',
+      pageCount: 1000,
+      year: null,
+      githubLinks: [],
+      codeLinks: [],
+      sections: {},
+      warnings: [],
+      qualityFlags: [],
+      parserVersion: '2.0.0'
+    },
+    pages: [{
+      page: 1000,
+      text: pageText,
+      rawTextStart: 0,
+      rawTextEnd: pageText.length,
+      blockCount: 1
+    }],
+    parserMetadata: {
+      parser: 'pymupdf',
+      parserVersion: '2.0.0',
+      hasLayout: true,
+      warnings: []
+    }
+  };
+
+  const ledger = buildEvidenceLedger({ parsed, paperSlug: 'long-paper' });
+  const validate = schemaValidator();
+
+  assert.equal(validate(ledger), true, JSON.stringify(validate.errors, null, 2));
+  assert.ok(ledger.evidence.every((item) => /^ev-p1000-/.test(item.id)));
+});
+
 test('pdf-parse fallback shape still produces a legal degraded ledger', () => {
   const parsed = {
     publicData: {

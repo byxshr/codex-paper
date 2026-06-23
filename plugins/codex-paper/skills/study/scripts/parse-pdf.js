@@ -560,6 +560,10 @@ function buildFactsTextSource(pages) {
   return normalizeText(pages.map((page) => typeof page === 'string' ? page : page.text || '').join('\n\n'));
 }
 
+function buildOffsetTextSource(pages) {
+  return pages.map((page) => typeof page === 'string' ? page : page.text || '').join('\n\n');
+}
+
 export async function parsePdfDetailed(pdfPath) {
   if (!pdfPath) {
     throw new Error('PDF path is required');
@@ -617,7 +621,7 @@ export async function parsePdfDetailed(pdfPath) {
 
   const sectionTree = buildSectionTree({
     pages: source.pages,
-    rawText,
+    rawText: buildOffsetTextSource(source.pages),
     parserMetadata: source.parserMetadata || {}
   });
 
