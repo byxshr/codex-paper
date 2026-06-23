@@ -129,6 +129,18 @@ cmd_benchmark_all() {
   cmd_package_test
 }
 
+cmd_migrate() {
+  ensure_node
+
+  if [ "$#" -lt 1 ]; then
+    echo "Usage: bash scripts/codex-paper.sh migrate <paper-dir-or-slug> [--force] [--context paper-only|canonical|literature] [--profile ...]" >&2
+    exit 1
+  fi
+
+  print_section "Migrate Package"
+  "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/migrate-package.js" "$@"
+}
+
 cmd_benchmark_report() {
   ensure_node
 
@@ -219,6 +231,7 @@ Commands:
   reasoning-test Run reasoning validation fixtures
   package-test Run package quality fixtures
   benchmark-all  Run parser, reasoning, and package benchmarks
+  migrate      Migrate a v1 package to v2 evidence/reasoning draft files
   benchmark-report  Print the latest benchmark report
   smoke-test   Run an end-to-end local smoke test
   help         Show this help message
@@ -257,6 +270,10 @@ case "$command_name" in
     ;;
   benchmark-all)
     cmd_benchmark_all
+    ;;
+  migrate)
+    shift
+    cmd_migrate "$@"
     ;;
   benchmark-report)
     cmd_benchmark_report

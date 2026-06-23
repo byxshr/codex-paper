@@ -12,6 +12,9 @@ const __dirname = path.dirname(__filename);
 const LIBRARY_ROOT = path.join(process.env.HOME || '', 'codex-papers');
 const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const INDEX_PATH = path.join(LIBRARY_ROOT, 'index.json');
+const PACKAGE_VERSION = '2.0.0';
+const CONTEXT_MODES = new Set(['paper-only', 'canonical', 'literature']);
+const PAPER_PROFILES = new Set(['auto', 'empirical', 'theoretical', 'architecture', 'system', 'benchmark', 'survey', 'post-training', 'position', 'other']);
 
 function slugify(value) {
   return value
@@ -26,6 +29,43 @@ function slugify(value) {
 
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function parsePrepareArgs(argv) {
+  const args = {
+    input: null,
+    contextMode: 'paper-only',
+    profile: 'auto'
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--context') {
+      args.contextMode = argv[index + 1];
+      index += 1;
+    } else if (arg === '--profile') {
+      args.profile = argv[index + 1];
+      index += 1;
+    } else if (!args.input) {
+      args.input = arg;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  if (!args.input) {
+    throw new Error('Paper input is required');
+  }
+
+  if (!CONTEXT_MODES.has(args.contextMode)) {
+    throw new Error('--context must be paper-only, canonical, or literature');
+  }
+
+  if (!PAPER_PROFILES.has(args.profile)) {
+    throw new Error('--profile is not recognized');
+  }
+
+  return args;
 }
 
 function splitSentences(text) {
@@ -238,9 +278,55 @@ function writeIndexPreserveShape(indexState) {
   fs.writeFileSync(INDEX_PATH, JSON.stringify(indexState.raw, null, 2));
 }
 
-export async function preparePaper(userInput) {
+function buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl }) {
+  return {
+    schemaVersion: '2.0.0',
+    paperSlug,
+    contextMode,
+    generatedAt: new Date().toISOString(),
+    policy: {
+      paperOnlyDefault: contextMode === 'paper-only',
+      storedSeparatelyFromEvidenceLedger: true,
+      note: contextMode === 'paper-only'
+        ? 'No external evidence was collected in paper-only mode.'
+        : 'External evidence must be added explicitly by Codex and must never be copied into evidence-ledger.json.'
+    },
+    sources: sourceUrl ? [{
+      id: 'source-input',
+      kind: 'user_provided_pdf_url',
+      title: 'Original user-provided paper URL',
+      url: sourceUrl,
+      accessedAt: new Date().toISOString()
+    }] : [],
+    evidence: []
+  };
+}
+
+function maybeWriteExternalEvidenceManifest({ paperDir, paperSlug, contextMode, sourceUrl }) {
+  if (contextMode === 'paper-only') {
+    return null;
+  }
+
+  const codexDir = path.join(paperDir, '.codex-paper');
+  ensureDir(codexDir);
+  const outputPath = path.join(codexDir, 'external-evidence.json');
+  const manifest = buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl });
+  fs.writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return outputPath;
+}
+
+export async function preparePaper(userInput, options = {}) {
   if (!userInput) {
     throw new Error('Paper input is required');
+  }
+
+  const contextMode = options.contextMode || 'paper-only';
+  const profile = options.profile || 'auto';
+  if (!CONTEXT_MODES.has(contextMode)) {
+    throw new Error('contextMode must be paper-only, canonical, or literature');
+  }
+  if (!PAPER_PROFILES.has(profile)) {
+    throw new Error('profile is not recognized');
   }
 
   ensureDir(PAPERS_ROOT);
@@ -302,11 +388,13 @@ export async function preparePaper(userInput) {
     codeLinks: parsed.codeLinks,
     sourceFilename,
     parserVersion: parsed.parserVersion,
-    packageVersion: '2.0.0',
-    evidenceSchemaVersion: '2.0.0',
-    contextMode: 'paper-only',
+    packageVersion: PACKAGE_VERSION,
+    evidenceSchemaVersion: PACKAGE_VERSION,
+    reasoningSchemaVersion: PACKAGE_VERSION,
+    contextMode,
+    requestedPaperProfile: profile,
     generatedWith: {
-      pluginVersion: parsed.parserVersion,
+      pluginVersion: PACKAGE_VERSION,
       parserVersion: parsed.parserVersion
     },
     qualityFlags: parsed.qualityFlags,
@@ -326,6 +414,8 @@ export async function preparePaper(userInput) {
     codeLinks: parsed.codeLinks,
     sourceFilename,
     parserVersion: parsed.parserVersion,
+    packageVersion: PACKAGE_VERSION,
+    contextMode,
     qualityFlags: parsed.qualityFlags,
     url: sourceUrl
   };
@@ -336,6 +426,7 @@ export async function preparePaper(userInput) {
   fs.writeFileSync(path.join(paperDir, 'facts.json'), JSON.stringify(facts, null, 2));
   fs.writeFileSync(path.join(paperDir, 'analysis.json'), JSON.stringify(analysis, null, 2));
   fs.writeFileSync(path.join(paperDir, 'meta.json'), JSON.stringify(meta, null, 2));
+  const externalEvidencePath = maybeWriteExternalEvidenceManifest({ paperDir, paperSlug, contextMode, sourceUrl });
 
   const indexState = readIndexPreserveShape();
   const existingIndex = indexState.papers.findIndex((paper) => paper.slug === paperSlug);
@@ -357,25 +448,28 @@ export async function preparePaper(userInput) {
     paperData,
     ledger,
     facts,
-    analysis
+    analysis,
+    contextMode,
+    profile,
+    externalEvidencePath
   };
 }
 
 async function runCli() {
-  const userInput = process.argv[2];
-  if (!userInput) {
-    console.error('Usage: node prepare-paper.js <pdf-path-or-url>');
-    process.exit(1);
-  }
-
-  const result = await preparePaper(userInput);
+  const args = parsePrepareArgs(process.argv.slice(2));
+  const result = await preparePaper(args.input, args);
   process.stdout.write(`${JSON.stringify({
     paperSlug: result.paperSlug,
     paperDir: result.paperDir,
     sourceFilename: result.sourceFilename,
     parserVersion: result.paperData.parserVersion,
+    packageVersion: PACKAGE_VERSION,
+    contextMode: result.contextMode,
+    requestedPaperProfile: result.profile,
     evidenceCount: result.ledger.evidence.length,
-    analysisVersion: result.analysis.analysisVersion
+    analysisVersion: result.analysis.analysisVersion,
+    externalEvidencePath: result.externalEvidencePath || null,
+    next: 'Run scaffold-reasoning-analysis.js, fill reasoning-analysis.json from the evidence ledger, then run validate-reasoning.js --strict before authoring visible materials.'
   }, null, 2)}\n`);
 }
 

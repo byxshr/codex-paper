@@ -15,6 +15,7 @@ const FORBIDDEN_RESIDUES = [
   'coreClaims',
   'sourceType',
   'evidence-ledger',
+  'external-evidence',
   'reasoning-analysis',
   'Result 1',
   'See evidence'

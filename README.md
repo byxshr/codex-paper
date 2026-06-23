@@ -10,7 +10,7 @@
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
-A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation, plus a parser benchmark and an evidence-first paper preparation pipeline. The `$paper-study` workflow is designed for Codex to read the paper and evidence files, then author a complete study package instead of templating parsed JSON into final user-facing materials.
+A research-paper study project that now includes a **Codex plugin skeleton** alongside the original implementation, plus parser benchmarks, an evidence ledger, and an evidence-first research reasoning pipeline. The `$paper-study` workflow is designed for Codex to read the paper evidence files, complete a validated reasoning analysis, then author a complete study package instead of templating parsed JSON into final user-facing materials.
 
 <table>
   <tr>
@@ -35,7 +35,12 @@ A research-paper study project that now includes a **Codex plugin skeleton** alo
 - **Smart content truncation** - Handles large papers (50k char limit) intelligently
 - **Code repository detection** - Automatically finds GitHub, arXiv, CodeOcean links
 - **Evidence-first paper prep** - Generates internal evidence files such as `paper-data.json`, `facts.json`, and `analysis.json`
+- **v2 evidence ledger** - Writes `evidence-ledger.json` with stable evidence IDs, page text, section trees, evidence units, natural locations, and parser quality degradations
+- **Research reasoning analysis** - Adds `reasoning-analysis.json` for central claims, research question, author reasoning path, validations, weakest assumption, minimal reproduction, strongest counterexample, follow-up idea, and uncertainty zones
+- **Semantic validation** - Checks schema, evidence references, source types, numeric grounding, reasoning graph cycles, critical-analysis coverage, and template residue
+- **Context modes** - Defaults to offline `paper-only`; `canonical` and `literature` keep external evidence in `.codex-paper/external-evidence.json` instead of mixing it into the paper ledger
 - **Parser benchmark suite** - Regressions are checked against a fixed 5-paper gold set
+- **Reasoning and package benchmarks** - Adds deterministic fixtures for reasoning quality and visible study-package regressions
 - **Codex-authored study package** - Produces `README.md`, `summary.md`, `insights.md`, `method.md`, `mental-model.md`, `reflection.md`, and `qa.md` from the paper and evidence
 - **Curated visual learning path** - Adds `visual-assets.md` and embeds only high-value, source-labeled figures, tables, and deterministic diagrams where they support the prose
 - **Code demonstrations** - Generates at least one independently runnable code example tied to the paper's core idea
@@ -153,15 +158,16 @@ What is the key difference between self-attention and recurrent sequence modelin
 ```
 
 Codex will automatically trigger the study workflow and:
-1. Parse the PDF and prepare metadata, text, facts, and evidence files
-2. Read `paper-data.json`, `facts.json`, `analysis.json`, and paper text chunks as needed
-3. Author complete study materials from evidence instead of directly rendering machine JSON
-4. Generate a self-contained interactive `index.html`
-5. Create at least one independently runnable code demonstration
-6. Copy the original `paper.pdf`, curate useful visual assets, and avoid dumping low-value extracted fragments into the reading flow
-7. Create a hidden answering pack for future grounded follow-up questions
-8. Update the global search index
-9. Launch the web viewer automatically
+1. Parse the PDF and prepare metadata, text, facts, analysis, and the v2 evidence ledger
+2. Infer the paper profile, scaffold `reasoning-analysis.json`, and read the relevant profile contract
+3. Fill research reasoning from paper evidence, then run strict semantic validation before authoring visible materials
+4. Author complete study materials from evidence instead of directly rendering machine JSON
+5. Generate a self-contained interactive `index.html`
+6. Create at least one independently runnable code demonstration
+7. Copy the original `paper.pdf`, curate useful visual assets, and avoid dumping low-value extracted fragments into the reading flow
+8. Create a hidden answering pack for future grounded follow-up questions
+9. Update the global search index
+10. Launch the web viewer automatically
 
 ### Launch Web Viewer
 
@@ -200,6 +206,8 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │       ├── chat-notes.md                 # Follow-up Q&A notes created by the Web UI
 │       ├── index.html                    # Interactive HTML explorer
 │       ├── paper.pdf                     # Copy of the original PDF
+│       ├── evidence-ledger.json          # Internal v2 paper-only evidence ledger
+│       ├── reasoning-analysis.json       # Internal v2 reasoning analysis contract
 │       ├── images/                       # Curated extracted figures, tables, and necessary page previews
 │       │   ├── fig1.png
 │       │   └── fig2.png
@@ -214,10 +222,40 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │
 │       # Hidden local context for grounded follow-up answers
 │       └── .codex-paper/
-│           └── answering-pack.md         # Evidence navigation pack for $paper-chat
+│           ├── answering-pack.md         # Evidence navigation pack for $paper-chat
+│           ├── external-evidence.json    # Optional external evidence for canonical/literature modes
+│           ├── reasoning-review.md       # Fixed self-review checklist
+│           └── validation-report.json    # Latest v2 validation report
 │
 └── index.json                           # Global search index
 ```
+
+### v2 Validation and Migration
+
+Run the full deterministic suite:
+
+```bash
+bash scripts/codex-paper.sh install
+bash scripts/codex-paper.sh test
+bash scripts/codex-paper.sh benchmark-all
+bash scripts/codex-paper.sh smoke-test
+bash scripts/codex-paper.sh build
+```
+
+Validate one completed v2 package:
+
+```bash
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --strict
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug} --run-code
+```
+
+Migrate a v1 package to v2 draft evidence/reasoning files without inventing high-level analysis:
+
+```bash
+bash scripts/codex-paper.sh migrate ~/codex-papers/papers/{paper-slug}
+```
+
+See [docs/evidence-ledger.md](docs/evidence-ledger.md), [docs/reasoning-analysis.md](docs/reasoning-analysis.md), [docs/package-v2.md](docs/package-v2.md), and [docs/migration-v1-to-v2.md](docs/migration-v1-to-v2.md) for the v2 contracts.
 
 ---
 

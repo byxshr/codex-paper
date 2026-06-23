@@ -1,0 +1,42 @@
+name: Codex Paper CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/evidence-reasoning-v2
+
+jobs:
+  test-build-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: bash scripts/codex-paper.sh install
+
+      - name: Unit tests
+        run: bash scripts/codex-paper.sh test
+
+      - name: Benchmarks
+        run: bash scripts/codex-paper.sh benchmark-all
+
+      - name: Smoke test
+        run: bash scripts/codex-paper.sh smoke-test
+
+      - name: Production build
+        run: bash scripts/codex-paper.sh build

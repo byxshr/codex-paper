@@ -78,7 +78,7 @@ const BODY_IMAGE_MIN_HEIGHT = 220;
 const BODY_IMAGE_MIN_PIXELS = 160000;
 
 function usage() {
-  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code] [--legacy-ok] [--timeout-ms 20000]');
+  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code|--run-artifacts] [--legacy-ok] [--timeout-ms 20000]');
 }
 
 function parseArgs(argv) {
@@ -95,7 +95,7 @@ function parseArgs(argv) {
     if (arg === '--lang') {
       args.lang = argv[index + 1];
       index += 1;
-    } else if (arg === '--run-code') {
+    } else if (arg === '--run-code' || arg === '--run-artifacts') {
       args.runCode = true;
     } else if (arg === '--legacy-ok') {
       args.legacyOk = true;

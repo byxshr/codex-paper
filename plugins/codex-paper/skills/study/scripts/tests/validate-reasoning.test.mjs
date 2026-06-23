@@ -203,10 +203,14 @@ function makeReasoning(overrides = {}) {
   };
 }
 
-function writePackage(reasoning) {
+function writePackage(reasoning, externalEvidence = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-reasoning-test-'));
   fs.writeFileSync(path.join(dir, 'evidence-ledger.json'), `${JSON.stringify(makeLedger(), null, 2)}\n`);
   fs.writeFileSync(path.join(dir, 'reasoning-analysis.json'), `${JSON.stringify(reasoning, null, 2)}\n`);
+  if (externalEvidence) {
+    fs.mkdirSync(path.join(dir, '.codex-paper'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.codex-paper', 'external-evidence.json'), `${JSON.stringify(externalEvidence, null, 2)}\n`);
+  }
   return dir;
 }
 
@@ -239,6 +243,57 @@ test('validateReasoningPackage reports missing refs and paper-only literature fa
     assert.ok(codes.includes('EVIDENCE_REF_NOT_FOUND'));
     assert.ok(codes.includes('LITERATURE_FACT_WITHOUT_EXTERNAL_EVIDENCE'));
     assert.ok(codes.includes('LITERATURE_FACT_IN_PAPER_ONLY_MODE'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('validateReasoningPackage accepts external evidence only through ext refs in non-paper-only mode', () => {
+  const externalId = 'ext-canonical-paper-1234567890';
+  const reasoning = makeReasoning({
+    contextMode: 'canonical',
+    priorWorkGap: {
+      existingApproaches: [{
+        id: 'prior-ext-01',
+        statement: 'The canonical project page reports a related release.',
+        sourceType: 'literature_fact',
+        confidence: 'medium',
+        evidenceRefs: [externalId]
+      }],
+      gap: node('gap-01', 'Existing approaches leave room on this benchmark.'),
+      noveltyBoundary: node('novelty-01', 'The novelty boundary is the reported method within this benchmark.', 'inference')
+    }
+  });
+  const externalEvidence = {
+    schemaVersion: '2.0.0',
+    paperSlug: 'valid-paper',
+    contextMode: 'canonical',
+    generatedAt: '2026-06-23T00:00:00.000Z',
+    policy: {
+      paperOnlyDefault: false,
+      storedSeparatelyFromEvidenceLedger: true,
+      note: 'External evidence is stored separately.'
+    },
+    sources: [{
+      id: 'source-canonical',
+      kind: 'canonical_paper_page',
+      title: 'Canonical project page',
+      url: 'https://example.com/project',
+      accessedAt: '2026-06-23T00:00:00.000Z'
+    }],
+    evidence: [{
+      id: externalId,
+      sourceId: 'source-canonical',
+      statement: 'The canonical project page reports a related release.',
+      naturalLocation: 'Canonical project page, release note section',
+      sourceType: 'literature_fact',
+      confidence: 'medium'
+    }]
+  };
+  const dir = writePackage(reasoning, externalEvidence);
+  try {
+    const result = validateReasoningPackage(dir);
+    assert.equal(result.report.status, 'pass', JSON.stringify(result.report, null, 2));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

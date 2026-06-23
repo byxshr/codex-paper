@@ -1,5 +1,5 @@
 import path from 'path'
-import { readJsonFile, requirePaperDir, truncateText, validateEvidenceId, validateSlug } from '../../../../utils/paperAccess'
+import { readJsonFile, readOptionalJson, requirePaperDir, truncateText, validateEvidenceId, validateSlug } from '../../../../utils/paperAccess'
 
 function sectionTitle(ledger: any, sectionId: string | null | undefined) {
   if (!sectionId) return null
@@ -14,6 +14,35 @@ export default defineEventHandler((event) => {
   }
 
   const paperDir = requirePaperDir(slug!)
+  if (evidenceId!.startsWith('ext-')) {
+    const external = readOptionalJson(path.join(paperDir, '.codex-paper', 'external-evidence.json'), 'external-evidence.json')
+    const evidence = (external?.evidence || []).find((item: any) => item.id === evidenceId)
+    const source = (external?.sources || []).find((item: any) => item.id === evidence?.sourceId)
+
+    if (!evidence) {
+      throw createError({ statusCode: 404, statusMessage: 'Evidence not found' })
+    }
+
+    return {
+      id: evidence.id,
+      kind: 'external',
+      roles: ['external_context'],
+      text: truncateText(evidence.statement || evidence.quote, 700),
+      quote: truncateText(evidence.quote || evidence.statement, 500),
+      confidence: evidence.confidence,
+      location: {
+        page: null,
+        sectionId: null,
+        sectionTitle: truncateText(evidence.naturalLocation, 180),
+        labels: {
+          sourceTitle: source?.title || evidence.sourceId,
+          sourceKind: source?.kind || null
+        }
+      },
+      source: 'external'
+    }
+  }
+
   const ledger = readJsonFile(path.join(paperDir, 'evidence-ledger.json'), 'evidence-ledger.json')
   const evidence = (ledger.evidence || []).find((item: any) => item.id === evidenceId)
 

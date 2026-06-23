@@ -11,6 +11,7 @@ const __dirname = path.dirname(__filename);
 const LIBRARY_ROOT = path.join(process.env.HOME || '', 'codex-papers');
 const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const SCHEMA_PATH = path.join(__dirname, '../schemas/reasoning-analysis.schema.json');
+const EXTERNAL_SCHEMA_PATH = path.join(__dirname, '../schemas/external-evidence.schema.json');
 
 const TEMPLATE_RESIDUE = /\b(?:TODO|TBD|placeholder|fill me|lorem ipsum|待填写|占位|这里填写)\b/i;
 const INCREMENTAL_FOLLOWUP = /\b(?:more data|larger model|bigger model|more parameters|scale up|tune hyperparameters|更多数据|更大模型|更多参数|调参)\b/i;
@@ -72,8 +73,8 @@ function readJsonSafe(filePath) {
   }
 }
 
-function compileSchema() {
-  const schema = JSON.parse(fs.readFileSync(SCHEMA_PATH, 'utf8'));
+function compileSchema(schemaPath = SCHEMA_PATH) {
+  const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   return ajv.compile(schema);
 }
@@ -135,6 +136,49 @@ export function validateEvidenceRefs(reasoning, ledger, externalEvidence) {
   });
 
   return errors;
+}
+
+export function validateExternalEvidence(reasoning, externalEvidence) {
+  const errors = [];
+  const warnings = [];
+  if (!externalEvidence) {
+    return { errors, warnings };
+  }
+
+  const validate = compileSchema(EXTERNAL_SCHEMA_PATH);
+  if (!validate(externalEvidence)) {
+    for (const error of validate.errors || []) {
+      addFinding(
+        errors,
+        'EXTERNAL_EVIDENCE_SCHEMA_INVALID',
+        error.instancePath || '/',
+        `${error.instancePath || '/'} ${error.message}`
+      );
+    }
+  }
+
+  if ((reasoning?.contextMode || 'paper-only') === 'paper-only' && (externalEvidence.evidence || []).length > 0) {
+    addFinding(
+      errors,
+      'EXTERNAL_EVIDENCE_IN_PAPER_ONLY_MODE',
+      '.codex-paper/external-evidence.json',
+      'paper-only mode cannot include external evidence entries'
+    );
+  }
+
+  const sourceIds = new Set((externalEvidence.sources || []).map((source) => source.id));
+  (externalEvidence.evidence || []).forEach((item, index) => {
+    if (item.sourceId && !sourceIds.has(item.sourceId)) {
+      addFinding(
+        errors,
+        'EXTERNAL_EVIDENCE_SOURCE_NOT_FOUND',
+        `.codex-paper/external-evidence.json.evidence[${index}].sourceId`,
+        `External source not found: ${item.sourceId}`
+      );
+    }
+  });
+
+  return { errors, warnings };
 }
 
 export function validateSourceTypes(reasoning, contextMode) {
@@ -495,6 +539,9 @@ export function validateReasoningPackage(input, options = {}) {
 
     const evidenceIndex = new Map((ledger?.evidence || []).map((item) => [item.id, item]));
     const externalIndex = new Map((externalEvidence?.evidence || []).map((item) => [item.id, item]));
+    const externalFindings = validateExternalEvidence(reasoning, externalEvidence);
+    errors.push(...externalFindings.errors);
+    warnings.push(...externalFindings.warnings);
     errors.push(...validateEvidenceRefs(reasoning, ledger || {}, externalEvidence || {}));
 
     const numericFindings = validateNumericGrounding(reasoning, evidenceIndex, externalIndex);
