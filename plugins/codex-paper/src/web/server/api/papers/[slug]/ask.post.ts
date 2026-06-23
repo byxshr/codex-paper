@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { homedir } from 'os'
 import { askCodexWorker } from '../../../utils/codexWorker'
+import { appendChatNote } from '../../../utils/chatNotes'
 
 const MAX_QUESTION_LENGTH = 4_000
 const MAX_SELECTED_FILE_LENGTH = 500
@@ -12,8 +13,15 @@ const FORBIDDEN_RESIDUES = [
   'analysisVersion',
   'evidenceRefs',
   'coreClaims',
-  'Result 1',
-  'See evidence'
+  'sourceType',
+  'evidence-ledger',
+  'external-evidence',
+  'reasoning-analysis'
+]
+
+const FORBIDDEN_RESIDUE_PATTERNS = [
+  { label: 'ev-*', pattern: /\bev-p\d{3,}-[a-z]+-[a-f0-9]{10}\b/g },
+  { label: 'ext-*', pattern: /\bext-[a-zA-Z0-9._-]+\b/g }
 ]
 
 function validateSlug(slug: string) {
@@ -65,53 +73,37 @@ ${question}
 
 Answering rules:
 1. Answer in the same language as the user question. For Chinese questions, use Chinese prose except for proper nouns and established technical terms.
-2. Prefer evidence in this order: user-visible study materials, .codex-paper/answering-pack.md, facts.json / analysis.json / paper-data.json, then paper-data.rawText or the local paper.pdf text if needed.
+2. Prefer evidence in this order: user-visible study materials, reasoning-analysis.json, .codex-paper/answering-pack.md, evidence-ledger.json, facts.json / analysis.json / paper-data.json, then paper-data.rawText or the local paper.pdf text if needed.
 3. Only move to the next evidence layer when the previous layer is insufficient.
 4. Do not use live web search. Use only local files in the paper package.
 5. Do not write or modify files; the Web UI will save the final answer.
-6. Do not expose internal JSON field names, evidence IDs, parser object paths, or extraction labels such as analysisVersion, evidenceRefs, coreClaims, Result 1, or See evidence.
+6. Do not expose internal JSON field names, evidence IDs, parser object paths, or extraction labels such as analysisVersion, evidenceRefs, coreClaims, or sourceType.
 7. If the available learning package and paper evidence cannot answer the question with confidence, say that the evidence is insufficient and explain what is missing.
-8. Keep the answer focused and cite sources naturally, such as "基于 summary.md" or "根据实验部分", without exposing machine IDs.`
+8. Keep the answer focused and cite sources naturally, such as "基于 summary.md", "根据实验部分", or "论文 p.8，Table 3", without exposing machine IDs.
+9. When using reasoning-analysis, distinguish paper claims, external facts, analysis inferences, and research speculations in natural language.
+10. Do not turn an inference or speculation into a statement that the paper itself made.`
 }
 
 function findForbiddenResidues(text: string) {
-  return FORBIDDEN_RESIDUES.filter((residue) => text.includes(residue))
+  const residues = FORBIDDEN_RESIDUES.filter((residue) => text.includes(residue))
+  for (const { label, pattern } of FORBIDDEN_RESIDUE_PATTERNS) {
+    pattern.lastIndex = 0
+    if (pattern.test(text)) {
+      residues.push(label)
+    }
+  }
+  return residues
 }
 
 function redactForbiddenResidues(text: string) {
-  return FORBIDDEN_RESIDUES.reduce(
+  const withoutFieldNames = FORBIDDEN_RESIDUES.reduce(
     (current, residue) => current.split(residue).join('[internal field]'),
     text
   )
-}
-
-function appendChatNote(paperDir: string, question: string, answer: string, selectedFile: string) {
-  const timestamp = new Date().toISOString()
-  const selectedFileLine = selectedFile ? `当前材料：\`${selectedFile}\`` : '当前材料：未指定'
-  const safeQuestion = redactForbiddenResidues(question)
-  const safeAnswer = redactForbiddenResidues(answer)
-  const note = [
-    '',
-    '---',
-    '',
-    `## ${timestamp}`,
-    '',
-    selectedFileLine,
-    '',
-    '### 问题',
-    '',
-    safeQuestion,
-    '',
-    '### 回答',
-    '',
-    safeAnswer.trim(),
-    '',
-    '### 来源说明',
-    '',
-    '本回答由 Codex 基于学习包、隐藏问答导航包和本地论文证据生成。'
-  ].join('\n')
-
-  fs.appendFileSync(path.join(paperDir, 'chat-notes.md'), note, 'utf8')
+  return FORBIDDEN_RESIDUE_PATTERNS.reduce((current, { pattern }) => {
+    pattern.lastIndex = 0
+    return current.replace(pattern, '[internal evidence id]')
+  }, withoutFieldNames)
 }
 
 function createFallbackError(statusCode: number, statusMessage: string, fallbackPrompt: string, detail?: string) {
@@ -184,11 +176,17 @@ export default defineEventHandler(async (event) => {
       )
     }
 
-    appendChatNote(paperDir, question, answer, selectedFile)
+    const savedNote = appendChatNote(
+      paperDir,
+      redactForbiddenResidues(question),
+      redactForbiddenResidues(answer),
+      selectedFile
+    )
 
     return {
       answer,
-      savedTo: 'chat-notes.md'
+      savedTo: savedNote.savedTo,
+      entryId: savedNote.entryId
     }
   } catch (e: any) {
     if (e.statusCode) {

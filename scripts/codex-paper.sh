@@ -102,6 +102,45 @@ cmd_benchmark() {
   "$NODE_BIN" "$REPO_ROOT/benchmarks/run-benchmark.mjs"
 }
 
+cmd_test() {
+  ensure_node
+
+  print_section "Unit Tests"
+  "$NODE_BIN" --test "$PLUGIN_ROOT"/skills/study/scripts/tests/*.mjs
+}
+
+cmd_reasoning_test() {
+  ensure_node
+
+  print_section "Reasoning Benchmark"
+  "$NODE_BIN" "$REPO_ROOT/benchmarks/run-reasoning-benchmark.mjs"
+}
+
+cmd_package_test() {
+  ensure_node
+
+  print_section "Package Benchmark"
+  "$NODE_BIN" "$REPO_ROOT/benchmarks/run-package-benchmark.mjs"
+}
+
+cmd_benchmark_all() {
+  cmd_benchmark
+  cmd_reasoning_test
+  cmd_package_test
+}
+
+cmd_migrate() {
+  ensure_node
+
+  if [ "$#" -lt 1 ]; then
+    echo "Usage: bash scripts/codex-paper.sh migrate <paper-dir-or-slug> [--force] [--external-path] [--context paper-only|canonical|literature] [--profile ...]" >&2
+    exit 1
+  fi
+
+  print_section "Migrate Package"
+  "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/migrate-package.js" "$@"
+}
+
 cmd_benchmark_report() {
   ensure_node
 
@@ -188,6 +227,11 @@ Commands:
   stop         Stop the local web viewer
   status       Show build and viewer status
   benchmark    Run the parser benchmark against the local paper examples
+  test         Run deterministic unit tests
+  reasoning-test Run reasoning validation fixtures
+  package-test Run package quality fixtures
+  benchmark-all  Run parser, reasoning, and package benchmarks
+  migrate      Migrate a v1 package to v2 evidence/reasoning draft files
   benchmark-report  Print the latest benchmark report
   smoke-test   Run an end-to-end local smoke test
   help         Show this help message
@@ -214,6 +258,22 @@ case "$command_name" in
     ;;
   benchmark)
     cmd_benchmark
+    ;;
+  test)
+    cmd_test
+    ;;
+  reasoning-test)
+    cmd_reasoning_test
+    ;;
+  package-test)
+    cmd_package_test
+    ;;
+  benchmark-all)
+    cmd_benchmark_all
+    ;;
+  migrate)
+    shift
+    cmd_migrate "$@"
     ;;
   benchmark-report)
     cmd_benchmark_report

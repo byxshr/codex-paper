@@ -1,13 +1,16 @@
 import fs from 'fs'
 import path from 'path'
-import { homedir } from 'os'
+import { requirePaperDir, validateSlug } from '../../../utils/paperAccess'
 
 const HIDDEN_MACHINE_FILES = new Set([
   '.study-validation.json',
   'analysis.json',
+  'evidence-ledger.json',
+  'external-evidence.json',
   'facts.json',
   'meta.json',
-  'paper-data.json'
+  'paper-data.json',
+  'reasoning-analysis.json'
 ])
 
 function hasHiddenPathSegment(relativePath: string) {
@@ -16,20 +19,24 @@ function hasHiddenPathSegment(relativePath: string) {
     .some((segment) => segment.startsWith('.'))
 }
 
+function isHiddenMachinePath(relativePath: string) {
+  return HIDDEN_MACHINE_FILES.has(path.basename(relativePath))
+}
+
 export default defineEventHandler((event) => {
   const slug = getRouterParam(event, 'slug')
   const query = getQuery(event)
   const filePath = query.path as string
 
-  if (!slug || !filePath) {
+  if (!validateSlug(slug) || !filePath) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Slug and path are required'
+      statusMessage: 'Valid slug and path are required'
     })
   }
 
   try {
-    const paperDir = path.join(homedir(), 'codex-papers/papers', slug)
+    const paperDir = requirePaperDir(slug!)
     const fullPath = path.resolve(paperDir, filePath)
     const relativeFullPath = path.relative(paperDir, fullPath)
 
@@ -43,7 +50,7 @@ export default defineEventHandler((event) => {
 
     if (
       hasHiddenPathSegment(relativeFullPath) ||
-      (!relativeFullPath.includes(path.sep) && HIDDEN_MACHINE_FILES.has(path.basename(relativeFullPath)))
+      isHiddenMachinePath(relativeFullPath)
     ) {
       throw createError({
         statusCode: 404,

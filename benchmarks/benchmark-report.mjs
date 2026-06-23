@@ -13,10 +13,13 @@ console.log(`Report: ${reportPath}`);
 console.log(`Generated: ${report.generatedAt}`);
 console.log(`Benchmark directory: ${report.benchmarkDir}`);
 console.log(`Passed: ${report.totals.passed}/${report.totals.papers}`);
+if (report.totals.skipped > 0) {
+  console.log(`Skipped: ${report.totals.skipped}/${report.totals.papers}`);
+}
 
 for (const paper of report.papers) {
   console.log(`\n${paper.slug}`);
-  console.log(`  status: ${paper.pass ? 'PASS' : 'FAIL'}`);
+  console.log(`  status: ${paper.skipped ? 'SKIP' : paper.pass ? 'PASS' : 'FAIL'}`);
   if (paper.error) {
     console.log(`  error: ${paper.error}`);
     continue;

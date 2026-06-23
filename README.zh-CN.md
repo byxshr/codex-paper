@@ -8,21 +8,21 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
-[![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
+[![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
-一个研究论文学习项目，现在同时包含一套 **Codex 插件骨架**，并保留原有实现，同时补齐了解析 benchmark 和 evidence-first 的论文准备链路。`$paper-study` 工作流的目标是让 Codex 阅读论文与证据文件后主动写作，生成完整学习包，而不是把解析 JSON 直接模板化成最终材料。
+Codex Paper 是一个 Codex 插件，可以把研究论文转化为可复用的论文学习包。它会先构建只来自论文本身的证据记录和结构化研究推理分析，再让 Codex 基于这些证据撰写学习笔记、方法解释、代码演示、图表导读、交互式页面和后续问答上下文，而不是把原始解析结果直接模板化成学习材料。
 
 <table>
   <tr>
     <td align="center">
-      <img src="assets/screenshot1.png" alt="图书馆界面" width="100%"/>
+      <img src="assets/library.png" alt="Codex Paper 论文库，包含搜索、标签筛选和收藏索引" width="100%"/>
       <br/>
-      <sub>图书馆界面 - 浏览和搜索您的论文收藏</sub>
+      <sub>论文库 - 搜索、筛选并打开已保存的论文学习包</sub>
     </td>
     <td align="center">
-      <img src="assets/screenshot2.png" alt="阅读界面" width="100%"/>
+      <img src="assets/paper.png" alt="单篇论文学习页，展示学习笔记、研究推理和证据审计" width="100%"/>
       <br/>
-      <sub>阅读界面 - 支持丰富格式和数学公式的论文学习</sub>
+      <sub>论文学习页 - 阅读证据驱动的笔记、研究推理、证据审计和追问上下文</sub>
     </td>
   </tr>
 </table>
@@ -32,10 +32,15 @@
 ## 功能特性
 
 - **自动 PDF 解析** - 使用分层解析器提取标题、作者、摘要、章节和代码链接
-- **智能内容截断** - 智能处理大型论文（50k 字符限制）
+- **长论文处理** - 解析大型论文时记录质量标记，并在抽取不完整时保守降级
 - **代码仓库检测** - 自动发现 GitHub、arXiv、CodeOcean 链接
 - **Evidence-first 论文准备** - 先生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`
+- **证据账本** - 写出 `evidence-ledger.json`，包含稳定 evidence ID、逐页文本、章节树、证据单元、自然位置和解析质量降级标记
+- **研究推理分析** - 新增 `reasoning-analysis.json`，记录中心主张、研究问题、作者推理路径、验证、最弱假设、最小复现、最强反例、后续研究和不确定区域
+- **语义验证** - 检查 schema、证据引用、source type、数字 grounding、推理图环路、批判性分析覆盖和模板残留
+- **Context modes** - 默认离线 `paper-only`；`canonical` 和 `literature` 将外部证据单独写入 `.codex-paper/external-evidence.json`，不混入论文证据账本
 - **解析 benchmark 套件** - 基于固定的 5 篇论文 gold 集做回归检查
+- **Reasoning/package benchmark** - 新增确定性 fixtures，回归检查研究推理质量和可见学习包质量
 - **Codex 写作学习包** - 基于论文正文和证据生成 `README.md`、`summary.md`、`insights.md`、`method.md`、`mental-model.md`、`reflection.md`、`qa.md`
 - **克制的图表学习路径** - 生成 `visual-assets.md`，只在合适位置插入有来源、有解释、能帮助理解的高价值图表和确定性图解
 - **代码演示** - 至少生成一个可独立运行、与论文核心概念相关的代码示例
@@ -45,16 +50,16 @@
 
 ---
 
-## Codex 插件骨架
+## Codex 插件结构
 
-这个仓库现在包含一套可供 Codex 使用的标准骨架，同时保留现有的技能、hooks、解析脚本和网页查看器：
+这个仓库已经整理为标准 Codex 插件结构，当前使用的实现位于 `plugins/codex-paper/`：
 
 - Codex 插件根目录：`plugins/codex-paper/`
 - Codex manifest：`plugins/codex-paper/.codex-plugin/plugin.json`
 - 仓库内 marketplace 条目：`.agents/plugins/marketplace.json`
-- 原始实现仍保留在：`plugin/`
+- 历史源码副本保留在：`plugin/`
 
-新的 Codex 骨架是增量式的：它不会破坏原有实现，而是在同一个仓库里补齐一套标准 Codex 插件布局，方便继续演进。
+正常安装时应选择指向 `plugins/codex-paper/` 的 marketplace 条目。顶层 `plugin/` 目录只是历史参考副本，日常使用不需要选择它。
 
 对外使用时，插件名和 skill 名是分开的：
 
@@ -88,6 +93,8 @@ enabled = true
 ```
 
 把 `/Users/YOUR_USER/codex-paper` 替换成你 clone 后的绝对路径，然后重启 Codex。打开 `/plugins`，搜索 `codex-paper`，如果插件浏览器提示安装或启用，按提示操作即可。
+
+如果你已经安装过旧版 Codex Paper，拉取本仓库更新后需要在 `/plugins` 里更新或重装插件。优先选择指向当前 checkout 的本地 marketplace 条目。如果旧的 `codex-paper@codex-paper` 和本地 `codex-paper@codex-paper-local` 同时启用，请禁用过期条目，避免 Codex 加载旧版本。
 
 重启后可以这样使用：
 
@@ -153,15 +160,16 @@ self-attention 和循环式序列建模的关键差异是什么？
 ```
 
 Codex 将自动触发学习工作流程并：
-1. 解析 PDF，准备元数据、正文、事实和证据文件
-2. 阅读 `paper-data.json`、`facts.json`、`analysis.json`，必要时分段阅读论文全文
-3. 基于证据写作完整学习材料，而不是直接渲染机器 JSON
-4. 生成自包含的 `index.html` 交互式探索器
-5. 创建至少一个可独立运行的代码演示
-6. 复制原始 `paper.pdf`，筛选关键视觉资产，避免把低价值碎图堆进阅读流
-7. 创建隐藏的问答证据导航包，方便后续追问
-8. 更新全局搜索索引
-9. 自动启动网页查看器
+1. 解析 PDF，准备元数据、正文、facts、analysis 和证据账本
+2. 推断论文 profile，脚手架生成 `reasoning-analysis.json`，并阅读对应 profile 契约
+3. 从论文证据中填写研究推理，然后在写作可见材料前运行严格语义验证
+4. 基于证据写作完整学习材料，而不是直接渲染机器 JSON
+5. 生成自包含的 `index.html` 交互式探索器
+6. 创建至少一个可独立运行的代码演示
+7. 复制原始 `paper.pdf`，筛选关键视觉资产，避免把低价值碎图堆进阅读流
+8. 创建隐藏的问答证据导航包，方便后续 grounded 追问
+9. 更新全局搜索索引
+10. 刷新论文库索引，方便网页查看器展示；需要查看时可用 `$paper-webui` 启动
 
 ### 启动网页查看器
 
@@ -200,24 +208,68 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 │       ├── chat-notes.md                 # Web UI 追问产生的问答笔记
 │       ├── index.html                    # 交互式 HTML 探索器
 │       ├── paper.pdf                     # 原始 PDF 文件副本
+│       ├── evidence-ledger.json          # 内部 paper-only 证据账本
+│       ├── reasoning-analysis.json       # 内部研究推理分析契约
 │       ├── images/                       # 筛选后的论文图表、表格和必要页面预览
 │       │   ├── fig1.png
 │       │   └── fig2.png
-│       └── code/                         # 代码演示
-│           └── core-concept-demo.py      # 至少一个可独立运行的核心概念示例
+│       ├── code/                         # 代码演示
+│       │   └── core-concept-demo.py      # 至少一个可独立运行的核心概念示例
 │
 │       # 以下 JSON 是内部证据文件，Web UI 默认隐藏
 │       ├── paper-data.json               # 标准化解析事实源
 │       ├── facts.json                    # 带证据的 claims / results / limitations
 │       ├── analysis.json                 # 结构化分析草稿
-│       └── meta.json                     # 论文元数据（标题、作者等）
+│       ├── meta.json                     # 论文元数据（标题、作者等）
 │
 │       # 用于高质量追问回答的隐藏本地上下文
 │       └── .codex-paper/
-│           └── answering-pack.md         # $paper-chat 使用的证据导航包
+│           ├── answering-pack.md         # $paper-chat 使用的证据导航包
+│           ├── external-evidence.json    # canonical/literature 模式下的可选外部证据
+│           ├── reasoning-review.md       # 固定自审清单
+│           └── validation-report.json    # 最新验证报告
 │
 └── index.json                           # 全局搜索索引
 ```
+
+### 验证和迁移
+
+运行完整确定性套件：
+
+```bash
+bash scripts/codex-paper.sh install
+bash scripts/codex-paper.sh test
+bash scripts/codex-paper.sh benchmark-all
+bash scripts/codex-paper.sh smoke-test
+bash scripts/codex-paper.sh build
+```
+
+验证一个已完成的学习包：
+
+```bash
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --strict
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug} --run-code
+```
+
+将旧学习包迁移为草稿证据/推理文件，不编造高层研究分析：
+
+```bash
+bash scripts/codex-paper.sh migrate ~/codex-papers/papers/{paper-slug}
+```
+
+库外 package 目录需要显式迁移：
+
+```bash
+bash scripts/codex-paper.sh migrate /path/to/package --external-path
+```
+
+填写草稿推理分析前，可以先做一次迁移结果 sanity check：
+
+```bash
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --allow-draft
+```
+
+详细包契约见[证据账本](docs/evidence-ledger.md)、[研究推理分析](docs/reasoning-analysis.md)、[学习包契约](docs/package-v2.md)和[迁移指南](docs/migration-v1-to-v2.md)文档。
 
 ---
 
@@ -233,7 +285,7 @@ codex-paper/
 ├── plugins/
 │   └── codex-paper/
 │       ├── .codex-plugin/
-│   │   └── plugin.json              # 插件清单
+│       │   └── plugin.json              # 插件清单
 │       ├── skills/
 │       │   ├── study/
 │       │   │   ├── SKILL.md             # 学习工作流定义
@@ -254,9 +306,13 @@ codex-paper/
 │       │   └── web/                     # Nuxt.js 网页查看器
 │       └── package.json
 ├── benchmarks/
-│   ├── manifest.json                    # 固定 benchmark 集
+│   ├── manifest.json                    # 固定 parser benchmark 集
 │   ├── gold/                            # 5 篇论文的人工期望
+│   ├── reasoning/                       # reasoning validator fixtures
+│   ├── packages/                        # 可见学习包质量 fixtures
 │   ├── run-benchmark.mjs                # benchmark 执行器
+│   ├── run-reasoning-benchmark.mjs      # reasoning benchmark 入口
+│   ├── run-package-benchmark.mjs        # package benchmark 入口
 │   └── benchmark-report.mjs             # 可读报告格式化脚本
 └── README.md
 ```
@@ -266,10 +322,11 @@ codex-paper/
 1. **学习技能** - Codex 论文阅读和写作 agent，负责生成完整学习包
 2. **PDF 解析器** - 使用 `PyMuPDF` 优先、`pdf-parse` 回退的分层解析器，并稳定输出 JSON
 3. **图像提取器** - PDF 图表提取的 Python 脚本
-4. **准备链路** - 生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 并更新 `~/codex-papers/index.json`
-5. **网页查看器** - 带 Nitro API 的 Nuxt.js 应用，默认展示用户材料并隐藏机器 JSON
-6. **Ask Codex API** - 复用长期运行的 Codex MCP worker 处理基于证据的追问，并将回答追加到 `chat-notes.md`
-7. **钩子系统** - 自动依赖安装和设置
+4. **准备链路** - 生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 和 `evidence-ledger.json`，并更新 `~/codex-papers/index.json`
+5. **研究推理验证** - 使用 `reasoning-analysis.json`、论文 profile 和 `validate-reasoning.js` 约束证据引用、source type、数字 grounding、推理 DAG 和批判性分析
+6. **网页查看器** - 带 Nitro API 的 Nuxt.js 应用，默认展示用户材料，隐藏机器 JSON，并展示证据审计和作者推理视图
+7. **Ask Codex API** - 复用长期运行的 Codex MCP worker 处理基于证据的追问，并将回答追加到 `chat-notes.md`
+8. **钩子系统** - 自动依赖安装和设置
 
 ---
 
@@ -287,6 +344,7 @@ bash scripts/codex-paper.sh stop
 bash scripts/codex-paper.sh status
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh benchmark
+bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh benchmark-report
 ```
 
@@ -298,14 +356,17 @@ bash scripts/codex-paper.sh benchmark-report
 # 测试 PDF 解析
 node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 
-# 先准备论文数据和 facts.json
+# 先准备论文数据、facts.json 和 evidence-ledger.json
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
+
+# 校验研究推理
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug --strict
 
 # 校验已生成的学习包
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh --run-code
 
-# 跑解析 benchmark
-bash scripts/codex-paper.sh benchmark
+# 跑 parser、reasoning 和 package benchmark
+bash scripts/codex-paper.sh benchmark-all
 
 # 测试网页查看器
 bash scripts/codex-paper.sh start
@@ -317,7 +378,7 @@ bash scripts/codex-paper.sh start
 # 构建网页查看器
 bash scripts/codex-paper.sh build
 
-# 构建的查看器将在 .output/ 目录中
+# 构建的查看器将在 plugins/codex-paper/src/web/.output/ 目录中
 ```
 
 ---
@@ -331,7 +392,7 @@ bash scripts/codex-paper.sh build
 - **论文目录**: `~/codex-papers/`
 - **Benchmark 目录**: `~/codex-papers/paper-examples`
 - **网页查看器端口**: `5815`
-- **内容限制**: `50,000` 字符（带智能截断）
+- **长论文行为**: 抽取质量标记和保守降级信息会记录在生成的学习包中
 
 ### 高级自定义
 
@@ -369,3 +430,4 @@ bash scripts/codex-paper.sh build
 - PDF 解析由 [PyMuPDF](https://pymupdf.readthedocs.io/) 提供主路径，并以 [pdf-parse](https://www.npmjs.com/package/pdf-parse) 作为回退
 - 网页查看器由 [Nuxt.js](https://nuxt.com) 构建
 - 数学渲染由 [KaTeX](https://katex.org) 提供支持
+- 感谢 [alaliqing/claude-paper](https://github.com/alaliqing/claude-paper/) 和 [FeijiangHan/PaperForge](https://github.com/FeijiangHan/PaperForge) 带来的设计启发

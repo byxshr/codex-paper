@@ -1,0 +1,442 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-paper.local/schemas/reasoning-analysis.schema.json",
+  "title": "Codex Paper Reasoning Analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "paperSlug",
+    "generatedAt",
+    "contextMode",
+    "paperType",
+    "difficulty",
+    "evidenceQuality",
+    "centralClaims",
+    "researchQuestion",
+    "priorWorkGap",
+    "authorReasoningPath",
+    "coreIntuition",
+    "methodModel",
+    "validations",
+    "takeaways",
+    "weakestAssumption",
+    "minimalReproduction",
+    "strongestCounterexample",
+    "followUpIdea",
+    "limitations",
+    "uncertaintyZones"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "status": { "enum": ["draft", "complete"] },
+    "paperSlug": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "contextMode": { "$ref": "#/$defs/contextMode" },
+    "paperType": { "$ref": "#/$defs/paperType" },
+    "difficulty": { "$ref": "#/$defs/difficulty" },
+    "evidenceQuality": { "$ref": "#/$defs/evidenceQuality" },
+    "centralClaims": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/centralClaim" }
+    },
+    "researchQuestion": { "$ref": "#/$defs/researchQuestion" },
+    "priorWorkGap": { "$ref": "#/$defs/priorWorkGap" },
+    "authorReasoningPath": {
+      "type": "array",
+      "minItems": 3,
+      "items": { "$ref": "#/$defs/reasoningNode" }
+    },
+    "coreIntuition": { "$ref": "#/$defs/coreIntuition" },
+    "methodModel": { "$ref": "#/$defs/methodModel" },
+    "validations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/validationUnit" }
+    },
+    "takeaways": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/analysisNode" }
+    },
+    "weakestAssumption": { "$ref": "#/$defs/weakestAssumption" },
+    "minimalReproduction": { "$ref": "#/$defs/minimalReproduction" },
+    "strongestCounterexample": { "$ref": "#/$defs/strongestCounterexample" },
+    "followUpIdea": { "$ref": "#/$defs/followUpIdea" },
+    "limitations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/analysisNode" }
+    },
+    "uncertaintyZones": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/uncertaintyZone" }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "contextMode": { "enum": ["paper-only", "canonical", "literature"] },
+    "paperType": {
+      "enum": [
+        "theoretical",
+        "architecture",
+        "empirical",
+        "system",
+        "survey",
+        "benchmark",
+        "post-training",
+        "position",
+        "other"
+      ]
+    },
+    "difficulty": { "enum": ["beginner", "intermediate", "advanced", "highly_theoretical"] },
+    "evidenceQuality": {
+      "enum": [
+        "complete_enough",
+        "partial_sections",
+        "missing_abstract",
+        "noisy_reading_order",
+        "noisy_table_extraction",
+        "weak_quantitative_evidence",
+        "severely_limited"
+      ]
+    },
+    "sourceType": { "enum": ["paper_claim", "literature_fact", "inference", "speculation"] },
+    "confidence": { "enum": ["high", "medium", "low"] },
+    "analysisNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "sourceType", "confidence", "evidenceRefs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "statement": { "type": "string", "minLength": 1 },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "centralClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "scope", "sourceType", "confidence", "evidenceRefs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "statement": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidenceRefs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "notes": { "type": "string" }
+      }
+    },
+    "researchQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question", "importance"],
+      "properties": {
+        "question": { "$ref": "#/$defs/analysisNode" },
+        "importance": { "$ref": "#/$defs/analysisNode" }
+      }
+    },
+    "priorWorkGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["existingApproaches", "gap", "noveltyBoundary"],
+      "properties": {
+        "existingApproaches": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/analysisNode" }
+        },
+        "gap": { "$ref": "#/$defs/analysisNode" },
+        "noveltyBoundary": { "$ref": "#/$defs/analysisNode" }
+      }
+    },
+    "reasoningNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "statement",
+        "dependsOn",
+        "supportsClaimIds",
+        "sourceType",
+        "confidence",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "enum": [
+            "observation",
+            "constraint",
+            "failure_mode",
+            "hypothesis",
+            "design_decision",
+            "expected_mechanism",
+            "validation",
+            "boundary"
+          ]
+        },
+        "statement": { "type": "string", "minLength": 1 },
+        "dependsOn": { "type": "array", "items": { "type": "string" } },
+        "supportsClaimIds": { "type": "array", "items": { "type": "string" } },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidenceRefs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "notes": { "type": "string" }
+      }
+    },
+    "coreIntuition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "statement",
+        "analogy",
+        "whyItMayWork",
+        "whereItMayFail",
+        "sourceType",
+        "confidence",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "statement": { "type": "string", "minLength": 1 },
+        "analogy": { "type": "string" },
+        "whyItMayWork": { "type": "string", "minLength": 1 },
+        "whereItMayFail": { "type": "string", "minLength": 1 },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidenceRefs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "notes": { "type": "string" }
+      }
+    },
+    "methodModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputs", "components", "pipeline", "outputs", "equations"],
+      "properties": {
+        "inputs": { "type": "array", "items": { "type": "string" } },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "purpose", "mechanism", "dependsOn", "evidenceRefs"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "purpose": { "type": "string", "minLength": 1 },
+              "mechanism": { "type": "string", "minLength": 1 },
+              "dependsOn": { "type": "array", "items": { "type": "string" } },
+              "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "pipeline": { "type": "array", "items": { "type": "string" } },
+        "outputs": { "type": "array", "items": { "type": "string" } },
+        "equations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "meaning", "assumptions", "codeMapping", "evidenceRefs"],
+            "properties": {
+              "label": { "type": "string" },
+              "meaning": { "type": "string" },
+              "assumptions": { "type": "array", "items": { "type": "string" } },
+              "codeMapping": { "type": "string" },
+              "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "validationUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "question",
+        "design",
+        "observation",
+        "conclusion",
+        "scope",
+        "supportsClaimIds",
+        "alternativeExplanation",
+        "sourceType",
+        "confidence",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "experiment",
+            "ablation",
+            "benchmark",
+            "case_study",
+            "user_study",
+            "theorem",
+            "proof",
+            "simulation",
+            "argument",
+            "survey_synthesis",
+            "other"
+          ]
+        },
+        "question": { "type": "string", "minLength": 1 },
+        "design": { "type": "string", "minLength": 1 },
+        "observation": { "type": "string", "minLength": 1 },
+        "conclusion": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "supportsClaimIds": { "type": "array", "items": { "type": "string" } },
+        "alternativeExplanation": { "type": "string" },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "weakestAssumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statement",
+        "targetClaimId",
+        "whyCritical",
+        "paperSupport",
+        "missingEvidence",
+        "failureConditions",
+        "observableFailure",
+        "sourceType",
+        "confidence",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "statement": { "type": "string", "minLength": 1 },
+        "targetClaimId": { "type": "string", "minLength": 1 },
+        "whyCritical": { "type": "string", "minLength": 1 },
+        "paperSupport": { "type": "string", "minLength": 1 },
+        "missingEvidence": { "type": "string", "minLength": 1 },
+        "failureConditions": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "observableFailure": { "type": "string", "minLength": 1 },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "minimalReproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetClaimId",
+        "scope",
+        "data",
+        "implementation",
+        "baseline",
+        "controls",
+        "metrics",
+        "supportCriteria",
+        "falsificationCriteria",
+        "artifacts",
+        "knownGaps",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "targetClaimId": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "data": { "type": "array", "items": { "type": "string" } },
+        "implementation": { "type": "array", "items": { "type": "string" } },
+        "baseline": { "type": "array", "items": { "type": "string" } },
+        "controls": { "type": "array", "items": { "type": "string" } },
+        "metrics": { "type": "array", "items": { "type": "string" } },
+        "supportCriteria": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "falsificationCriteria": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "artifacts": { "type": "array", "items": { "type": "string" } },
+        "knownGaps": { "type": "array", "items": { "type": "string" } },
+        "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "strongestCounterexample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetClaimId",
+        "attackType",
+        "setup",
+        "controlledVariables",
+        "predictedObservation",
+        "whyStrong",
+        "alternativeExplanation",
+        "interpretation",
+        "sourceType",
+        "confidence",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "targetClaimId": { "type": "string", "minLength": 1 },
+        "attackType": { "type": "string", "minLength": 1 },
+        "setup": { "type": "string", "minLength": 1 },
+        "controlledVariables": { "type": "array", "items": { "type": "string" } },
+        "predictedObservation": { "type": "string", "minLength": 1 },
+        "whyStrong": { "type": "string", "minLength": 1 },
+        "alternativeExplanation": { "type": "string" },
+        "interpretation": { "type": "string", "minLength": 1 },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "followUpIdea": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "motivation",
+        "adjacentField",
+        "novelFraming",
+        "firstExperiment",
+        "successSignal",
+        "failureSignal",
+        "whyNonIncremental",
+        "existingWorkBoundary",
+        "sourceType",
+        "confidence",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "motivation": { "type": "string", "minLength": 1 },
+        "adjacentField": { "type": "string", "minLength": 1 },
+        "novelFraming": { "type": "string", "minLength": 1 },
+        "firstExperiment": { "type": "string", "minLength": 1 },
+        "successSignal": { "type": "string", "minLength": 1 },
+        "failureSignal": { "type": "string", "minLength": 1 },
+        "whyNonIncremental": { "type": "string", "minLength": 1 },
+        "existingWorkBoundary": { "type": "string" },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "uncertaintyZone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic", "reason", "impact", "neededEvidence", "evidenceRefs"],
+      "properties": {
+        "topic": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "impact": { "type": "string", "minLength": 1 },
+        "neededEvidence": { "type": "string", "minLength": 1 },
+        "evidenceRefs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -3,6 +3,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import { validateReasoningPackage } from './validate-reasoning.js';
+import { REQUIRED_REFLECTION_HEADINGS } from '../profiles/profile-rules.js';
 
 const REQUIRED_FILES = [
   'README.md',
@@ -39,11 +41,15 @@ const FORBIDDEN_RESIDUES = [
   /\bcoreClaims\b/i,
   /\bkeyResults\b/i,
   /\bopenQuestions\b/i,
+  /\bsourceType\b/i,
   /\bparserVersion\b/i,
   /\bpaperSlug\b/i,
   /\brawText\b/i,
-  /\bResult\s+\d+\b/i,
-  /\bSee evidence\b/i,
+  /\bevidence-ledger(?:\.json)?\b/i,
+  /\breasoning-analysis(?:\.json)?\b/i,
+  /\bev-p\d{3,}-[a-z]+-[a-f0-9]{10}\b/i,
+  /\bext-[a-zA-Z0-9._-]+\b/i,
+  // Machine references such as "claim:3"; natural prose like "Result 1" is allowed.
   /\b(?:claim|result|limitation):\d+\b/i,
   /^\s*"[^"]+"\s*:\s*[{["0-9tfn-]/i
 ];
@@ -72,7 +78,7 @@ const BODY_IMAGE_MIN_HEIGHT = 220;
 const BODY_IMAGE_MIN_PIXELS = 160000;
 
 function usage() {
-  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code] [--timeout-ms 20000]');
+  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code|--run-artifacts] [--legacy-ok] [--timeout-ms 20000]');
 }
 
 function parseArgs(argv) {
@@ -80,6 +86,7 @@ function parseArgs(argv) {
     input: null,
     lang: null,
     runCode: false,
+    legacyOk: false,
     timeoutMs: 20000
   };
 
@@ -88,8 +95,10 @@ function parseArgs(argv) {
     if (arg === '--lang') {
       args.lang = argv[index + 1];
       index += 1;
-    } else if (arg === '--run-code') {
+    } else if (arg === '--run-code' || arg === '--run-artifacts') {
       args.runCode = true;
+    } else if (arg === '--legacy-ok') {
+      args.legacyOk = true;
     } else if (arg === '--timeout-ms') {
       args.timeoutMs = Number(argv[index + 1]);
       index += 1;
@@ -127,6 +136,17 @@ function resolvePaperDir(input) {
 
 function readText(filePath) {
   return fs.readFileSync(filePath, 'utf8');
+}
+
+function readJsonIfExists(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function lineNumberAt(text, index) {
@@ -315,6 +335,11 @@ function stripMarkdownNoise(text) {
     .replace(/\[[^\]]+\]\([^)]+\)/g, ' ');
 }
 
+function stripMarkdownMachineScanNoise(text) {
+  return stripMarkdownNoise(text)
+    .replace(/^ {0,3}~~~[\s\S]*?^ {0,3}~~~/gm, '\n');
+}
+
 function stripHtmlNoise(text) {
   return text
     .replace(/<script[\s\S]*?<\/script>/gi, '\n')
@@ -353,6 +378,31 @@ function suspiciousEnglishLines(text) {
 
 function addFinding(findings, level, message) {
   findings[level].push(message);
+}
+
+function isV2Package(paperDir) {
+  const meta = readJsonIfExists(path.join(paperDir, 'meta.json'));
+  return meta?.packageVersion === '2.0.0'
+    || fs.existsSync(path.join(paperDir, 'reasoning-analysis.json'))
+    || fs.existsSync(path.join(paperDir, 'evidence-ledger.json'));
+}
+
+function checkReasoningLayer(paperDir, args, findings) {
+  if (!isV2Package(paperDir)) {
+    const message = args.legacyOk
+      ? 'Legacy v1 package: v2 reasoning validation was skipped because --legacy-ok was provided.'
+      : 'Legacy v1 package: v2 reasoning files are absent; existing package checks continue.';
+    addFinding(findings, 'warnings', message);
+    return;
+  }
+
+  const result = validateReasoningPackage(paperDir, { strict: false });
+  for (const error of result.report.errors) {
+    addFinding(findings, 'errors', `Reasoning ${error.code} at ${error.path}: ${error.message}`);
+  }
+  for (const warning of result.report.warnings) {
+    addFinding(findings, 'warnings', `Reasoning ${warning.code} at ${warning.path}: ${warning.message}`);
+  }
 }
 
 function checkRequiredFiles(paperDir, findings) {
@@ -394,7 +444,7 @@ function checkForbiddenResidues(paperDir, findings) {
     }
 
     const raw = readText(filePath);
-    const visibleText = /\.html?$/i.test(filename) ? stripHtmlNoise(raw) : raw;
+    const visibleText = /\.html?$/i.test(filename) ? stripHtmlNoise(raw) : stripMarkdownMachineScanNoise(raw);
     const lines = visibleText.split('\n');
     lines.forEach((line, index) => {
       for (const pattern of FORBIDDEN_RESIDUES) {
@@ -699,6 +749,114 @@ function checkVisualDensity(paperDir, findings) {
   }
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasExactSecondLevelHeading(text, heading) {
+  const pattern = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, 'm');
+  return pattern.test(text);
+}
+
+function checkV2Reflection(paperDir, findings) {
+  const filePath = path.join(paperDir, 'reflection.md');
+  if (!fs.existsSync(filePath)) return;
+  const text = readText(filePath);
+  for (const heading of REQUIRED_REFLECTION_HEADINGS) {
+    if (!hasExactSecondLevelHeading(text, heading)) {
+      addFinding(findings, 'errors', `reflection.md is missing required v2 heading: ## ${heading}`);
+    }
+  }
+}
+
+function checkV2MethodContract(paperDir, findings) {
+  const filePath = path.join(paperDir, 'method.md');
+  if (!fs.existsSync(filePath)) return;
+  const text = stripMarkdownNoise(readText(filePath));
+  if (!/(?:support criteria|支持标准|支持判据|支持条件)/i.test(text)) {
+    addFinding(findings, 'errors', 'method.md must include minimal reproduction support criteria.');
+  }
+  if (!/(?:falsification criteria|证伪标准|反证标准|证伪条件|falsify)/i.test(text)) {
+    addFinding(findings, 'errors', 'method.md must include minimal reproduction falsification criteria.');
+  }
+}
+
+function checkV2QaContract(paperDir, findings) {
+  const filePath = path.join(paperDir, 'qa.md');
+  if (!fs.existsSync(filePath)) return;
+  const text = stripMarkdownNoise(readText(filePath));
+  const required = [
+    ['author reasoning', /(?:作者推理|reasoning path|author reasoning)/i],
+    ['paper claim vs inference', /(?:论文主张|paper claim).*(?:分析推断|inference)|(?:分析推断|inference).*(?:论文主张|paper claim)/is],
+    ['weakest assumption', /(?:最弱假设|weakest assumption)/i],
+    ['falsification', /(?:证伪|falsification|falsify)/i],
+    ['evidence boundary', /(?:证据范围|超出证据|evidence boundary|beyond the evidence)/i]
+  ];
+
+  for (const [label, pattern] of required) {
+    if (!pattern.test(text)) {
+      addFinding(findings, 'errors', `qa.md must include a v2 question about ${label}.`);
+    }
+  }
+}
+
+function hasNaturalEvidenceMarker(line) {
+  return /(?:论文\s*p\.?\s*\d+|p\.?\s*\d+|第\s*\d+\s*页|§|section|table\s*\d+|figure\s*\d+|fig\.?\s*\d+|表\s*\d+|图\s*\d+|实验部分|结果部分|附录|appendix)/i.test(line);
+}
+
+function hasSubstantiveNumericClaim(line) {
+  if (!/(?:\d+(?:\.\d+)?\s?%|\d+\.\d+|\d+(?:\.\d+)?\s?(?:x|ms|gb|mb|billion|million|tokens?|parameters?|bleu|points?))/i.test(line)) {
+    return false;
+  }
+  return /(?:improve|outperform|achieve|accuracy|score|result|benchmark|提升|优于|达到|准确率|结果|基准|指标)/i.test(line);
+}
+
+function checkV2NaturalEvidenceLocations(paperDir, findings) {
+  for (const filename of ['README.md', 'summary.md', 'insights.md', 'method.md', 'reflection.md']) {
+    const filePath = path.join(paperDir, filename);
+    if (!fs.existsSync(filePath)) continue;
+    const lines = stripMarkdownNoise(readText(filePath)).split('\n');
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('|')) return;
+      if (hasSubstantiveNumericClaim(trimmed) && !hasNaturalEvidenceMarker(trimmed)) {
+        addFinding(
+          findings,
+          'errors',
+          `${filename}:${index + 1} has a numeric conclusion without a natural paper location.`
+        );
+      }
+    });
+  }
+}
+
+function checkV2IndexContract(paperDir, findings) {
+  const filePath = path.join(paperDir, 'index.html');
+  if (!fs.existsSync(filePath)) return;
+  const text = stripHtmlNoise(readText(filePath));
+  const required = [
+    ['paper claims', /(?:论文主张|paper claims?|paper_claim)/i],
+    ['inferences', /(?:分析推断|推断|inferences?)/i],
+    ['speculations', /(?:研究猜想|猜测|speculations?)/i],
+    ['weakest assumption', /(?:最弱假设|weakest assumption)/i],
+    ['counterexample', /(?:最强反例|counterexample)/i]
+  ];
+
+  for (const [label, pattern] of required) {
+    if (!pattern.test(text)) {
+      addFinding(findings, 'errors', `index.html v2 interaction is missing ${label}.`);
+    }
+  }
+}
+
+function checkV2VisibleContentContract(paperDir, findings) {
+  checkV2Reflection(paperDir, findings);
+  checkV2MethodContract(paperDir, findings);
+  checkV2QaContract(paperDir, findings);
+  checkV2NaturalEvidenceLocations(paperDir, findings);
+  checkV2IndexContract(paperDir, findings);
+}
+
 function checkVisualAssetsIndex(paperDir, findings) {
   const filename = 'visual-assets.md';
   const filePath = path.join(paperDir, filename);
@@ -812,6 +970,9 @@ function validate(args) {
     return { paperDir, findings };
   }
 
+  const v2Package = isV2Package(paperDir);
+  checkReasoningLayer(paperDir, args, findings);
+
   const codeFiles = checkRequiredFiles(paperDir, findings);
   checkForbiddenResidues(paperDir, findings);
   checkNoImagegenResidues(paperDir, findings);
@@ -821,6 +982,9 @@ function validate(args) {
   checkVisualAssetsIndex(paperDir, findings);
   checkMarkdownVisualReferences(paperDir, findings);
   checkVisualDensity(paperDir, findings);
+  if (v2Package) {
+    checkV2VisibleContentContract(paperDir, findings);
+  }
 
   if (args.runCode) {
     runCodeDemos(paperDir, codeFiles, args.timeoutMs, findings);

@@ -23,12 +23,18 @@ Answer using this order. Only move to the next layer when the current layer cann
 
 1. User-visible study materials:
    `README.md`, `summary.md`, `insights.md`, `method.md`, `mental-model.md`, `reflection.md`, `qa.md`, `index.html`, `chat-notes.md`, and relevant files under `code/` or `images/`.
-2. Hidden answering pack:
+2. V2 reasoning layer, when present:
+   `reasoning-analysis.json`. Use it to understand central claims, author reasoning path, validations, weakest assumption, minimal reproduction, strongest counterexample, follow-up idea, and uncertainty zones.
+3. Hidden answering pack:
    `.codex-paper/answering-pack.md`.
-3. Internal evidence:
+4. V2 paper evidence ledger, when present:
+   `evidence-ledger.json`. Prefer natural locations such as paper page, section, figure, or table over internal IDs in the final answer.
+5. Legacy internal evidence:
    `facts.json`, `analysis.json`, `paper-data.json`.
-4. Original paper text:
+6. Original paper text:
    search `paper-data.rawText` or read `paper.pdf` text if local tools make that feasible.
+7. External evidence:
+   `.codex-paper/external-evidence.json`, only when the package context mode is `canonical` or `literature`.
 
 Never use live web search unless the user explicitly asks for external research. The default is local-only paper evidence.
 
@@ -40,6 +46,13 @@ Never use live web search unless the user explicitly asks for external research.
 * Cite sources naturally, such as `基于 summary.md` or `根据实验部分`, without exposing evidence IDs.
 * Do not expose JSON field names, parser paths, extraction labels, raw object snippets, or machine residues such as `analysisVersion`, `evidenceRefs`, `coreClaims`, `Result 1`, or `See evidence`.
 * If the user asks for speculation, clearly separate evidenced conclusions from hypotheses.
+* When answering what the paper says, use `paper_claim` plus paper evidence only.
+* When using `inference`, say that it is inferred from the cited evidence.
+* When using `speculation`, use uncertain language such as "possibly", "hypothesis", or "research guess".
+* Do not turn an `inference` or `speculation` into a paper statement.
+* Do not mix external evidence into paper evidence. External facts must be labeled as external and used only when the package context mode allows them.
+* For numbers, ablations, benchmark results, and conclusion scope, prefer natural paper locations such as `paper p.8, Table 3` or `论文 p.8，§4.2`.
+* For "biggest problem" or "main weakness" questions, consult `weakestAssumption`, `strongestCounterexample`, and `uncertaintyZones`, then answer the user's exact question.
 
 ## Direct Use
 

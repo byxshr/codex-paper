@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-paper.local/schemas/external-evidence.schema.json",
+  "title": "Codex Paper External Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "paperSlug",
+    "contextMode",
+    "generatedAt",
+    "policy",
+    "sources",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "paperSlug": { "type": "string", "minLength": 1 },
+    "contextMode": { "enum": ["canonical", "literature"] },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paperOnlyDefault", "storedSeparatelyFromEvidenceLedger", "note"],
+      "properties": {
+        "paperOnlyDefault": { "const": false },
+        "storedSeparatelyFromEvidenceLedger": { "const": true },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "title", "accessedAt"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "enum": [
+              "user_provided_pdf_url",
+              "canonical_paper_page",
+              "official_project_page",
+              "literature_reference",
+              "manual_note"
+            ]
+          },
+          "title": { "type": "string", "minLength": 1 },
+          "url": { "type": "string" },
+          "accessedAt": { "type": "string", "minLength": 1 },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "sourceId",
+          "statement",
+          "naturalLocation",
+          "sourceType",
+          "confidence"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^ext-[a-z0-9][a-z0-9-]*-[a-f0-9]{10}$" },
+          "sourceId": { "type": "string", "minLength": 1 },
+          "statement": { "type": "string", "minLength": 1 },
+          "quote": { "type": "string" },
+          "naturalLocation": { "type": "string", "minLength": 1 },
+          "sourceType": { "const": "literature_fact" },
+          "confidence": { "enum": ["high", "medium", "low"] },
+          "retrievalContext": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

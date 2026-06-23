@@ -1,6 +1,20 @@
 <template>
-  <div class="paper-card-wrapper" :class="{ 'paper-card-wrapper--list': viewMode === 'list' }">
-    <NuxtLink :to="`/papers/${paper.slug}`" class="paper-card" :class="{ 'paper-card--list': viewMode === 'list' }">
+  <div
+    class="paper-card-wrapper"
+    :class="{
+      'paper-card-wrapper--list': viewMode === 'list',
+      'paper-card-wrapper--expanded': expanded
+    }"
+  >
+    <NuxtLink
+      :to="`/papers/${paper.slug}`"
+      class="paper-card"
+      :class="{
+        'paper-card--list': viewMode === 'list',
+        'paper-card--expanded': expanded,
+        'paper-card--collapsed': viewMode === 'grid' && !expanded
+      }"
+    >
       <template v-if="viewMode === 'list'">
         <div class="paper-card__list-main">
           <h3>{{ paper.title }}</h3>
@@ -35,6 +49,11 @@
               size="small"
             />
           </div>
+          <div v-if="paper.qualityFlags?.length" class="quality-flags">
+            <span v-for="flag in paper.qualityFlags" :key="flag" class="quality-flag">
+              {{ formatQualityFlag(flag) }}
+            </span>
+          </div>
         </div>
       </template>
 
@@ -50,6 +69,11 @@
             :tag="tag"
             size="small"
           />
+        </div>
+        <div v-if="paper.qualityFlags?.length" class="quality-flags">
+          <span v-for="flag in paper.qualityFlags" :key="flag" class="quality-flag">
+            {{ formatQualityFlag(flag) }}
+          </span>
         </div>
 
         <div v-if="paper.githubLinks?.length || paper.codeLinks?.length" class="code-links">
@@ -71,6 +95,14 @@
         </div>
       </template>
     </NuxtLink>
+    <button
+      v-if="viewMode === 'grid'"
+      class="expand-card-button"
+      @click.stop="emit('toggle-expand')"
+      type="button"
+    >
+      {{ expanded ? 'Collapse' : 'Expand' }}
+    </button>
     <div class="kebab-menu" v-click-outside="closeMenu">
       <button
         class="kebab-button"
@@ -99,10 +131,14 @@ const props = defineProps({
   viewMode: {
     type: String as () => 'grid' | 'list',
     default: 'grid'
+  },
+  expanded: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['edit-tags', 'remove'])
+const emit = defineEmits(['edit-tags', 'remove', 'toggle-expand'])
 
 const menuOpen = ref(false)
 
@@ -142,11 +178,19 @@ const getRepoName = (url) => {
   const match = url.match(/github\.com\/(.+?)(?:\.git)?$/)
   return match ? match[1] : url
 }
+
+const formatQualityFlag = (flag: string) => {
+  return flag.replace(/_/g, ' ')
+}
 </script>
 
 <style scoped>
 .paper-card-wrapper {
   position: relative;
+}
+
+.paper-card-wrapper:not(.paper-card-wrapper--list) {
+  min-height: 25rem;
 }
 
 .paper-card {
@@ -161,8 +205,20 @@ const getRepoName = (url) => {
   cursor: pointer;
 }
 
+.paper-card:not(.paper-card--list) {
+  height: 100%;
+  min-height: 25rem;
+  max-height: 25rem;
+  overflow: hidden;
+  padding-bottom: 3.75rem;
+}
+
 .paper-card--list {
   padding: 1.125rem 1.25rem;
+}
+
+.paper-card--expanded {
+  max-height: none !important;
 }
 
 .paper-card:hover {
@@ -198,6 +254,28 @@ const getRepoName = (url) => {
 
 .kebab-button:hover {
   background-color: #e5e7eb;
+}
+
+.expand-card-button {
+  position: absolute;
+  left: 1.5rem;
+  bottom: 1.25rem;
+  z-index: 9;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.7rem;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.expand-card-button:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
 }
 
 .kebab-dropdown {
@@ -246,6 +324,25 @@ const getRepoName = (url) => {
   margin: 0.75rem 0;
 }
 
+.quality-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.quality-flag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  text-transform: capitalize;
+}
+
 .paper-card h3 {
   margin: 0 0 0.5rem 0;
   font-size: 1.1rem;
@@ -253,10 +350,26 @@ const getRepoName = (url) => {
   line-height: 1.4;
 }
 
+.paper-card--collapsed h3,
+.paper-card--list h3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+}
+
 .authors {
   font-size: 0.9rem;
   color: #718096;
   margin: 0.25rem 0 0.75rem 0;
+}
+
+.paper-card--collapsed .authors,
+.paper-card--list .authors {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
 }
 
 .abstract {
@@ -270,11 +383,22 @@ const getRepoName = (url) => {
   line-height: 1.5;
 }
 
+.paper-card--expanded .abstract {
+  display: block;
+  overflow: visible;
+}
+
 .code-links {
   margin: 1rem 0;
   padding: 1rem;
   background: #f7fafc;
   border-radius: 6px;
+}
+
+.paper-card--collapsed .code-links,
+.paper-card--list .code-links {
+  max-height: 5.9rem;
+  overflow: hidden;
 }
 
 .code-links h4 {

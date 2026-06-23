@@ -43,13 +43,40 @@ Internal evidence files may exist but must not be shown as study material:
 
 ```text
 paper-data.json
+evidence-ledger.json
 facts.json
 analysis.json
+reasoning-analysis.json
 meta.json
+.codex-paper/reasoning-review.md
+.codex-paper/validation-report.json
 .codex-paper/answering-pack.md
 ```
 
-Never copy JSON field names, extraction labels, or machine traces into user-facing files. Forbidden visible residues include `analysisVersion`, `evidenceRefs`, `coreClaims`, `keyResults`, `Result 1`, `See evidence`, parser object paths, raw JSON snippets, and template placeholders.
+Never copy JSON field names, extraction labels, or machine traces into user-facing files. Forbidden visible residues include `analysisVersion`, `evidenceRefs`, `coreClaims`, `keyResults`, parser object paths, raw JSON snippets, machine evidence IDs, and template placeholders.
+
+## V2 Evidence And Reasoning Contract
+
+New packages are v2 packages. They must include:
+
+```text
+evidence-ledger.json
+reasoning-analysis.json
+meta.json with packageVersion = "2.0.0"
+.codex-paper/reasoning-review.md
+.codex-paper/validation-report.json
+```
+
+Default context mode is `paper-only`: do not browse the web, call external model APIs, use databases, or mix external claims into the paper evidence ledger. If the user explicitly asks to check official code, errata, or nearby literature, record those external facts in `.codex-paper/external-evidence.json`; never put them in `evidence-ledger.json`.
+
+`analysis.json` is only a low-level hint. The final research reasoning authority is `reasoning-analysis.json`, which Codex fills after reading the paper evidence. Deterministic scripts may create evidence anchors, draft skeletons, and validation reports, but must not invent central claims, author reasoning paths, weakest assumptions, strongest counterexamples, or non-incremental follow-up ideas.
+
+Use source types precisely:
+
+* `paper_claim`: the paper states it; cite paper evidence.
+* `literature_fact`: an external source states it; only allowed outside `paper-only`.
+* `inference`: Codex derives it from paper evidence; use inferential wording.
+* `speculation`: a research guess or proposed direction; never high confidence.
 
 ## Step 1: Prepare Evidence
 
@@ -62,13 +89,14 @@ Inputs supported:
 Run the preparation entrypoint from the study skill directory:
 
 ```bash
-node ./scripts/prepare-paper.js "<user-input>"
+node ./scripts/prepare-paper.js "<user-input>" --context paper-only --profile auto
 ```
 
 The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes `~/codex-papers/index.json`, and writes:
 
 ```text
 ~/codex-papers/papers/{paper-slug}/paper-data.json
+~/codex-papers/papers/{paper-slug}/evidence-ledger.json
 ~/codex-papers/papers/{paper-slug}/facts.json
 ~/codex-papers/papers/{paper-slug}/analysis.json
 ~/codex-papers/papers/{paper-slug}/meta.json
@@ -76,11 +104,12 @@ The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes `~/codex
 
 Treat these JSON files as evidence preparation only. They are not final study material.
 
-## Step 2: Read Before Writing
+## Step 2: Read Before Reasoning
 
 Before creating or rewriting any final material, read:
 
 * `paper-data.json`: title, authors, abstract, sections, links, parser warnings, quality flags, and `rawText`
+* `evidence-ledger.json`: page text, section tree, evidence units, locations, roles, and quality downgrade markers
 * `facts.json`: extracted claims, results, limitations, and evidence snippets
 * `analysis.json`: low-level structured hints for problem, core idea, contributions, results, limitations, and open questions
 
@@ -89,13 +118,70 @@ If the available sections are sparse, inspect `paper-data.rawText` in chunks and
 Assess:
 
 * Difficulty: beginner, intermediate, advanced, or highly theoretical
-* Paper type: theoretical, architecture, empirical, system, survey, benchmark, or post-training recipe
+* Paper type: theoretical, architecture, empirical, system, survey, benchmark, post-training, position, or other
 * Method complexity: simple pipeline, multi-stage training, new architecture, mathematical derivation, agent system, or evaluation framework
 * Evidence quality: complete enough, partial sections, missing abstract, noisy table extraction, or weak quantitative evidence
 
 If parsing quality is limited, say so in `README.md` in natural language. Do not fill gaps with invented template content.
 
-## Step 3: Tags
+## Step 3: Select Profile And Scaffold Reasoning
+
+Create the reasoning draft:
+
+```bash
+node ./scripts/scaffold-reasoning-analysis.js "~/codex-papers/papers/{paper-slug}" --context paper-only --profile auto
+```
+
+Then read the matching profile before filling any high-level analysis:
+
+```text
+profiles/empirical.md
+profiles/theoretical.md
+profiles/architecture.md
+profiles/system.md
+profiles/benchmark.md
+profiles/survey.md
+profiles/post-training.md
+profiles/position.md
+profiles/other.md
+```
+
+Use the profile to decide the appropriate validation kinds and reproduction artifact. Do not force experiments onto theoretical, survey, or position papers. For non-empirical profiles, interpret failure and falsification fields in the paper's own modality: proof-boundary checks for theory, taxonomy/coverage checks for surveys, argument-map or decision-consequence checks for position papers, and the smallest relevant artifact for mixed papers.
+
+## Step 4: Fill And Validate Reasoning
+
+Fill `reasoning-analysis.json` yourself after reading the evidence. Set `status` to `complete` only after all required analysis is real and evidence-grounded.
+
+Required reasoning contents:
+
+* 1-3 scoped central claims
+* research question and importance
+* prior-work gap and novelty boundary
+* author reasoning path as a DAG, not a chapter outline
+* core intuition and method model
+* validations with question, design, observation, and conclusion
+* weakest assumption, minimal reproduction, strongest counterexample, non-incremental follow-up idea, and uncertainty zones
+
+Rules:
+
+* Every `paper_claim` cites `ev-*` evidence.
+* Every important `inference` cites evidence and uses inferential wording.
+* Every numeric paper claim cites evidence containing the same number.
+* Evidence gaps go into `uncertaintyZones`; never smooth them over with plausible text.
+* `weakestAssumption` is one object, not a list.
+* `minimalReproduction` includes both support and falsification criteria; for non-empirical papers these may be formal, taxonomic, argumentative, or decision-oriented criteria rather than experiments.
+* `strongestCounterexample.predictedObservation` means the most concrete thing that would be observed if the counterexample held; it can be a proof failure, misclassification, omitted cluster, or wrong decision, not only a metric change.
+* `followUpIdea` must not be just more data, bigger models, or hyperparameter tuning.
+
+Run:
+
+```bash
+node ./scripts/validate-reasoning.js "~/codex-papers/papers/{paper-slug}" --strict
+```
+
+Fix every error before writing user-facing materials. Review warnings and either fix them or explicitly reflect the limitation in the visible package. Complete `.codex-paper/reasoning-review.md` before authoring final Markdown and HTML.
+
+## Step 5: Tags
 
 Infer exactly two semantic tags from the paper:
 
@@ -112,11 +198,11 @@ Persist the same tags in:
 ~/codex-papers/index.json
 ```
 
-## Step 4: Write The Complete Study Package
+## Step 6: Write The Complete Study Package
 
-Codex must author these files directly from the paper evidence. Do not use `render-from-analysis.js` as the final generator. That script is only a quick-summary fallback for the separate quick summary flow.
+Codex must author these files directly from `reasoning-analysis.json` and the cited paper evidence. Do not use `render-from-analysis.js` as the final generator. That script is only a quick-summary fallback for the separate quick summary flow.
 
-Ground every claim in `paper-data.json`, `facts.json`, `analysis.json`, or direct `rawText` reading. Do not invent metrics, datasets, model sizes, ablations, code links, training stages, or conclusions. When mentioning quantitative results, use a natural source note such as `来源：实验部分` or `Source: Experiments`; do not expose evidence IDs.
+Ground every claim in `reasoning-analysis.json`, `evidence-ledger.json`, `paper-data.json`, `facts.json`, `analysis.json`, or direct `rawText` reading. Do not invent metrics, datasets, model sizes, ablations, code links, training stages, or conclusions. When mentioning quantitative results, use a natural source note such as `论文 p.8，Table 3` or `paper p.8, Table 3`; do not expose evidence IDs.
 
 ### Rich Media Policy
 
@@ -269,7 +355,7 @@ Answer grounded in the paper.
 </details>
 ```
 
-## Step 5: Code Demo
+## Step 7: Code Demo
 
 Create at least one runnable code demo in:
 
@@ -294,7 +380,7 @@ code/moe_routing_tradeoff.py
 code/retrieval_uncertainty_explorer.js
 ```
 
-## Step 6: Interactive HTML Explorer
+## Step 8: Interactive HTML Explorer
 
 Create:
 
@@ -310,6 +396,9 @@ Requirements:
 * works in a sandboxed iframe
 * contains at least one real interactive control
 * includes a method overview, mechanism map, formula breakdown, or result dashboard
+* includes source-type controls for paper claims, inferences, and speculations
+* includes an author reasoning path view
+* includes a reviewer view for weakest assumption, strongest counterexample, and falsification criteria
 * the control visibly changes a diagram, explanation, table, or comparison
 * uses only real paper concepts, metrics, stages, parameters, or comparisons
 
@@ -317,7 +406,7 @@ If the paper lacks high-confidence quantitative results, explicitly state that t
 
 Choose an interaction that fits the paper: architecture explorer, training-stage switcher, result comparison, parameter-scale selector, formula breakdown, pipeline diagram, agent loop explorer, or benchmark dashboard.
 
-## Step 7: Visual Assets
+## Step 9: Visual Assets
 
 Try to extract figures:
 
@@ -349,7 +438,7 @@ After extraction:
 
 Do not invent paper figures. Do not use Codex image generation or bitmap image generation for pipeline figures in this workflow. If a new explanatory diagram is useful, create it as Mermaid, SVG, or self-contained HTML/CSS from evidenced paper concepts.
 
-## Step 8: Answering Pack For Follow-Up Questions
+## Step 10: Answering Pack For Follow-Up Questions
 
 Create a hidden local-only answering pack:
 
@@ -362,14 +451,17 @@ This file is not a user-facing study material and should not appear in the Web U
 Include:
 
 * answering rules and the evidence priority: visible study files, answering pack, internal evidence JSON, then `paper-data.rawText` or original paper text
+* sourceType rules: distinguish paper claims, external facts, analysis inferences, and research speculations
+* core claim mapping and natural evidence locations
 * paper problem map: problem, assumptions, method modules, experiment modules, limitations
 * evidence index: key conclusions mapped to natural paper locations such as abstract, method section, experiment section, table, appendix, or conclusion
+* weakest assumption, support criteria, falsification criteria, strongest counterexample, and uncertainty zones
 * common follow-up hooks: why the method works, differences from related work, metric meanings, practical boundaries, implementation risks
 * low-confidence zones: claims the paper does not provide, parser gaps, missing quantitative evidence, or questions that require rereading raw paper text
 
 If parser quality is weak, record the weak areas naturally so `$paper-chat` knows when to read `paper-data.rawText` before answering.
 
-## Step 9: Quality Gate
+## Step 11: Quality Gate
 
 Before finishing, inspect every user-visible file:
 
@@ -396,7 +488,7 @@ Verify:
 * `qa.md` contains Basic, Intermediate, and Advanced sections; default 15 questions, or 9-15 with an explicit reduction explanation
 * Chinese requests produce primarily Chinese user-facing text
 * proper nouns and technical terms are preserved
-* no raw JSON, field names, evidence IDs, `Result 1`, `See evidence`, or parser labels appear
+* no raw JSON, field names, evidence IDs, or parser labels appear
 * no unsupported numeric claim appears
 * embedded visuals use existing local paths and have source/explanation text
 * no Codex image generation, imagegen prompt, generated bitmap pipeline, cover, or poster appears in the package
@@ -405,6 +497,7 @@ Verify:
 Run the validation script after generating the package:
 
 ```bash
+node ./scripts/validate-reasoning.js "{paper-slug-or-dir}" --strict
 node ./scripts/validate-study-package.js "{paper-slug-or-dir}" --lang zh --run-code
 ```
 
@@ -412,7 +505,7 @@ Use `--lang en` for English requests. If validation fails, fix the reported file
 
 Run the code demo if feasible. If it cannot be run, explain why in the final response and in `README.md` only if the limitation matters for future readers.
 
-## Step 10: Web UI
+## Step 12: Web UI
 
 The Web UI displays the generated files. It should not rely on facts or analysis cards as the default paper experience.
 
