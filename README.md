@@ -8,21 +8,21 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
-[![Codex Plugin Skeleton](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
+[![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-blue)](https://openai.com)
 
 Codex Paper is a Codex plugin that turns research papers into local study workspaces. It first builds a paper-only evidence record and a structured reasoning analysis, then has Codex write grounded notes, explanations, code demos, visuals, an interactive page, and follow-up Q&A context from that evidence instead of templating raw parser output into study materials.
 
 <table>
   <tr>
     <td align="center">
-      <img src="assets/screenshot1.png" alt="Library View" width="100%"/>
+      <img src="assets/library.png" alt="Codex Paper library with search, tags, and collection index" width="100%"/>
       <br/>
-      <sub>Library View - Browse and search your paper collection</sub>
+      <sub>Library - Search, filter, and open saved paper study packages</sub>
     </td>
     <td align="center">
-      <img src="assets/screenshot2.png" alt="Reading View" width="100%"/>
+      <img src="assets/paper.png" alt="Paper study page with generated notes, reasoning analysis, and evidence audit" width="100%"/>
       <br/>
-      <sub>Reading View - Study papers with rich formatting and math support</sub>
+      <sub>Paper View - Read grounded notes, reasoning analysis, evidence audit, and follow-up context</sub>
     </td>
   </tr>
 </table>
@@ -32,10 +32,10 @@ Codex Paper is a Codex plugin that turns research papers into local study worksp
 ## Features
 
 - **Automatic PDF parsing** - Extract title, authors, abstract, sections, and code links with a layered parser
-- **Smart content truncation** - Handles large papers (50k char limit) intelligently
+- **Long-paper handling** - Parses large papers with quality flags and graceful fallbacks when extraction is incomplete
 - **Code repository detection** - Automatically finds GitHub, arXiv, CodeOcean links
 - **Evidence-first paper prep** - Generates internal evidence files such as `paper-data.json`, `facts.json`, and `analysis.json`
-- **v2 evidence ledger** - Writes `evidence-ledger.json` with stable evidence IDs, page text, section trees, evidence units, natural locations, and parser quality degradations
+- **Evidence ledger** - Writes `evidence-ledger.json` with stable evidence IDs, page text, section trees, evidence units, natural locations, and parser quality degradations
 - **Research reasoning analysis** - Adds `reasoning-analysis.json` for central claims, research question, author reasoning path, validations, weakest assumption, minimal reproduction, strongest counterexample, follow-up idea, and uncertainty zones
 - **Semantic validation** - Checks schema, evidence references, source types, numeric grounding, reasoning graph cycles, critical-analysis coverage, and template residue
 - **Context modes** - Defaults to offline `paper-only`; `canonical` and `literature` keep external evidence in `.codex-paper/external-evidence.json` instead of mixing it into the paper ledger
@@ -50,16 +50,16 @@ Codex Paper is a Codex plugin that turns research papers into local study worksp
 
 ---
 
-## Codex Plugin Skeleton
+## Codex Plugin Layout
 
-This repository now includes a Codex-ready skeleton that preserves the current skills, hooks, parser scripts, and web viewer:
+This repository is organized as a standard Codex plugin with the active implementation in `plugins/codex-paper/`:
 
 - Codex plugin root: `plugins/codex-paper/`
 - Codex manifest: `plugins/codex-paper/.codex-plugin/plugin.json`
 - Repo-local marketplace entry: `.agents/plugins/marketplace.json`
-- Original source retained for reference: `plugin/`
+- Historical source copy retained for reference: `plugin/`
 
-The new Codex skeleton is additive: it keeps the original implementation intact while exposing a standard Codex plugin layout that we can keep iterating on.
+Normal installation should use the marketplace entry that points at `plugins/codex-paper/`. The top-level `plugin/` directory is kept only as a reference copy and does not need to be selected during regular use.
 
 Public names are intentionally explicit:
 
@@ -160,7 +160,7 @@ What is the key difference between self-attention and recurrent sequence modelin
 ```
 
 Codex will automatically trigger the study workflow and:
-1. Parse the PDF and prepare metadata, text, facts, analysis, and the v2 evidence ledger
+1. Parse the PDF and prepare metadata, text, facts, analysis, and the evidence ledger
 2. Infer the paper profile, scaffold `reasoning-analysis.json`, and read the relevant profile contract
 3. Fill research reasoning from paper evidence, then run strict semantic validation before authoring visible materials
 4. Author complete study materials from evidence instead of directly rendering machine JSON
@@ -169,7 +169,7 @@ Codex will automatically trigger the study workflow and:
 7. Copy the original `paper.pdf`, curate useful visual assets, and avoid dumping low-value extracted fragments into the reading flow
 8. Create a hidden answering pack for future grounded follow-up questions
 9. Update the global search index
-10. Launch the web viewer automatically
+10. Refresh the library index so the web viewer can show the package; start it with `$paper-webui` when needed
 
 ### Launch Web Viewer
 
@@ -208,8 +208,8 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │       ├── chat-notes.md                 # Follow-up Q&A notes created by the Web UI
 │       ├── index.html                    # Interactive HTML explorer
 │       ├── paper.pdf                     # Copy of the original PDF
-│       ├── evidence-ledger.json          # Internal v2 paper-only evidence ledger
-│       ├── reasoning-analysis.json       # Internal v2 reasoning analysis contract
+│       ├── evidence-ledger.json          # Internal paper-only evidence ledger
+│       ├── reasoning-analysis.json       # Internal research reasoning contract
 │       ├── images/                       # Curated extracted figures, tables, and necessary page previews
 │       │   ├── fig1.png
 │       │   └── fig2.png
@@ -227,12 +227,12 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │           ├── answering-pack.md         # Evidence navigation pack for $paper-chat
 │           ├── external-evidence.json    # Optional external evidence for canonical/literature modes
 │           ├── reasoning-review.md       # Fixed self-review checklist
-│           └── validation-report.json    # Latest v2 validation report
+│           └── validation-report.json    # Latest validation report
 │
 └── index.json                           # Global search index
 ```
 
-### v2 Validation and Migration
+### Validation and Migration
 
 Run the full deterministic suite:
 
@@ -244,14 +244,14 @@ bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh build
 ```
 
-Validate one completed v2 package:
+Validate one completed study package:
 
 ```bash
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --strict
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug} --run-code
 ```
 
-Migrate a v1 package to v2 draft evidence/reasoning files without inventing high-level analysis:
+Migrate an older package to draft evidence/reasoning files without inventing high-level analysis:
 
 ```bash
 bash scripts/codex-paper.sh migrate ~/codex-papers/papers/{paper-slug}
@@ -269,7 +269,7 @@ Before filling the draft reasoning analysis, you can sanity-check the migrated p
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --allow-draft
 ```
 
-See [docs/evidence-ledger.md](docs/evidence-ledger.md), [docs/reasoning-analysis.md](docs/reasoning-analysis.md), [docs/package-v2.md](docs/package-v2.md), and [docs/migration-v1-to-v2.md](docs/migration-v1-to-v2.md) for the v2 contracts.
+See the [evidence ledger](docs/evidence-ledger.md), [reasoning analysis](docs/reasoning-analysis.md), [package contract](docs/package-v2.md), and [migration guide](docs/migration-v1-to-v2.md) docs for the detailed package contracts.
 
 ---
 
@@ -322,9 +322,9 @@ codex-paper/
 1. **Study Skill** - Codex paper-reading and writing agent that generates the full study package
 2. **PDF Parser** - Uses a layered `PyMuPDF`-first parser with `pdf-parse` fallback and stable JSON output
 3. **Image Extractor** - Python script for PDF figure extraction
-4. **Preparation Pipeline** - Produces internal evidence files `paper-data.json`, `facts.json`, `analysis.json`, `meta.json`, and v2 `evidence-ledger.json`, then updates `~/codex-papers/index.json`
+4. **Preparation Pipeline** - Produces internal evidence files `paper-data.json`, `facts.json`, `analysis.json`, `meta.json`, and `evidence-ledger.json`, then updates `~/codex-papers/index.json`
 5. **Research Reasoning Validation** - Uses `reasoning-analysis.json`, paper profiles, and `validate-reasoning.js` to check evidence refs, source types, numeric grounding, reasoning DAGs, and critical analysis
-6. **Web Viewer** - Nuxt.js application with Nitro APIs that displays user materials by default, hides machine JSON, and shows v2 evidence audit and reasoning views
+6. **Web Viewer** - Nuxt.js application with Nitro APIs that displays user materials by default, hides machine JSON, and shows evidence audit and reasoning views
 7. **Ask Codex API** - Reuses a long-running Codex MCP worker for grounded follow-up questions, then appends answers to `chat-notes.md`
 8. **Hooks System** - Automatic dependency installation and setup
 
@@ -359,7 +359,7 @@ node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 # Prepare a paper into paper-data.json, facts.json, and evidence-ledger.json
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
 
-# Validate v2 research reasoning
+# Validate research reasoning
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug --strict
 
 # Validate a generated study package
@@ -378,7 +378,7 @@ bash scripts/codex-paper.sh start
 # Build web viewer
 bash scripts/codex-paper.sh build
 
-# The built viewer will be in .output/
+# The built viewer will be in plugins/codex-paper/src/web/.output/
 ```
 
 ---
@@ -392,7 +392,7 @@ No configuration required! The plugin uses sensible defaults:
 - **Papers directory**: `~/codex-papers/`
 - **Benchmark directory**: `~/codex-papers/paper-examples`
 - **Web viewer port**: `5815`
-- **Content limit**: `50,000` characters (with intelligent truncation)
+- **Long-paper behavior**: extraction quality flags and fallbacks are recorded in the generated package
 
 ### Advanced Customization
 
@@ -430,3 +430,4 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 - PDF parsing powered by [PyMuPDF](https://pymupdf.readthedocs.io/) with [pdf-parse](https://www.npmjs.com/package/pdf-parse) fallback
 - Web viewer built with [Nuxt.js](https://nuxt.com)
 - Math rendering by [KaTeX](https://katex.org)
+- Inspired by [alaliqing/claude-paper](https://github.com/alaliqing/claude-paper/) and [FeijiangHan/PaperForge](https://github.com/FeijiangHan/PaperForge)
