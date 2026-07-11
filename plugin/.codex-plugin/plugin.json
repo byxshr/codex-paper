@@ -1,9 +1,0 @@
-{
-  "name": "codex-paper",
-  "version": "2.0.0",
-  "description": "A plugin for studying research papers with automated material generation, grounded follow-up Q&A, and code demos",
-  "author": {
-    "name": "byxshr"
-  },
-  "homepage": "https://github.com/byxshr/codex-paper"
-}

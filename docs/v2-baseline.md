@@ -2,6 +2,8 @@
 
 Baseline captured before implementing the v2 evidence and reasoning upgrade.
 
+> Historical record: directory and dependency statements below describe the repository at commit `623570005fe4645bf9749ed7179b92dccb825a39`. As of S0-1 on 2026-07-10, `plugins/codex-paper/` is the only active tree, the top-level legacy tree is removed, and generated dependency/build directories are forbidden from the tracked tree. This note preserves rather than rewrites the original baseline facts.
+
 - Date: 2026-06-23
 - Branch: `feat/evidence-reasoning-v2`
 - Baseline commit: `623570005fe4645bf9749ed7179b92dccb825a39`

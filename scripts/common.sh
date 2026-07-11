@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PLUGIN_ROOT="$REPO_ROOT/plugins/codex-paper"
+ACTIVE_PLUGIN_RELATIVE="plugins/codex-paper"
+PLUGIN_ROOT="$REPO_ROOT/$ACTIVE_PLUGIN_RELATIVE"
 WEB_ROOT="$PLUGIN_ROOT/src/web"
 PAPERS_DIR="${PAPERS_DIR:-$HOME/codex-papers}"
 BENCHMARK_DIR="${BENCHMARK_DIR:-${CODEX_PAPER_BENCHMARK_DIR:-$PAPERS_DIR/paper-examples}}"

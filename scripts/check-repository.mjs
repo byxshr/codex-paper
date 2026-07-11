@@ -1,0 +1,379 @@
+#!/usr/bin/env node
+
+import { createHash } from 'node:crypto'
+import { existsSync, lstatSync, readFileSync, statSync } from 'node:fs'
+import { basename, extname, join, relative, resolve, sep } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const SCRIPT_DIR = fileURLToPath(new URL('.', import.meta.url))
+const DEFAULT_REPO_ROOT = resolve(SCRIPT_DIR, '..')
+const LEGACY_TREE = 'plugin'
+const DUPLICATE_MARKETPLACE = '.codex-plugin/marketplace.json'
+const ORIGINAL_PLUGIN = 'plugins/codex-paper/.codex-plugin/original-plugin.json'
+const BASELINE_PATH = 'docs/contracts/s0-contract-baseline.json'
+const EXPECTED_BASELINE_SHA256 = '85bb06acf0f22d7b979605d524717d45ac1f7097de8bf129b7d749eeb889a142'
+const FIXTURE_PDF_ROOT = 'benchmarks/fixtures/pdf/'
+const EXPECTED_DEFAULT_PROMPT_COUNT = 3
+const EXPECTED_ACTIVE_PLUGIN = Object.freeze({
+  name: 'codex-paper',
+  sourcePath: 'plugins/codex-paper',
+  marketplacePath: '.agents/plugins/marketplace.json',
+  packageVersion: '2.0.0',
+})
+const FROZEN_SCHEMAS = Object.freeze({
+  'evidence-ledger': Object.freeze({
+    version: '2.0.0',
+    path: 'plugins/codex-paper/skills/study/schemas/evidence-ledger.schema.json',
+    sha256: '413d0a60300ea11ca0af36ef706f16904159e0df60a1448f5571d3dcec337df6',
+  }),
+  'external-evidence': Object.freeze({
+    version: '2.0.0',
+    path: 'plugins/codex-paper/skills/study/schemas/external-evidence.schema.json',
+    sha256: 'ffa9e0dd916db8f17ac1995624e00dace08cf0ecf56e8623fbab36981d7d49ca',
+  }),
+  'reasoning-analysis': Object.freeze({
+    version: '2.0.0',
+    path: 'plugins/codex-paper/skills/study/schemas/reasoning-analysis.schema.json',
+    sha256: '52fd874b0fb8843b2f175bb44cd7b4e93abfeefc431625db24918c310d1392c7',
+  }),
+})
+const SENTINELS = [
+  'plugins/codex-paper/.codex-plugin/plugin.json',
+  'plugins/codex-paper/package.json',
+  'plugins/codex-paper/package-lock.json',
+  'plugins/codex-paper/skills/study/SKILL.md',
+  'plugins/codex-paper/src/web/package.json',
+  'plugins/codex-paper/hooks/hooks.json',
+]
+const CONFIG_EXTENSIONS = new Set([
+  '.bash', '.cjs', '.js', '.json', '.mjs', '.mts', '.cts', '.py', '.sh', '.toml', '.ts', '.yaml', '.yml', '.zsh',
+])
+const LOCKFILE_NAMES = new Set([
+  'bun.lock', 'bun.lockb', 'npm-shrinkwrap.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock',
+])
+
+function normalizePath(path) {
+  return path.split(sep).join('/')
+}
+
+function readJson(path, errors, label) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'))
+  } catch (error) {
+    errors.push(`${label} is not valid JSON: ${error.message}`)
+    return null
+  }
+}
+
+function sha256(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
+function lexicallyExists(path) {
+  try {
+    lstatSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function isSymlink(path) {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
+function gitTrackedFiles(repoRoot) {
+  try {
+    return execFileSync('git', ['ls-files', '-z'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .split('\0')
+      .filter(Boolean)
+      // Keep dangling symlinks visible to lexical path checks. Deleted worktree
+      // entries are excluded so an unstaged deletion can be validated before staging.
+      .filter((path) => lexicallyExists(join(repoRoot, path)))
+  } catch (error) {
+    throw new Error(`cannot list tracked files: ${error.message}`)
+  }
+}
+
+function generatedArtifactReason(path) {
+  const segments = path.split('/')
+  const basename = segments.at(-1) || ''
+
+  if (segments.some((segment) => ['node_modules', '.nuxt', '.output', '.vitepress', '.vitepress.backup', 'dist', '__pycache__'].includes(segment))) {
+    return 'generated directory'
+  }
+  if (basename === '.DS_Store') return 'macOS metadata'
+  if (basename === '.installed') return 'installation marker'
+  if (/\.(?:pyc|pyo)$/i.test(basename)) return 'Python bytecode'
+  if (/\.(?:log|pid)$/i.test(basename)) return 'log/PID file'
+  return null
+}
+
+function isExecutableOrConfig(repoRoot, path) {
+  if (path === 'scripts/check-repository.mjs' || path.startsWith('scripts/tests/')) return false
+  if (LOCKFILE_NAMES.has(basename(path))) return false
+  if (CONFIG_EXTENSIONS.has(extname(path).toLowerCase())) return true
+  try {
+    return Boolean(statSync(join(repoRoot, path)).mode & 0o111)
+  } catch {
+    return false
+  }
+}
+
+export function checkRepository({
+  repoRoot = DEFAULT_REPO_ROOT,
+  trackedFiles,
+  actualActivePluginRelative = EXPECTED_ACTIVE_PLUGIN.sourcePath,
+} = {}) {
+  const root = resolve(repoRoot)
+  const errors = []
+  const tracked = (trackedFiles || gitTrackedFiles(root)).map(normalizePath)
+  const trackedSet = new Set(tracked)
+
+  if (actualActivePluginRelative !== EXPECTED_ACTIVE_PLUGIN.sourcePath) {
+    errors.push(`root automation active plugin must be ${EXPECTED_ACTIVE_PLUGIN.sourcePath}; found ${JSON.stringify(actualActivePluginRelative)}`)
+  }
+
+  if (existsSync(join(root, LEGACY_TREE))) {
+    errors.push(`legacy tree must not exist in the working tree: ${LEGACY_TREE}/`)
+  }
+  const trackedLegacy = tracked.filter((path) => path === LEGACY_TREE || path.startsWith(`${LEGACY_TREE}/`))
+  if (trackedLegacy.length) {
+    errors.push(`legacy tree contains tracked files: ${trackedLegacy.join(', ')}`)
+  }
+  for (const forbiddenPath of [DUPLICATE_MARKETPLACE, ORIGINAL_PLUGIN]) {
+    if (existsSync(join(root, forbiddenPath)) || trackedSet.has(forbiddenPath)) {
+      errors.push(`redundant plugin entry must not exist: ${forbiddenPath}`)
+    }
+  }
+
+  for (const sentinel of SENTINELS) {
+    if (!existsSync(join(root, sentinel))) errors.push(`active plugin sentinel is missing: ${sentinel}`)
+    else if (isSymlink(join(root, sentinel))) errors.push(`active plugin sentinel must not be a symlink: ${sentinel}`)
+  }
+
+  const pluginManifests = tracked.filter((path) => path === '.codex-plugin/plugin.json' || path.endsWith('/.codex-plugin/plugin.json'))
+  const canonicalManifest = `${EXPECTED_ACTIVE_PLUGIN.sourcePath}/.codex-plugin/plugin.json`
+  if (pluginManifests.length !== 1 || pluginManifests[0] !== canonicalManifest) {
+    errors.push(`tracked plugin manifests must contain only ${canonicalManifest}; found ${pluginManifests.join(', ') || 'none'}`)
+  }
+
+  const baseline = readJson(join(root, BASELINE_PATH), errors, BASELINE_PATH)
+  if (isSymlink(join(root, BASELINE_PATH))) errors.push(`${BASELINE_PATH} must not be a symlink`)
+  if (existsSync(join(root, BASELINE_PATH)) && sha256(join(root, BASELINE_PATH)) !== EXPECTED_BASELINE_SHA256) {
+    errors.push(`${BASELINE_PATH} immutable baseline hash does not match ${EXPECTED_BASELINE_SHA256}`)
+  }
+  for (const [field, expected] of Object.entries(EXPECTED_ACTIVE_PLUGIN)) {
+    if (baseline?.activePlugin?.[field] !== expected) {
+      errors.push(`${BASELINE_PATH} activePlugin.${field} must be ${JSON.stringify(expected)}; found ${JSON.stringify(baseline?.activePlugin?.[field])}`)
+    }
+  }
+  const activePath = EXPECTED_ACTIVE_PLUGIN.sourcePath
+  const marketplacePath = EXPECTED_ACTIVE_PLUGIN.marketplacePath
+  const manifestPath = join(root, activePath, '.codex-plugin/plugin.json')
+  const packagePath = join(root, activePath, 'package.json')
+  const lockPath = join(root, activePath, 'package-lock.json')
+  const marketplace = readJson(join(root, marketplacePath), errors, marketplacePath)
+  const manifest = readJson(manifestPath, errors, normalizePath(relative(root, manifestPath)))
+  const packageJson = readJson(packagePath, errors, normalizePath(relative(root, packagePath)))
+  const lockJson = readJson(lockPath, errors, normalizePath(relative(root, lockPath)))
+
+  if (marketplace) {
+    if (isSymlink(join(root, marketplacePath))) errors.push(`canonical marketplace must not be a symlink: ${marketplacePath}`)
+    const entries = marketplace.plugins?.filter((entry) => entry?.name === 'codex-paper') || []
+    if (entries.length !== 1) {
+      errors.push(`canonical marketplace must contain exactly one codex-paper entry; found ${entries.length}`)
+    } else {
+      const source = entries[0].source
+      if (source?.source !== 'local') errors.push('canonical marketplace source.source must be "local"')
+      if (source?.path !== './plugins/codex-paper') {
+        errors.push(`canonical marketplace source.path must be "./plugins/codex-paper"; found ${JSON.stringify(source?.path)}`)
+      }
+    }
+  }
+
+  if (manifest && packageJson && lockJson) {
+    const folderName = basename(activePath)
+    const names = [folderName, manifest.name, packageJson.name, lockJson.name, lockJson.packages?.['']?.name]
+    if (names.some((name) => name !== folderName)) {
+      errors.push(`active plugin names must match folder ${folderName}: ${names.map((name) => JSON.stringify(name)).join(', ')}`)
+    }
+
+    const baseVersion = String(manifest.version || '').split('+', 1)[0]
+    const packageVersions = [packageJson.version, lockJson.version, lockJson.packages?.['']?.version]
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(baseVersion)) {
+      errors.push(`plugin base version is not semver: ${JSON.stringify(baseVersion)}`)
+    }
+    if (packageVersions.some((version) => version !== baseVersion)) {
+      errors.push(`plugin base version ${baseVersion} must match package and lockfile versions: ${packageVersions.join(', ')}`)
+    }
+
+    const defaultPrompts = manifest.interface?.defaultPrompt
+    if (!Array.isArray(defaultPrompts) || defaultPrompts.length !== EXPECTED_DEFAULT_PROMPT_COUNT) {
+      errors.push(`plugin interface.defaultPrompt must contain exactly ${EXPECTED_DEFAULT_PROMPT_COUNT} core prompts; found ${Array.isArray(defaultPrompts) ? defaultPrompts.length : 'non-array'}`)
+    }
+  }
+
+  for (const path of tracked) {
+    const reason = generatedArtifactReason(path)
+    if (reason) errors.push(`tracked generated artifact (${reason}): ${path}`)
+  }
+
+  for (const pdfPath of tracked.filter((path) => path.toLowerCase().endsWith('.pdf'))) {
+    if (!pdfPath.startsWith(FIXTURE_PDF_ROOT)) {
+      errors.push(`tracked PDF is outside the fixture allowlist ${FIXTURE_PDF_ROOT}: ${pdfPath}`)
+      continue
+    }
+    const absolutePdfPath = join(root, pdfPath)
+    if (isSymlink(absolutePdfPath)) {
+      errors.push(`fixture PDF must not be a symlink: ${pdfPath}`)
+      continue
+    }
+    const manifestPath = `${pdfPath}.manifest.json`
+    if (!trackedSet.has(manifestPath) || !existsSync(join(root, manifestPath))) {
+      errors.push(`fixture PDF requires a tracked manifest: ${manifestPath}`)
+      continue
+    }
+    if (isSymlink(join(root, manifestPath))) {
+      errors.push(`fixture manifest must not be a symlink: ${manifestPath}`)
+      continue
+    }
+    const fixtureManifest = readJson(join(root, manifestPath), errors, manifestPath)
+    const requiredFields = baseline?.fixturePolicy?.requiredManifestFields || []
+    const stringFields = requiredFields.filter((field) => field !== 'redistributable')
+    for (const field of stringFields) {
+      if (typeof fixtureManifest?.[field] !== 'string' || fixtureManifest[field].trim() === '') {
+        errors.push(`fixture manifest ${manifestPath} field ${field} must be a non-empty string`)
+      }
+    }
+    if (fixtureManifest?.redistributable !== true) {
+      errors.push(`fixture manifest ${manifestPath} must set redistributable to true`)
+    }
+    if (fixtureManifest?.kind !== 'pdf') {
+      errors.push(`fixture manifest ${manifestPath} kind must be "pdf"`)
+    }
+    if (typeof fixtureManifest?.spdx === 'string' && !/^[A-Za-z0-9][A-Za-z0-9.+-]*$/.test(fixtureManifest.spdx)) {
+      errors.push(`fixture manifest ${manifestPath} spdx must be a valid SPDX identifier token`)
+    }
+    const allowedOrigins = baseline?.fixturePolicy?.allowedOrigins || []
+    if (!allowedOrigins.includes(fixtureManifest?.origin)) {
+      errors.push(`fixture manifest ${manifestPath} has unsupported origin: ${JSON.stringify(fixtureManifest?.origin)}`)
+    }
+    const actualPdfHash = sha256(absolutePdfPath)
+    if (fixtureManifest?.sha256 !== actualPdfHash) {
+      errors.push(`fixture manifest ${manifestPath} sha256 mismatch: expected ${actualPdfHash}, found ${fixtureManifest?.sha256}`)
+    }
+  }
+
+  const legacyReference = new RegExp(`(^|[^A-Za-z0-9_-])${LEGACY_TREE}/`)
+  for (const path of tracked) {
+    if (!isExecutableOrConfig(root, path)) continue
+    try {
+      const content = readFileSync(join(root, path), 'utf8')
+      if (legacyReference.test(content)) errors.push(`executable/config references legacy path: ${path}`)
+    } catch (error) {
+      errors.push(`cannot inspect executable/config ${path}: ${error.message}`)
+    }
+  }
+
+  for (const readmePath of ['README.md', 'README.zh-CN.md']) {
+    if (!existsSync(join(root, readmePath))) continue
+    const content = readFileSync(join(root, readmePath), 'utf8')
+    if (!content.includes('plugins/codex-paper/') || !content.includes('.agents/plugins/marketplace.json')) {
+      errors.push(`${readmePath} must document the canonical plugin and marketplace paths`)
+    }
+    if (/├── plugin\/|Historical source copy retained|历史源码副本保留在/.test(content)) {
+      errors.push(`${readmePath} still presents the legacy tree as repository layout`)
+    }
+    if (legacyReference.test(content)) {
+      errors.push(`${readmePath} references the legacy plugin path`)
+    }
+  }
+
+  if (Array.isArray(baseline?.schemas)) {
+    const declaredNames = baseline.schemas.map((schema) => schema.name).sort()
+    const expectedNames = Object.keys(FROZEN_SCHEMAS).sort()
+    if (JSON.stringify(declaredNames) !== JSON.stringify(expectedNames)) {
+      errors.push(`${BASELINE_PATH} must declare exactly the frozen schemas: ${expectedNames.join(', ')}`)
+    }
+    for (const [name, expected] of Object.entries(FROZEN_SCHEMAS)) {
+      const schema = baseline.schemas.find((candidate) => candidate.name === name)
+      if (!schema) continue
+      for (const field of ['version', 'path', 'sha256']) {
+        if (schema[field] !== expected[field]) {
+          errors.push(`${BASELINE_PATH} schema ${name}.${field} must be ${JSON.stringify(expected[field])}; found ${JSON.stringify(schema[field])}`)
+        }
+      }
+      const schemaPath = join(root, expected.path)
+      if (!existsSync(schemaPath)) {
+        errors.push(`frozen schema is missing: ${expected.path}`)
+        continue
+      }
+      if (isSymlink(schemaPath)) {
+        errors.push(`frozen schema must not be a symlink: ${expected.path}`)
+        continue
+      }
+      const actualHash = sha256(schemaPath)
+      if (actualHash !== expected.sha256) {
+        errors.push(`frozen schema hash mismatch: ${expected.path} expected ${expected.sha256}, found ${actualHash}`)
+      }
+    }
+  } else {
+    errors.push(`${BASELINE_PATH} must declare schemas`)
+  }
+
+  return { ok: errors.length === 0, errors, trackedFileCount: tracked.length }
+}
+
+function parseCliArgs(argv) {
+  const parsed = {
+    repoRoot: DEFAULT_REPO_ROOT,
+    actualActivePluginRelative: EXPECTED_ACTIVE_PLUGIN.sourcePath,
+  }
+  const optionTargets = new Map([
+    ['--repo-root', 'repoRoot'],
+    ['--active-plugin-relative', 'actualActivePluginRelative'],
+  ])
+  const seen = new Set()
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const option = argv[index]
+    const target = optionTargets.get(option)
+    if (!target) throw new Error(`unknown option: ${option}`)
+    if (seen.has(option)) throw new Error(`duplicate option: ${option}`)
+
+    const value = argv[index + 1]
+    if (!value || value.startsWith('--')) throw new Error(`${option} requires a value`)
+
+    parsed[target] = target === 'repoRoot' ? resolve(value) : value
+    seen.add(option)
+    index += 1
+  }
+
+  return parsed
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    const result = checkRepository(parseCliArgs(process.argv.slice(2)))
+    if (!result.ok) {
+      console.error(`Repository contract failed with ${result.errors.length} error(s):`)
+      for (const error of result.errors) console.error(`- ${error}`)
+      process.exitCode = 1
+    } else {
+      console.log(`Repository contract passed (${result.trackedFileCount} tracked files inspected).`)
+    }
+  } catch (error) {
+    console.error(`Repository contract could not run: ${error.message}`)
+    process.exitCode = 1
+  }
+}

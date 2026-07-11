@@ -16,3 +16,4 @@ dist/
 
 # Benchmark inputs can be large; keep reports/fixtures small and explicit.
 benchmarks/**/*.pdf
+!benchmarks/fixtures/pdf/**/*.pdf

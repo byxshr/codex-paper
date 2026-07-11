@@ -52,14 +52,14 @@ Codex Paper is a Codex plugin that turns research papers into local study worksp
 
 ## Codex Plugin Layout
 
-This repository is organized as a standard Codex plugin with the active implementation in `plugins/codex-paper/`:
+This repository has one authoritative Codex plugin implementation in `plugins/codex-paper/`:
 
 - Codex plugin root: `plugins/codex-paper/`
 - Codex manifest: `plugins/codex-paper/.codex-plugin/plugin.json`
 - Repo-local marketplace entry: `.agents/plugins/marketplace.json`
-- Historical source copy retained for reference: `plugin/`
+- Root install/build/test automation entrypoint: `scripts/codex-paper.sh`
 
-Normal installation should use the marketplace entry that points at `plugins/codex-paper/`. The top-level `plugin/` directory is kept only as a reference copy and does not need to be selected during regular use.
+Installation must use the repository marketplace entry that points at `plugins/codex-paper/`. The former top-level legacy tree was removed and remains available only in Git history. If a local script hard-codes the old singular tree path, reinstall from the repository marketplace and update the script to use `plugins/codex-paper/`.
 
 Public names are intentionally explicit:
 
@@ -279,9 +279,9 @@ See the [evidence ledger](docs/evidence-ledger.md), [reasoning analysis](docs/re
 
 ```
 codex-paper/
-├── .codex-plugin/
-│   └── marketplace.json              # Marketplace catalog entry
-├── plugin/                           # Legacy copy kept for reference
+├── .agents/
+│   └── plugins/
+│       └── marketplace.json          # Authoritative marketplace catalog
 ├── plugins/
 │   └── codex-paper/
 │       ├── .codex-plugin/
@@ -305,6 +305,9 @@ codex-paper/
 │       ├── src/
 │       │   └── web/                     # Nuxt.js web viewer
 │       └── package.json
+├── scripts/
+│   ├── codex-paper.sh                # Root install/build/test entrypoint
+│   └── check-repository.mjs          # Repository contract gate
 ├── benchmarks/
 │   ├── manifest.json                    # Fixed parser benchmark set
 │   ├── gold/                            # Gold expectations for the 5 papers

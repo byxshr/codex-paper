@@ -105,8 +105,19 @@ cmd_benchmark() {
 cmd_test() {
   ensure_node
 
+  print_section "Repository Guard Tests"
+  "$NODE_BIN" --test "$REPO_ROOT"/scripts/tests/*.test.mjs
+
   print_section "Unit Tests"
   "$NODE_BIN" --test "$PLUGIN_ROOT"/skills/study/scripts/tests/*.mjs
+}
+
+cmd_repo_check() {
+  ensure_node
+
+  print_section "Repository Contract"
+  "$NODE_BIN" "$REPO_ROOT/scripts/check-repository.mjs" \
+    --active-plugin-relative "$ACTIVE_PLUGIN_RELATIVE"
 }
 
 cmd_reasoning_test() {
@@ -226,6 +237,7 @@ Commands:
   start        Start the local web viewer
   stop         Stop the local web viewer
   status       Show build and viewer status
+  repo-check   Verify the active plugin, contract baseline, and repository hygiene
   benchmark    Run the parser benchmark against the local paper examples
   test         Run deterministic unit tests
   reasoning-test Run reasoning validation fixtures
@@ -255,6 +267,9 @@ case "$command_name" in
     ;;
   status)
     cmd_status
+    ;;
+  repo-check)
+    cmd_repo_check
     ;;
   benchmark)
     cmd_benchmark

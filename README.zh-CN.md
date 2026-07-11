@@ -52,14 +52,14 @@ Codex Paper 是一个 Codex 插件，可以把研究论文转化为可复用的�
 
 ## Codex 插件结构
 
-这个仓库已经整理为标准 Codex 插件结构，当前使用的实现位于 `plugins/codex-paper/`：
+这个仓库仅保留一份权威 Codex 插件实现，位于 `plugins/codex-paper/`：
 
 - Codex 插件根目录：`plugins/codex-paper/`
 - Codex manifest：`plugins/codex-paper/.codex-plugin/plugin.json`
 - 仓库内 marketplace 条目：`.agents/plugins/marketplace.json`
-- 历史源码副本保留在：`plugin/`
+- 根安装、构建和测试自动化入口：`scripts/codex-paper.sh`
 
-正常安装时应选择指向 `plugins/codex-paper/` 的 marketplace 条目。顶层 `plugin/` 目录只是历史参考副本，日常使用不需要选择它。
+安装必须使用指向 `plugins/codex-paper/` 的仓库 marketplace 条目。原顶层 legacy tree 已删除，仅保留在 Git 历史中。如果本地脚本硬编码了旧的 singular tree 路径，请从仓库 marketplace 重新安装，并把脚本改为使用 `plugins/codex-paper/`。
 
 对外使用时，插件名和 skill 名是分开的：
 
@@ -279,9 +279,9 @@ node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-pape
 
 ```
 codex-paper/
-├── .codex-plugin/
-│   └── marketplace.json              # 市场目录条目
-├── plugin/                           # 保留的旧副本，仅供参考
+├── .agents/
+│   └── plugins/
+│       └── marketplace.json          # 权威 marketplace 目录
 ├── plugins/
 │   └── codex-paper/
 │       ├── .codex-plugin/
@@ -305,6 +305,9 @@ codex-paper/
 │       ├── src/
 │       │   └── web/                     # Nuxt.js 网页查看器
 │       └── package.json
+├── scripts/
+│   ├── codex-paper.sh                # 根安装、构建和测试入口
+│   └── check-repository.mjs          # 仓库契约门禁
 ├── benchmarks/
 │   ├── manifest.json                    # 固定 parser benchmark 集
 │   ├── gold/                            # 5 篇论文的人工期望

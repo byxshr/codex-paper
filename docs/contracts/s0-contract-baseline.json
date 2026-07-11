@@ -1,0 +1,88 @@
+{
+  "baselineVersion": "1.0.0",
+  "recordedAt": "2026-07-10",
+  "activePlugin": {
+    "name": "codex-paper",
+    "sourcePath": "plugins/codex-paper",
+    "marketplacePath": ".agents/plugins/marketplace.json",
+    "packageVersion": "2.0.0"
+  },
+  "packageContract": {
+    "currentWriterVersion": "2.0.0",
+    "nextWriterVersion": "2.1.0",
+    "legacyValidationFlag": "--legacy-ok",
+    "readDoesNotRewrite": true,
+    "unknownVersionPolicy": "read-only-diagnostic"
+  },
+  "schemas": [
+    {
+      "name": "evidence-ledger",
+      "version": "2.0.0",
+      "path": "plugins/codex-paper/skills/study/schemas/evidence-ledger.schema.json",
+      "sha256": "413d0a60300ea11ca0af36ef706f16904159e0df60a1448f5571d3dcec337df6"
+    },
+    {
+      "name": "external-evidence",
+      "version": "2.0.0",
+      "path": "plugins/codex-paper/skills/study/schemas/external-evidence.schema.json",
+      "sha256": "ffa9e0dd916db8f17ac1995624e00dace08cf0ecf56e8623fbab36981d7d49ca"
+    },
+    {
+      "name": "reasoning-analysis",
+      "version": "2.0.0",
+      "path": "plugins/codex-paper/skills/study/schemas/reasoning-analysis.schema.json",
+      "sha256": "52fd874b0fb8843b2f175bb44cd7b4e93abfeefc431625db24918c310d1392c7"
+    }
+  ],
+  "compatibility": {
+    "v1": "static-browse-and-limited-validation",
+    "v2_0": "always-readable-and-validatable",
+    "v2_1": {
+      "adds": ["resultClaims", "direct-evidence-refs"],
+      "retainsUntil": {
+        "keyResultsProjection": "3.0.0",
+        "legacyClaimAndResultRefs": "reader-support"
+      }
+    }
+  },
+  "trustBoundary": {
+    "factRoot": ["source-pdf", "source-sha256"],
+    "paperEvidenceAuthority": "evidence-ledger",
+    "researchReasoningAuthority": "reasoning-analysis",
+    "unverifiedHintsUntilP0B2B3": ["facts", "analysis", "paper-data"]
+  },
+  "validationReportTarget": {
+    "schemaVersion": "1.0.0",
+    "status": ["pass", "pass_with_warnings", "fail"],
+    "phase": ["draft", "complete"],
+    "requiredConcepts": [
+      "publishable",
+      "scope.included",
+      "scope.excluded",
+      "gate.policy",
+      "gate.outcome",
+      "validator",
+      "generatedAt",
+      "structured-findings",
+      "referenceCoverage"
+    ],
+    "strictOnlyChangesGateAndExit": true
+  },
+  "fixturePolicy": {
+    "pdfAllowlistRoot": "benchmarks/fixtures/pdf/",
+    "manifestConvention": "<pdf-path>.manifest.json",
+    "localAttentionArtifactsRedistributable": false,
+    "allowedOrigins": ["original-synthetic", "explicit-redistribution-license"],
+    "requiredManifestFields": [
+      "id",
+      "kind",
+      "origin",
+      "copyright",
+      "spdx",
+      "license",
+      "redistributable",
+      "sha256",
+      "generator"
+    ]
+  }
+}

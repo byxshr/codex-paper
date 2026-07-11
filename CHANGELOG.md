@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Made `plugins/codex-paper/` the only executable source tree and `.agents/plugins/marketplace.json` the only repository marketplace.
+- Added an immutable 2.0 contract baseline, compatible 2.1 evolution ADR, and a dependency-free repository/CI contract gate.
+- Updated plugin ingestion metadata to current Codex manifest and agent interface requirements.
+- Removed the divergent legacy tree; it remains available through Git history.
+
 ## 2.0.0 - Evidence and Reasoning v2
 
 - Added page-aware `evidence-ledger.json` with stable evidence IDs and parser quality flags.
