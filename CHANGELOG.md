@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Converted the Viewer to a client-only SPA with a strict self-only script CSP and an externalized Nuxt bootstrap, removing remote fonts and inline executable scripts.
+- Added one server-side active-content pipeline for Markdown, Ask answers, Notebook Markdown, static HTML previews, and paper metadata URLs.
+- Replaced executable HTML previews with explicit scriptless static previews; Notebook HTML/SVG/JavaScript outputs are shown as blocked text, and SVG files are source/download only.
+- Added active-content unit, static-source, real HTTP, and browser canary coverage for CSP, sanitization, rich-output downgrade, and safe raw headers.
+- Incorporated independent P0-A2 review feedback by removing a misleading unused v-html policy export and preserving complex KaTeX layout classes through the sanitizer.
 - Bound the Viewer to IPv4 loopback and added Host, pairing-session, Origin, and CSRF enforcement for library APIs.
 - Added shared no-follow/realpath library resolution, public-file budgets, fail-fast operation locks, and safer tag/Ask boundaries.
 - Replaced permanent paper deletion with session-bound confirmation tokens, persistent recoverable trash, and Viewer restore controls.

@@ -16,11 +16,25 @@ const origin = `http://127.0.0.1:${port}`
 const token = randomBytes(32).toString('hex')
 const paperDir = path.join(libraryRoot, 'papers', 'sample-paper')
 fs.mkdirSync(path.join(paperDir, 'notes'), { recursive: true })
-fs.writeFileSync(path.join(paperDir, 'README.md'), '# HTTP Security Fixture\n')
-fs.writeFileSync(path.join(paperDir, 'notes', 'public.md'), 'public content')
+fs.writeFileSync(path.join(paperDir, 'README.md'), '# HTTP Security Fixture\n\n<script>globalThis.markdownPwned = true</script>\n\n[bad](javascript:alert(1))\n')
+fs.writeFileSync(path.join(paperDir, 'notes', 'public.md'), '# Public\n\n<img src=x onerror=alert(1)>\n')
+fs.writeFileSync(path.join(paperDir, 'chat-notes.md'), '# Chat\n\n<iframe src="http://127.0.0.1/canary"></iframe>\n')
+fs.writeFileSync(path.join(paperDir, 'unsafe.html'), '<style>body{display:none}</style><script>globalThis.htmlPwned=true</script><form action="https://evil.test"><button>go</button></form><a href="https://evil.test">leave</a><p style="color:red" onclick="pwn()">visible</p>')
+fs.writeFileSync(path.join(paperDir, 'unsafe.svg'), '<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.svgPwned=true"><script>alert(1)</script><image href="https://evil.test/pixel" /></svg>')
+fs.writeFileSync(path.join(paperDir, 'unsafe.ipynb'), JSON.stringify({
+  metadata: { kernelspec: { language: 'python' } },
+  cells: [
+    { cell_type: 'markdown', source: ['<script>globalThis.notebookPwned=true</script>'] },
+    { cell_type: 'code', source: ['print(1)'], outputs: [
+      { output_type: 'display_data', data: { 'text/html': '<img src=x onerror=pwn()>' } },
+      { output_type: 'display_data', data: { 'image/svg+xml': '<svg onload=pwn()></svg>' } },
+      { output_type: 'display_data', data: { 'application/javascript': 'fetch("/api/papers")' } }
+    ] }
+  ]
+}))
 fs.writeFileSync(path.join(paperDir, 'meta.json'), JSON.stringify({ title: 'Fixture', slug: 'sample-paper', tags: [] }))
 fs.writeFileSync(path.join(paperDir, '.secret'), 'hidden')
-fs.writeFileSync(path.join(libraryRoot, 'index.json'), JSON.stringify([{ title: 'Fixture', slug: 'sample-paper', authors: [], abstract: '', tags: [] }]))
+fs.writeFileSync(path.join(libraryRoot, 'index.json'), JSON.stringify([{ title: 'Fixture', slug: 'sample-paper', authors: [], abstract: '', tags: [], url: 'javascript:alert(1)', githubLinks: ['https://github.com/example/repo', 'file:///tmp/secret'], codeLinks: ['vbscript:bad'] }]))
 try { fs.symlinkSync('/etc/passwd', path.join(paperDir, 'escape.txt')) } catch {}
 
 const child = spawn(process.execPath, [serverEntry], {
@@ -72,6 +86,21 @@ async function waitForHealth() {
 
 try {
   await waitForHealth()
+  const shell = await request('GET', '/')
+  assert.equal(shell.status, 200)
+  assert.match(String(shell.headers['content-security-policy']), /script-src 'self'/)
+  assert.match(String(shell.headers['content-security-policy']), /script-src-attr 'none'/)
+  assert.match(String(shell.headers['content-security-policy']), /style-src-attr 'none'/)
+  assert.match(String(shell.headers['content-security-policy']), /frame-ancestors 'none'/)
+  assert.equal(shell.headers['x-frame-options'], 'DENY')
+  assert.equal(shell.headers['referrer-policy'], 'no-referrer')
+  assert.doesNotMatch(shell.text, /fonts\.googleapis\.com|fonts\.gstatic\.com/)
+  assert.doesNotMatch(shell.text, /<script>(?!\s*<\/script>)/i, 'SPA shell must not contain inline executable scripts')
+  assert.match(shell.text, /<script src="\/__codex-paper-spa-bootstrap\.js"><\/script>/)
+  const bootstrap = await request('GET', '/__codex-paper-spa-bootstrap.js')
+  assert.equal(bootstrap.status, 200)
+  assert.match(String(bootstrap.headers['content-type']), /^application\/javascript/)
+  assert.match(bootstrap.text, /^window\.__NUXT__=\{\};window\.__NUXT__\.config=/)
   assert.equal((await request('GET', '/api/health', { host: `localhost:${port}` })).status, 200)
   assert.equal((await request('GET', '/api/health', { host: `evil.test:${port}` })).status, 403)
   for (const requestPath of ['/api/papers', '/api/papers/sample-paper', '/api/papers/sample-paper/files', '/api/papers/sample-paper/file?path=README.md', '/api/papers/sample-paper/raw?path=README.md', '/api/trash']) {
@@ -91,7 +120,55 @@ try {
   const auth = { Cookie: cookie }
   const mutation = { Cookie: cookie, Origin: origin, 'X-Codex-Paper-CSRF': csrf }
   assert.equal((await request('GET', '/api/session', { headers: auth })).status, 200)
-  assert.equal((await request('GET', '/api/papers', { headers: auth })).status, 200)
+  const papers = await request('GET', '/api/papers', { headers: auth })
+  assert.equal(papers.status, 200)
+  assert.equal(papers.headers['cache-control'], 'no-store')
+  assert.equal(papers.json[0].url, null)
+  assert.deepEqual(papers.json[0].githubLinks, ['https://github.com/example/repo'])
+  assert.deepEqual(papers.json[0].codeLinks, [])
+
+  const detail = await request('GET', '/api/papers/sample-paper', { headers: auth })
+  assert.equal(detail.status, 200)
+  assert.match(detail.json.markdown, /<script>/)
+  assert.match(detail.json.renderedHtml, /&lt;script&gt;/)
+  assert.doesNotMatch(detail.json.renderedHtml, /<script|javascript:/i)
+
+  const markdownFile = await request('GET', '/api/papers/sample-paper/file?path=notes%2Fpublic.md', { headers: auth })
+  assert.equal(markdownFile.status, 200)
+  assert.match(markdownFile.json.content, /onerror=/)
+  assert.doesNotMatch(markdownFile.json.renderedHtml, /<img[^>]+onerror=/i)
+
+  const chatNotes = await request('GET', '/api/papers/sample-paper/file?path=chat-notes.md', { headers: auth })
+  assert.equal(chatNotes.status, 200)
+  assert.doesNotMatch(chatNotes.json.renderedHtml, /<iframe/i)
+
+  const htmlFile = await request('GET', '/api/papers/sample-paper/file?path=unsafe.html', { headers: auth })
+  assert.equal(htmlFile.status, 200)
+  assert.match(htmlFile.json.content, /<script>/)
+  assert.equal((htmlFile.json.previewHtml.match(/http-equiv="Content-Security-Policy"/g) || []).length, 1)
+  assert.doesNotMatch(htmlFile.json.previewHtml, /<script|<style>body|<form|onclick=|https:\/\/evil\.test/i)
+  assert.match(htmlFile.json.previewHtml, /script-src 'none'/)
+
+  const notebookFile = await request('GET', '/api/papers/sample-paper/file?path=unsafe.ipynb', { headers: auth })
+  assert.equal(notebookFile.status, 200)
+  assert.equal(notebookFile.json.content, null)
+  assert.match(notebookFile.json.notebook.cells[0].renderedHtml, /&lt;script&gt;/)
+  assert.deepEqual(notebookFile.json.notebook.cells[1].outputs.map((output) => output.kind), ['blocked', 'blocked', 'blocked'])
+
+  const svgFile = await request('GET', '/api/papers/sample-paper/file?path=unsafe.svg', { headers: auth })
+  assert.equal(svgFile.status, 200)
+  assert.equal(svgFile.json.type, 'svg')
+  assert.match(svgFile.json.content, /onload=/)
+  assert.match(svgFile.json.downloadUrl, /unsafe\.svg/)
+  const svgRaw = await request('GET', '/api/papers/sample-paper/raw?path=unsafe.svg', { headers: auth })
+  assert.equal(svgRaw.status, 200)
+  assert.equal(svgRaw.headers['content-type'], 'application/octet-stream')
+  assert.match(String(svgRaw.headers['content-disposition']), /^attachment;/)
+  assert.match(String(svgRaw.headers['content-security-policy']), /sandbox/)
+  const htmlRaw = await request('GET', '/api/papers/sample-paper/raw?path=unsafe.html', { headers: auth })
+  assert.equal(htmlRaw.status, 200)
+  assert.equal(htmlRaw.headers['content-type'], 'application/octet-stream')
+  assert.match(String(htmlRaw.headers['content-disposition']), /^attachment;/)
   assert.equal((await request('PATCH', '/api/papers/sample-paper/tags', { headers: auth, body: { tags: ['x'] } })).status, 403)
   assert.equal((await request('PATCH', '/api/papers/sample-paper/tags', { headers: { ...auth, Origin: origin }, body: { tags: ['x'] } })).status, 403)
   assert.equal((await request('PATCH', '/api/papers/sample-paper/tags', { headers: mutation, body: { tags: ['x', 'x'] } })).status, 200)

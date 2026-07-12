@@ -182,13 +182,15 @@ The startup terminal prints a fresh pairing token. Open **http://127.0.0.1:5815*
 In the Viewer you can:
 - Browse all studied papers
 - View generated Markdown, HTML, PDF, image, and code materials
-- Explore each paper's `index.html` interactively in an iframe
+- Inspect HTML source and explicitly open a scriptless **static safe preview**; generated JavaScript is never executed in the Viewer
+- Read structured Notebook cells while HTML, SVG, and JavaScript rich outputs are downgraded to visible blocked text
+- Inspect SVG source or download the file safely instead of rendering it inline
 - Access code demonstrations
 - Ask Codex follow-up questions from a paper page and save answers to `chat-notes.md`
 - Search through your paper library
 - Move papers to recoverable trash and restore them from the Trash panel
 
-The service binds only to IPv4 loopback. Every restart invalidates existing Viewer sessions and creates a new pairing token. See [`docs/local-viewer-security.md`](docs/local-viewer-security.md) for the API and filesystem boundary.
+The service binds only to IPv4 loopback. Every restart invalidates existing Viewer sessions and creates a new pairing token. The SPA runs with a self-only script CSP; Markdown and model answers are rendered and sanitized on the server. See [`docs/local-viewer-security.md`](docs/local-viewer-security.md) for the API/filesystem boundary and [`docs/web-active-content-security.md`](docs/web-active-content-security.md) for the rendering boundary.
 
 Ask Codex lazily starts one long-running `codex mcp-server` worker the first time a web question is asked. The web viewer keeps a separate Codex thread per paper, so follow-up questions for the same paper reuse conversation context without starting a new `codex exec` process each time. Answers still run with a read-only sandbox and use `.codex-paper/answering-pack.md` when available, falling back to visible Markdown materials and local evidence files for older packages.
 

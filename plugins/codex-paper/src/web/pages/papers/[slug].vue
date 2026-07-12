@@ -29,7 +29,7 @@
 
         <div class="actions">
           <VSCodeButton :path="paperPath" />
-          <a v-if="paper?.url" :href="paper.url" target="_blank" class="external-link" title="查看原论文">
+          <a v-if="paper?.url" :href="paper.url" target="_blank" rel="noopener noreferrer" class="external-link" title="查看原论文">
             <span>原论文</span>
             <span class="arrow">↗</span>
           </a>
@@ -77,11 +77,8 @@
               <!-- HTML file controls -->
               <div v-if="fileType === 'html'" class="html-controls">
                 <button @click="toggleHtmlView" class="control-btn">
-                  <span v-if="showHtmlPreview">源码</span>
-                  <span v-else>预览</span>
-                </button>
-                <button @click="openHtmlInNewTab" class="control-btn">
-                  <span>新标签打开</span>
+                  <span v-if="showHtmlPreview">显示源码</span>
+                  <span v-else>静态安全预览</span>
                 </button>
               </div>
               <button
@@ -138,7 +135,7 @@
               <button type="button" @click="openChatNotes">查看历史</button>
             </div>
 
-            <div v-if="askAnswer" class="ask-answer markdown-body" v-html="renderedAskAnswer"></div>
+            <div v-if="askAnswer" class="ask-answer markdown-body" v-html="askAnswerHtml"></div>
           </section>
 
           <nav v-if="reasoning?.available" class="reader-tabs" aria-label="v2 evidence views">
@@ -165,19 +162,45 @@
               <iframe :src="fileUrl" frameborder="0"></iframe>
             </div>
             <div v-else-if="fileType === 'html'" class="file-viewer html-viewer">
+              <p v-if="showHtmlPreview" class="static-preview-notice">静态安全预览已移除脚本、样式、表单、嵌入内容、导航和外部资源。</p>
               <iframe
                 v-if="showHtmlPreview"
-                :srcdoc="processedHtmlContent"
+                :srcdoc="htmlPreview"
                 frameborder="0"
-                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                sandbox=""
+                referrerpolicy="no-referrer"
+                title="静态安全预览"
               ></iframe>
               <pre v-else><code class="language-html" v-html="highlightedHtmlCode"></code></pre>
+            </div>
+            <div v-else-if="fileType === 'svg'" class="file-viewer code-viewer">
+              <div class="svg-source-header">
+                <span>SVG 仅以源码显示，不在 Viewer 中执行或内联。</span>
+                <a :href="fileDownloadUrl" download rel="noopener noreferrer">安全下载</a>
+              </div>
+              <pre><code>{{ fileContent }}</code></pre>
             </div>
             <div v-else-if="fileType === 'code'" class="file-viewer code-viewer">
               <pre><code :class="`language-${fileLanguage}`" v-html="highlightedCode"></code></pre>
             </div>
-            <div v-else-if="fileType === 'notebook'" class="file-viewer notebook-viewer" v-html="renderedNotebook"></div>
-            <div v-else-if="fileContent" v-html="renderedContent" class="markdown-body"></div>
+            <div v-else-if="fileType === 'notebook' && notebook" class="file-viewer notebook-viewer">
+              <section v-for="cell in notebook.cells" :key="cell.index" class="nb-cell" :class="`nb-${cell.type}`">
+                <div v-if="cell.type === 'markdown'" class="markdown-body" v-html="cell.renderedHtml"></div>
+                <template v-else>
+                  <div v-if="cell.type === 'code'" class="nb-prompt">In [{{ cell.executionCount ?? ' ' }}]:</div>
+                  <pre><code>{{ cell.source }}</code></pre>
+                  <div v-for="(output, outputIndex) in cell.outputs || []" :key="outputIndex" class="nb-output" :class="`nb-${output.kind}`">
+                    <img v-if="output.kind === 'image'" :src="output.dataUrl" :alt="`${output.mimeType} notebook output`" />
+                    <template v-else>
+                      <strong v-if="output.kind === 'blocked'">已阻断 {{ output.mimeType }} rich output</strong>
+                      <pre>{{ output.text }}</pre>
+                    </template>
+                  </div>
+                </template>
+              </section>
+            </div>
+            <div v-else-if="fileType === 'markdown' && fileRenderedHtml" v-html="fileRenderedHtml" class="markdown-body"></div>
+            <div v-else-if="fileContent" class="file-viewer text-viewer"><pre>{{ fileContent }}</pre></div>
             <div v-else class="empty-state">
               <p>暂无可显示内容</p>
             </div>
@@ -261,8 +284,6 @@
 </template>
 
 <script setup lang="ts">
-import { marked } from 'marked'
-import markedKatex from 'marked-katex-extension'
 import hljs from 'highlight.js/lib/core'
 // Import common languages
 import python from 'highlight.js/lib/languages/python'
@@ -296,17 +317,32 @@ hljs.registerLanguage('css', css)
 hljs.registerLanguage('sql', sql)
 hljs.registerLanguage('html', xml) // Use xml for HTML syntax highlighting
 
-// Configure marked with KaTeX extension
-marked.use(markedKatex({
-  throwOnError: false,
-  output: 'html'
-}))
-
 interface FileNode {
   name: string
   path: string
   type: 'file' | 'directory'
   children?: FileNode[]
+}
+
+interface NotebookOutput {
+  kind: 'text' | 'error' | 'image' | 'blocked'
+  mimeType?: string
+  text?: string
+  dataUrl?: string
+}
+
+interface NotebookCell {
+  index: number
+  type: 'markdown' | 'code' | 'raw'
+  renderedHtml?: string
+  source?: string
+  executionCount?: number | null
+  outputs?: NotebookOutput[]
+}
+
+interface NotebookView {
+  language: string
+  cells: NotebookCell[]
 }
 
 const route = useRoute()
@@ -325,14 +361,19 @@ const fileContent = ref('')
 const fileType = ref('markdown')
 const fileLanguage = ref('plaintext')
 const fileUrl = ref('')
+const fileDownloadUrl = ref('')
+const fileRenderedHtml = ref('')
+const htmlPreview = ref('')
+const notebook = ref<NotebookView | null>(null)
 const fileLoading = ref(false)
 
 // UI state
 const sidebarCollapsed = ref(false)
-const showHtmlPreview = ref(true)
+const showHtmlPreview = ref(false)
 const askPanelOpen = ref(false)
 const askQuestion = ref('')
 const askAnswer = ref('')
+const askAnswerHtml = ref('')
 const askError = ref('')
 const askLoading = ref(false)
 const fallbackPrompt = ref('')
@@ -414,7 +455,7 @@ const pickDefaultFile = (nodes: FileNode[]) => {
 const loadFile = async (path: string) => {
   fileLoading.value = true
   try {
-    const data = await $fetch(`/api/papers/${slug}/file`, {
+    const data: any = await $fetch(`/api/papers/${slug}/file`, {
       params: { path }
     })
 
@@ -425,11 +466,19 @@ const loadFile = async (path: string) => {
     fileContent.value = data.content || ''
     fileLanguage.value = data.language || 'plaintext'
     fileUrl.value = data.url || ''
+    fileDownloadUrl.value = data.downloadUrl || ''
+    fileRenderedHtml.value = data.renderedHtml || ''
+    htmlPreview.value = data.previewHtml || ''
+    notebook.value = data.notebook || null
+    showHtmlPreview.value = false
 
   } catch (e: any) {
     console.error('Error loading file:', e)
     fileContent.value = `文件加载失败: ${e.message}`
     fileType.value = 'text'
+    fileRenderedHtml.value = ''
+    htmlPreview.value = ''
+    notebook.value = null
   } finally {
     fileLoading.value = false
   }
@@ -473,13 +522,14 @@ const submitAsk = async () => {
   askLoading.value = true
   askError.value = ''
   askAnswer.value = ''
+  askAnswerHtml.value = ''
   fallbackPrompt.value = ''
   copyStatus.value = ''
   askSavedTo.value = ''
   askEntryId.value = ''
 
   try {
-    const response = await $fetch<{ answer: string; savedTo: string; entryId: string }>(`/api/papers/${slug}/ask`, {
+    const response = await $fetch<{ answer: string; answerHtml: string; savedTo: string; entryId: string }>(`/api/papers/${slug}/ask`, {
       method: 'POST',
       headers: useSecuritySession().mutationHeaders(),
       body: {
@@ -489,6 +539,7 @@ const submitAsk = async () => {
     })
 
     askAnswer.value = response.answer
+    askAnswerHtml.value = response.answerHtml
     askSavedTo.value = response.savedTo
     askEntryId.value = response.entryId
     await loadFileTree()
@@ -532,14 +583,6 @@ const openChatNotes = async () => {
   scrollToChatEntry(askEntryId.value)
 }
 
-const openHtmlInNewTab = () => {
-  const blob = new Blob([processedHtmlContent.value], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
-  window.open(url, '_blank')
-  // Clean up the URL after a delay
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
 const highlightedCode = computed(() => {
   if (!fileContent.value || fileType.value !== 'code') return ''
 
@@ -553,128 +596,6 @@ const highlightedCode = computed(() => {
   }
 })
 
-const paperFileBaseDir = (filePath: string) => {
-  return filePath ? filePath.replace(/[^/]*$/, '') : ''
-}
-
-const normalizePaperAssetPath = (src: string, baseDir = '') => {
-  const combinedPath = src.startsWith('/') ? src : `${baseDir}${src}`
-  const parts: string[] = []
-
-  for (const segment of combinedPath.replace(/\\/g, '/').split('/')) {
-    if (!segment || segment === '.') {
-      continue
-    }
-
-    if (segment === '..') {
-      if (parts.length === 0) {
-        return null
-      }
-      parts.pop()
-      continue
-    }
-
-    parts.push(segment)
-  }
-
-  return parts.join('/')
-}
-
-const rewritePaperImageSrc = (html: string, baseDir = '') => {
-  return html.replace(
-    /(<img\s[^>]*?)src\s*=\s*["'](?!data:|https?:|\/\/|\/api\/)([^"']+)["']/gi,
-    (match, prefix, src) => {
-      const fullPath = normalizePaperAssetPath(src, baseDir)
-      if (!fullPath) {
-        return match
-      }
-      return `${prefix}src="/api/papers/${slug}/raw?path=${encodeURIComponent(fullPath)}"`
-    }
-  )
-}
-
-// Process HTML content to fix HiDPI canvas rendering and rewrite relative image paths
-const processedHtmlContent = computed(() => {
-  if (!fileContent.value || fileType.value !== 'html') return ''
-
-  let html = rewritePaperImageSrc(fileContent.value, paperFileBaseDir(selectedFile.value))
-
-  // Inject a script before </body> (or at the end) to fix canvas HiDPI rendering
-  // and make canvases responsive to viewport resizing via CSS scaling
-  const dpiFixScript = `<script>
-(function() {
-  var dpr = window.devicePixelRatio || 1;
-  if (dpr <= 1) return;
-
-  var origGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function(type, attrs) {
-    if (type === '2d' && !this.dataset.dpiFixed) {
-      var logicalW = this.getAttribute('width') ? parseInt(this.getAttribute('width')) : this.width;
-      var logicalH = this.getAttribute('height') ? parseInt(this.getAttribute('height')) : this.height;
-      this.dataset.dpiFixed = '1';
-      this.dataset.logicalWidth = logicalW;
-      this.dataset.logicalHeight = logicalH;
-
-      // Scale internal resolution for HiDPI sharpness
-      this.width = logicalW * dpr;
-      this.height = logicalH * dpr;
-      // Use max-width + auto height for responsive CSS scaling
-      // This lets the canvas shrink with its container while maintaining aspect ratio
-      this.style.maxWidth = '100%';
-      this.style.height = 'auto';
-      this.style.aspectRatio = logicalW + ' / ' + logicalH;
-
-      var ctx = origGetContext.call(this, type, attrs);
-      ctx.scale(dpr, dpr);
-      return ctx;
-    }
-    return origGetContext.call(this, type, attrs);
-  };
-
-  // Override width/height getters so drawing code reads logical dimensions
-  var widthDesc = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width');
-  var heightDesc = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'height');
-
-  Object.defineProperty(HTMLCanvasElement.prototype, 'width', {
-    get: function() {
-      if (this.dataset.dpiFixed && this.dataset.logicalWidth) {
-        return parseInt(this.dataset.logicalWidth);
-      }
-      return widthDesc.get.call(this);
-    },
-    set: function(v) {
-      widthDesc.set.call(this, v);
-    },
-    configurable: true
-  });
-
-  Object.defineProperty(HTMLCanvasElement.prototype, 'height', {
-    get: function() {
-      if (this.dataset.dpiFixed && this.dataset.logicalHeight) {
-        return parseInt(this.dataset.logicalHeight);
-      }
-      return heightDesc.get.call(this);
-    },
-    set: function(v) {
-      heightDesc.set.call(this, v);
-    },
-    configurable: true
-  });
-})();
-<\/script>`
-
-  // Insert before the first <script> tag so it runs before any canvas drawing code
-  if (html.includes('<script')) {
-    html = html.replace(/<script/, dpiFixScript + '\n<script')
-  } else if (html.includes('</body>')) {
-    html = html.replace('</body>', dpiFixScript + '\n</body>')
-  } else {
-    html = dpiFixScript + '\n' + html
-  }
-
-  return html
-})
-
 const highlightedHtmlCode = computed(() => {
   if (!fileContent.value || fileType.value !== 'html') return ''
 
@@ -683,50 +604,6 @@ const highlightedHtmlCode = computed(() => {
   } catch (e) {
     return hljs.highlight(fileContent.value, { language: 'plaintext' }).value
   }
-})
-
-const renderedNotebook = computed(() => {
-  if (!fileContent.value || fileType.value !== 'notebook') return ''
-
-  // The server returns pre-structured HTML with class markers.
-  // We parse markdown cells with marked and highlight code cells with hljs.
-  let html = fileContent.value
-
-  // Render markdown cells: content between <div class="nb-cell nb-markdown"> tags
-  html = html.replace(/<div class="nb-cell nb-markdown">([\s\S]*?)<\/div>/g, (_match, md) => {
-    return `<div class="nb-cell nb-markdown">${marked.parse(md)}</div>`
-  })
-
-  // Highlight code cells
-  const lang = fileLanguage.value || 'python'
-  html = html.replace(/<code class="language-[^"]*">([\s\S]*?)<\/code>/g, (_match, code) => {
-    // Unescape HTML entities back to raw text for hljs
-    const raw = code.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-    try {
-      return `<code class="language-${lang}">${hljs.highlight(raw, { language: lang }).value}</code>`
-    } catch {
-      return `<code class="language-${lang}">${code}</code>`
-    }
-  })
-
-  return rewritePaperImageSrc(html, paperFileBaseDir(selectedFile.value))
-})
-
-const renderedContent = computed(() => {
-  if (!fileContent.value) return ''
-  if (fileType.value === 'markdown') {
-    const html = marked.parse(fileContent.value) as string
-    return rewritePaperImageSrc(html, paperFileBaseDir(selectedFile.value))
-  }
-  if (fileType.value === 'text') {
-    return `<pre>${fileContent.value}</pre>`
-  }
-  return fileContent.value
-})
-
-const renderedAskAnswer = computed(() => {
-  if (!askAnswer.value) return ''
-  return marked.parse(askAnswer.value) as string
 })
 
 const paperPath = computed(() => `~/codex-papers/papers/${slug}`)
@@ -744,8 +621,6 @@ useHead({
 </style>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
-
 * {
   box-sizing: border-box;
 }
@@ -1621,6 +1496,29 @@ useHead({
   border: 1px solid #e5e7eb;
 }
 
+.static-preview-notice,
+.svg-source-header {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.85rem;
+}
+
+.svg-source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.svg-source-header a {
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+
 .html-viewer pre {
   flex: 1;
   margin: 0;
@@ -1743,6 +1641,15 @@ useHead({
   color: #2563eb;
 }
 
+.notebook-viewer > .nb-code > pre {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+  overflow-x: auto;
+}
+
 .notebook-viewer :deep(.nb-input pre) {
   margin: 0;
   padding: 0.5rem 1rem 0.75rem;
@@ -1784,6 +1691,27 @@ useHead({
   color: #dc2626;
 }
 
+.notebook-viewer :deep(.nb-error) {
+  border-left-color: #fca5a5;
+}
+
+.notebook-viewer :deep(.nb-error pre) {
+  color: #dc2626;
+}
+
+.notebook-viewer :deep(.nb-blocked) {
+  border: 1px solid #fde68a;
+  border-left: 3px solid #f59e0b;
+  padding: 0.75rem 1rem;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.notebook-viewer :deep(.nb-blocked strong) {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
 .notebook-viewer :deep(.nb-rich) {
   overflow-x: auto;
 }
@@ -1813,6 +1741,13 @@ useHead({
 .notebook-viewer :deep(.nb-image img) {
   max-width: 100%;
   height: auto;
+}
+
+.notebook-viewer :deep(.nb-output img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  padding: 0.5rem 0;
 }
 
 .notebook-viewer :deep(.nb-raw pre) {

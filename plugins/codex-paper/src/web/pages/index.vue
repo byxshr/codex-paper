@@ -288,8 +288,6 @@ useHead({
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
-
 .library-container {
   min-height: 100vh;
   background: #ffffff;

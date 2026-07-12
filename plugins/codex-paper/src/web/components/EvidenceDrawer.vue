@@ -31,7 +31,7 @@
         </dl>
 
         <blockquote>{{ evidence.quote || evidence.text }}</blockquote>
-        <a v-if="evidence.location?.page" class="pdf-link" :href="`/api/papers/${slug}/raw?path=paper.pdf#page=${evidence.location.page}`" target="_blank">
+        <a v-if="evidence.location?.page" class="pdf-link" :href="`/api/papers/${slug}/raw?path=paper.pdf#page=${evidence.location.page}`" target="_blank" rel="noopener noreferrer">
           打开 paper.pdf p.{{ evidence.location.page }}
         </a>
       </div>

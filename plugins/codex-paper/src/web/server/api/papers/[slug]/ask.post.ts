@@ -2,6 +2,7 @@ import { askCodexWorker } from '../../../utils/codexWorker'
 import { appendChatNote } from '../../../utils/chatNotes'
 import { requirePaperDir, resolvePublicFile, validateSlug } from '../../../utils/librarySecurity.mjs'
 import { withOperationLocks } from '../../../utils/operationLocks.mjs'
+import { renderSafeMarkdown } from '../../../utils/activeContentSecurity.mjs'
 
 const MAX_QUESTION_LENGTH = 4_000
 const MAX_SELECTED_FILE_LENGTH = 500
@@ -149,6 +150,7 @@ export default defineEventHandler(async (event) => {
 
       return {
         answer,
+        answerHtml: renderSafeMarkdown(answer, { slug, sourcePath: savedNote.savedTo }),
         savedTo: savedNote.savedTo,
         entryId: savedNote.entryId
       }

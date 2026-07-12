@@ -393,7 +393,7 @@ Requirements:
 * single self-contained HTML file
 * inline CSS and JavaScript
 * no external fetch, CDN, localStorage, remote fonts, or network dependency
-* works in a sandboxed iframe
+* remains a self-contained interactive export for a future dedicated execution environment or direct user-controlled export workflow
 * contains at least one real interactive control
 * includes a method overview, mechanism map, formula breakdown, or result dashboard
 * includes source-type controls for paper claims, inferences, and speculations
@@ -508,6 +508,8 @@ Run the code demo if feasible. If it cannot be run, explain why in the final res
 ## Step 12: Web UI
 
 The Web UI displays the generated files. It should not rely on facts or analysis cards as the default paper experience.
+
+`index.html` remains an interactive self-contained package artifact, but the current local Viewer deliberately does not execute its JavaScript or package CSS. The Viewer shows source by default and offers only an explicit scriptless static safe preview. Do not weaken that boundary or assume the Viewer is the execution environment for the interactive export.
 
 After generating or updating a paper package, use the sibling [paper-webui](../webui/SKILL.md) skill if the user asks to view it or if the local viewer needs to be restarted.
 

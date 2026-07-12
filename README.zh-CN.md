@@ -182,13 +182,15 @@ Codex 将自动触发学习工作流程并：
 进入 Viewer 后，您可以：
 - 浏览所有已学习的论文
 - 查看生成的 Markdown、HTML、PDF、图片和代码材料
-- 在 iframe 中交互式查看每篇论文的 `index.html`
+- 查看 HTML 源码，并由用户显式开启不执行脚本的“静态安全预览”；Viewer 永不执行生成型 JavaScript
+- 以结构化单元格阅读 Notebook；HTML、SVG 与 JavaScript rich output 会降级为可见的阻断文本
+- 查看 SVG 源码或安全下载文件，而不是内联渲染
 - 访问代码演示
 - 在单篇论文页向 Codex 追问，并把回答保存到 `chat-notes.md`
 - 搜索论文库
 - 把论文移入可恢复回收站，并在 Trash 面板中恢复
 
-服务只绑定 IPv4 loopback。每次重启都会使旧 Viewer session 失效并生成新配对令牌。API 和文件系统边界见 [`docs/local-viewer-security.md`](docs/local-viewer-security.md)。
+服务只绑定 IPv4 loopback。每次重启都会使旧 Viewer session 失效并生成新配对令牌。SPA 使用仅允许同源脚本的严格 CSP；Markdown 与模型回答统一在服务端渲染和净化。API/文件系统边界见 [`docs/local-viewer-security.md`](docs/local-viewer-security.md)，渲染边界见 [`docs/web-active-content-security.md`](docs/web-active-content-security.md)。
 
 Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-server` worker。网页查看器会为每篇论文保留独立的 Codex thread，因此同一论文的后续追问可以复用对话上下文，不再每次启动新的 `codex exec` 进程。回答仍然运行在只读 sandbox 中，并优先使用 `.codex-paper/answering-pack.md`；旧学习包没有该文件时，会回退到用户可见 Markdown 材料和本地证据文件。
 
