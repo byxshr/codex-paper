@@ -44,7 +44,7 @@ Codex Paper 是一个 Codex 插件，可以把研究论文转化为可复用的�
 - **Codex 写作学习包** - 基于论文正文和证据生成 `README.md`、`summary.md`、`insights.md`、`method.md`、`mental-model.md`、`reflection.md`、`qa.md`
 - **克制的图表学习路径** - 生成 `visual-assets.md`，只在合适位置插入有来源、有解释、能帮助理解的高价值图表和确定性图解
 - **代码演示** - 至少生成一个可独立运行、与论文核心概念相关的代码示例
-- **交互式网页查看器** - Nuxt.js 界面，默认展示用户可见材料，隐藏内部 JSON，并支持 `index.html` iframe 交互展示
+- **安全配对的本地网页查看器** - 仅监听 loopback，提供 session/CSRF 防护、安全文件边界、可恢复回收站，并隐藏内部 JSON
 - **Ask Codex 追问** - 可以在单篇论文页向 Codex 提问，并把回答保存到 `chat-notes.md`
 - **智能评估** - 难度级别和论文类型检测，实现自适应内容生成
 
@@ -177,13 +177,18 @@ Codex 将自动触发学习工作流程并：
 请使用 $paper-webui 启动 Codex Paper 网页查看器。
 ```
 
-在 **http://localhost:5815** 打开交互式网页界面，您可以：
+启动终端会打印一个新的配对令牌。打开 **http://127.0.0.1:5815**，在配对门禁中粘贴该令牌，并妥善保管。令牌只通过请求 body 换取 HttpOnly session，不应放入 URL。
+
+进入 Viewer 后，您可以：
 - 浏览所有已学习的论文
 - 查看生成的 Markdown、HTML、PDF、图片和代码材料
 - 在 iframe 中交互式查看每篇论文的 `index.html`
 - 访问代码演示
 - 在单篇论文页向 Codex 追问，并把回答保存到 `chat-notes.md`
 - 搜索论文库
+- 把论文移入可恢复回收站，并在 Trash 面板中恢复
+
+服务只绑定 IPv4 loopback。每次重启都会使旧 Viewer session 失效并生成新配对令牌。API 和文件系统边界见 [`docs/local-viewer-security.md`](docs/local-viewer-security.md)。
 
 Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-server` worker。网页查看器会为每篇论文保留独立的 Codex thread，因此同一论文的后续追问可以复用对话上下文，不再每次启动新的 `codex exec` 进程。回答仍然运行在只读 sandbox 中，并优先使用 `.codex-paper/answering-pack.md`；旧学习包没有该文件时，会回退到用户可见 Markdown 材料和本地证据文件。
 
@@ -229,7 +234,8 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 │           ├── reasoning-review.md       # 固定自审清单
 │           └── validation-report.json    # 最新验证报告
 │
-└── index.json                           # 全局搜索索引
+├── index.json                           # 全局搜索索引
+└── .trash/                              # 持久化、可恢复的论文条目
 ```
 
 ### 验证和迁移

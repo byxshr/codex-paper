@@ -481,6 +481,7 @@ const submitAsk = async () => {
   try {
     const response = await $fetch<{ answer: string; savedTo: string; entryId: string }>(`/api/papers/${slug}/ask`, {
       method: 'POST',
+      headers: useSecuritySession().mutationHeaders(),
       body: {
         question,
         selectedFile: selectedFile.value

@@ -1,76 +1,48 @@
-import fs from 'fs'
-import path from 'path'
-import { homedir } from 'os'
+import fs from 'node:fs'
+import {
+  readJsonPath,
+  readLibraryIndex,
+  requirePaperDir,
+  resolveWritablePaperFile,
+  validateSlug,
+  writeJsonAtomic,
+  writeLibraryIndex,
+} from '../../../utils/librarySecurity.mjs'
+import { withOperationLocks } from '../../../utils/operationLocks.mjs'
+
+function normalizeTags(value: unknown) {
+  if (!Array.isArray(value) || value.length > 32 || value.some((tag) => typeof tag !== 'string')) {
+    throw createError({ statusCode: 400, statusMessage: 'Tags must be an array of at most 32 strings' })
+  }
+  const tags = [...new Set(value.map((tag) => tag.trim()).filter(Boolean))]
+  if (tags.some((tag) => tag.length > 64 || /[\u0000-\u001f\u007f]/.test(tag))) {
+    throw createError({ statusCode: 400, statusMessage: 'Each tag must be at most 64 characters without control characters' })
+  }
+  return tags
+}
 
 export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
-
-  if (!slug) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Slug is required'
-    })
-  }
-
+  if (!validateSlug(slug)) throw createError({ statusCode: 400, statusMessage: 'Valid paper slug is required' })
   const body = await readBody<{ tags?: unknown }>(event)
+  const tags = normalizeTags(body?.tags)
 
-  if (!Array.isArray(body?.tags)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Tags must be an array'
-    })
-  }
+  return withOperationLocks([`paper:${slug}`, 'index'], async () => {
+    requirePaperDir(slug!)
+    const metaPath = resolveWritablePaperFile(slug!, 'meta.json')
+    const hadMeta = fs.existsSync(metaPath)
+    const previousMeta = hadMeta ? readJsonPath(metaPath, 'meta.json') : {}
+    const indexState = readLibraryIndex()
+    const nextPapers = indexState.papers.map((paper) => paper?.slug === slug ? { ...paper, tags } : paper)
 
-  const tags = body.tags
-    .filter((tag): tag is string => typeof tag === 'string')
-    .map(tag => tag.trim())
-    .filter(Boolean)
-
-  try {
-    const papersDir = path.join(homedir(), 'codex-papers/papers')
-    const paperDir = path.join(papersDir, slug)
-    const metaPath = path.join(paperDir, 'meta.json')
-    const indexPath = path.join(homedir(), 'codex-papers/index.json')
-
-    if (!fs.existsSync(paperDir)) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Paper not found'
-      })
+    writeJsonAtomic(metaPath, { ...previousMeta, tags })
+    try {
+      writeLibraryIndex(indexState, nextPapers)
+    } catch (error) {
+      if (hadMeta) writeJsonAtomic(metaPath, previousMeta)
+      else try { fs.unlinkSync(metaPath) } catch {}
+      throw error
     }
-
-    // Update meta.json
-    let meta: Record<string, any> = {}
-    if (fs.existsSync(metaPath)) {
-      meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
-    }
-    meta.tags = tags
-    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2))
-
-    // Update index.json (supports both array and { papers: [] } formats)
-    if (fs.existsSync(indexPath)) {
-      const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'))
-      const papers = Array.isArray(index)
-        ? index
-        : (Array.isArray(index?.papers) ? index.papers : null)
-
-      const paper = papers?.find((p: any) => p.slug === slug)
-      if (paper) {
-        paper.tags = tags
-        fs.writeFileSync(indexPath, JSON.stringify(index, null, 2))
-      }
-    }
-
-    return {
-      success: true,
-      tags
-    }
-  } catch (e: any) {
-    if (e.statusCode) throw e
-
-    throw createError({
-      statusCode: 500,
-      statusMessage: e.message || 'Failed to update tags'
-    })
-  }
+    return { success: true, tags }
+  })
 })

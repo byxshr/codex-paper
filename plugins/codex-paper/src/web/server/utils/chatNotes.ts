@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { boundaryError, LIMITS, readFileNoFollow, writeFileAtomic } from './librarySecurity.mjs'
 
 interface ChatNoteEntry {
   id: string
@@ -151,7 +152,16 @@ function renderChatNotes(entries: ChatNoteEntry[]) {
 
 export function appendChatNote(paperDir: string, question: string, answer: string, selectedFile: string) {
   const chatNotesPath = path.join(paperDir, CHAT_NOTES_FILENAME)
-  const rawText = fs.existsSync(chatNotesPath) ? fs.readFileSync(chatNotesPath, 'utf8') : ''
+  let chatNotesExists = false
+  try {
+    const stats = fs.lstatSync(chatNotesPath)
+    if (stats.isSymbolicLink()) throw boundaryError(403, 'Chat notes symlinks are not allowed')
+    chatNotesExists = true
+  } catch (error: any) {
+    if (error?.statusCode) throw error
+    if (error?.code !== 'ENOENT') throw boundaryError(403, 'Chat notes target is not allowed')
+  }
+  const rawText = chatNotesExists ? readFileNoFollow(chatNotesPath, LIMITS.publicTextBytes).toString('utf8') : ''
   const entries = parseExistingEntries(rawText)
   const usedIds = new Set(entries.map((entry) => entry.id))
   const timestamp = new Date().toISOString()
@@ -165,7 +175,7 @@ export function appendChatNote(paperDir: string, question: string, answer: strin
   }
 
   entries.push(entry)
-  fs.writeFileSync(chatNotesPath, renderChatNotes(entries), 'utf8')
+  writeFileAtomic(chatNotesPath, renderChatNotes(entries))
 
   return {
     entryId: entry.id,

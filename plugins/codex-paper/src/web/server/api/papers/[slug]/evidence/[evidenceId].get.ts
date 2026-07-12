@@ -1,5 +1,4 @@
-import path from 'path'
-import { readJsonFile, readOptionalJson, requirePaperDir, truncateText, validateEvidenceId, validateSlug } from '../../../../utils/paperAccess'
+import { readJsonPath, readOptionalInternalJson, resolveInternalFile, truncateText, validateEvidenceId, validateSlug } from '../../../../utils/librarySecurity.mjs'
 
 function sectionTitle(ledger: any, sectionId: string | null | undefined) {
   if (!sectionId) return null
@@ -13,9 +12,8 @@ export default defineEventHandler((event) => {
     throw createError({ statusCode: 400, statusMessage: 'Valid slug and evidence id are required' })
   }
 
-  const paperDir = requirePaperDir(slug!)
   if (evidenceId!.startsWith('ext-')) {
-    const external = readOptionalJson(path.join(paperDir, '.codex-paper', 'external-evidence.json'), 'external-evidence.json')
+    const external = readOptionalInternalJson(slug!, '.codex-paper/external-evidence.json', 'external-evidence.json')
     const evidence = (external?.evidence || []).find((item: any) => item.id === evidenceId)
     const source = (external?.sources || []).find((item: any) => item.id === evidence?.sourceId)
 
@@ -43,7 +41,7 @@ export default defineEventHandler((event) => {
     }
   }
 
-  const ledger = readJsonFile(path.join(paperDir, 'evidence-ledger.json'), 'evidence-ledger.json')
+  const ledger = readJsonPath(resolveInternalFile(slug!, 'evidence-ledger.json').path, 'evidence-ledger.json')
   const evidence = (ledger.evidence || []).find((item: any) => item.id === evidenceId)
 
   if (!evidence) {

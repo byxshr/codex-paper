@@ -39,8 +39,11 @@ jobs:
           CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS: "1"
         run: bash scripts/codex-paper.sh benchmark-all
 
-      - name: Smoke test
-        run: bash scripts/codex-paper.sh smoke-test
-
       - name: Production build
         run: bash scripts/codex-paper.sh build
+
+      - name: Viewer security integration
+        run: bash scripts/codex-paper.sh security-test
+
+      - name: Smoke test
+        run: bash scripts/codex-paper.sh smoke-test

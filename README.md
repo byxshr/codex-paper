@@ -44,7 +44,7 @@ Codex Paper is a Codex plugin that turns research papers into local study worksp
 - **Codex-authored study package** - Produces `README.md`, `summary.md`, `insights.md`, `method.md`, `mental-model.md`, `reflection.md`, and `qa.md` from the paper and evidence
 - **Curated visual learning path** - Adds `visual-assets.md` and embeds only high-value, source-labeled figures, tables, and deterministic diagrams where they support the prose
 - **Code demonstrations** - Generates at least one independently runnable code example tied to the paper's core idea
-- **Interactive web viewer** - Nuxt.js interface that shows user-facing materials by default, hides internal JSON, and renders each paper's `index.html` in an iframe
+- **Paired local web viewer** - Loopback-only Nuxt.js interface with session/CSRF protection, safe file boundaries, recoverable trash, and hidden internal JSON
 - **Ask Codex follow-ups** - Paper pages can send grounded follow-up questions to Codex and save answers in `chat-notes.md`
 - **Intelligent assessment** - Difficulty levels and paper type detection for adaptive content generation
 
@@ -177,13 +177,18 @@ Codex will automatically trigger the study workflow and:
 Use $paper-webui to start the Codex Paper web viewer.
 ```
 
-Opens the interactive web interface at **http://localhost:5815** where you can:
+The startup terminal prints a fresh pairing token. Open **http://127.0.0.1:5815**, paste that token into the pairing gate, and keep the terminal token private. It is exchanged in a request body for an HttpOnly session and never belongs in a URL.
+
+In the Viewer you can:
 - Browse all studied papers
 - View generated Markdown, HTML, PDF, image, and code materials
 - Explore each paper's `index.html` interactively in an iframe
 - Access code demonstrations
 - Ask Codex follow-up questions from a paper page and save answers to `chat-notes.md`
 - Search through your paper library
+- Move papers to recoverable trash and restore them from the Trash panel
+
+The service binds only to IPv4 loopback. Every restart invalidates existing Viewer sessions and creates a new pairing token. See [`docs/local-viewer-security.md`](docs/local-viewer-security.md) for the API and filesystem boundary.
 
 Ask Codex lazily starts one long-running `codex mcp-server` worker the first time a web question is asked. The web viewer keeps a separate Codex thread per paper, so follow-up questions for the same paper reuse conversation context without starting a new `codex exec` process each time. Answers still run with a read-only sandbox and use `.codex-paper/answering-pack.md` when available, falling back to visible Markdown materials and local evidence files for older packages.
 
@@ -229,7 +234,8 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │           ├── reasoning-review.md       # Fixed self-review checklist
 │           └── validation-report.json    # Latest validation report
 │
-└── index.json                           # Global search index
+├── index.json                           # Global search index
+└── .trash/                              # Persistent recoverable paper entries
 ```
 
 ### Validation and Migration

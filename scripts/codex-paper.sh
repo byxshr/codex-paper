@@ -51,10 +51,10 @@ cmd_stop() {
 
   if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     kill "$(cat "$PID_FILE")"
-    rm -f "$PID_FILE"
+    rm -f "$PID_FILE" "$TOKEN_FILE"
     echo "Stopped Codex Paper web UI."
   else
-    rm -f "$PID_FILE"
+    rm -f "$PID_FILE" "$TOKEN_FILE"
     echo "Codex Paper web UI is not running."
   fi
 }
@@ -79,7 +79,7 @@ cmd_status() {
     echo "Viewer: stopped"
   fi
 
-  if curl -sf "http://localhost:$PORT/api/papers" > /dev/null 2>&1; then
+  if curl -sf "http://127.0.0.1:$PORT/api/health" > /dev/null 2>&1; then
     echo "Health: API reachable"
   else
     echo "Health: API not reachable"
@@ -165,14 +165,24 @@ cmd_smoke_test() {
   local smoke_outdir
   local smoke_port="${SMOKE_PORT:-5816}"
   local smoke_pid=""
+  local smoke_library
+  local pairing_token
+  local csrf_token
+  local cookie_jar
 
   smoke_outdir="$(mktemp -d /tmp/codex-paper-images.XXXXXX)"
+  smoke_library="$(mktemp -d /tmp/codex-paper-library.XXXXXX)"
+  cookie_jar="$(mktemp /tmp/codex-paper-cookie.XXXXXX)"
+  pairing_token="$($NODE_BIN -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+  mkdir -p "$smoke_library/papers"
+  printf '[]\n' > "$smoke_library/index.json"
 
   cleanup() {
     local pid="${smoke_pid:-}"
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
       kill "$pid" 2>/dev/null || true
     fi
+    rm -rf "$smoke_library" "$cookie_jar"
   }
 
   trap cleanup EXIT
@@ -205,18 +215,25 @@ PY
 
   print_section "Start Temporary Viewer"
   ensure_build_version
-  PORT="$smoke_port" "$NODE_BIN" "$WEB_ROOT/.output/server/index.mjs" > "$LOG_FILE" 2>&1 &
+  PORT="$smoke_port" HOST=127.0.0.1 NITRO_HOST=127.0.0.1 NODE_ENV=production \
+    PAPERS_DIR="$smoke_library" CODEX_PAPER_PAIRING_TOKEN="$pairing_token" \
+    "$NODE_BIN" "$WEB_ROOT/.output/server/index.mjs" > "$LOG_FILE" 2>&1 &
   smoke_pid=$!
 
-  if ! wait_for_http "http://localhost:$smoke_port/api/papers" 10; then
+  if ! wait_for_http "http://127.0.0.1:$smoke_port/api/health" 10; then
     echo "Error: smoke-test viewer failed to become healthy." >&2
     exit 1
   fi
 
   print_section "Verify Viewer"
-  curl -sf "http://localhost:$smoke_port/api/papers"
+  csrf_token="$(curl -sf -c "$cookie_jar" -H "Origin: http://127.0.0.1:$smoke_port" \
+    -H 'Content-Type: application/json' --data "{\"token\":\"$pairing_token\"}" \
+    "http://127.0.0.1:$smoke_port/api/session/pair" | \
+    "$NODE_BIN" -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).csrfToken))")"
+  test -n "$csrf_token"
+  curl -sf -b "$cookie_jar" "http://127.0.0.1:$smoke_port/api/papers"
   printf '\n---HOME---\n'
-  curl -sf "http://localhost:$smoke_port/" | head -5
+  curl -sf "http://127.0.0.1:$smoke_port/" | head -5
 
   print_section "Done"
   echo "Smoke test passed."
@@ -224,6 +241,15 @@ PY
   echo "Extracted images: $smoke_outdir"
   trap - EXIT
   cleanup
+}
+
+cmd_security_test() {
+  ensure_node
+  if [ ! -f "$WEB_ROOT/.output/server/index.mjs" ]; then
+    cmd_build
+  fi
+  print_section "Viewer HTTP Security"
+  "$NODE_BIN" "$REPO_ROOT/scripts/tests/viewer-security.integration.mjs"
 }
 
 cmd_help() {
@@ -246,6 +272,7 @@ Commands:
   migrate      Migrate a v1 package to v2 evidence/reasoning draft files
   benchmark-report  Print the latest benchmark report
   smoke-test   Run an end-to-end local smoke test
+  security-test Run the real HTTP Viewer security integration test
   help         Show this help message
 EOF
 }
@@ -295,6 +322,9 @@ case "$command_name" in
     ;;
   smoke-test)
     cmd_smoke_test
+    ;;
+  security-test)
+    cmd_security_test
     ;;
   help|-h|--help)
     cmd_help

@@ -10,6 +10,7 @@ PAPERS_DIR="${PAPERS_DIR:-$HOME/codex-papers}"
 BENCHMARK_DIR="${BENCHMARK_DIR:-${CODEX_PAPER_BENCHMARK_DIR:-$PAPERS_DIR/paper-examples}}"
 BENCHMARK_REPORT_FILE="${BENCHMARK_REPORT_FILE:-/tmp/codex-paper-benchmark.json}"
 PID_FILE="${PID_FILE:-/tmp/codex-paper-webui.pid}"
+TOKEN_FILE="${TOKEN_FILE:-/tmp/codex-paper-webui.token}"
 LOG_FILE="${LOG_FILE:-/tmp/codex-paper-webui.log}"
 PORT="${PORT:-5815}"
 

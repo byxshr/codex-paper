@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Bound the Viewer to IPv4 loopback and added Host, pairing-session, Origin, and CSRF enforcement for library APIs.
+- Added shared no-follow/realpath library resolution, public-file budgets, fail-fast operation locks, and safer tag/Ask boundaries.
+- Replaced permanent paper deletion with session-bound confirmation tokens, persistent recoverable trash, and Viewer restore controls.
+- Added unit and real HTTP security integration coverage using isolated temporary paper libraries.
 - Made `plugins/codex-paper/` the only executable source tree and `.agents/plugins/marketplace.json` the only repository marketplace.
 - Added an immutable 2.0 contract baseline, compatible 2.1 evolution ADR, and a dependency-free repository/CI contract gate.
 - Updated plugin ingestion metadata to current Codex manifest and agent interface requirements.

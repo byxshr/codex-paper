@@ -1,13 +1,10 @@
-import fs from 'fs'
-import path from 'path'
-import { homedir } from 'os'
 import { askCodexWorker } from '../../../utils/codexWorker'
 import { appendChatNote } from '../../../utils/chatNotes'
+import { requirePaperDir, resolvePublicFile, validateSlug } from '../../../utils/librarySecurity.mjs'
+import { withOperationLocks } from '../../../utils/operationLocks.mjs'
 
 const MAX_QUESTION_LENGTH = 4_000
 const MAX_SELECTED_FILE_LENGTH = 500
-
-const activeRequests = new Set<string>()
 
 const FORBIDDEN_RESIDUES = [
   'analysisVersion',
@@ -23,32 +20,6 @@ const FORBIDDEN_RESIDUE_PATTERNS = [
   { label: 'ev-*', pattern: /\bev-p\d{3,}-[a-z]+-[a-f0-9]{10}\b/g },
   { label: 'ext-*', pattern: /\bext-[a-zA-Z0-9._-]+\b/g }
 ]
-
-function validateSlug(slug: string) {
-  return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(slug)
-}
-
-function getPaperDir(slug: string) {
-  const papersRoot = path.join(homedir(), 'codex-papers/papers')
-  const paperDir = path.resolve(papersRoot, slug)
-  const relativePath = path.relative(papersRoot, paperDir)
-
-  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Access denied'
-    })
-  }
-
-  if (!fs.existsSync(paperDir) || !fs.statSync(paperDir).isDirectory()) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Paper directory not found'
-    })
-  }
-
-  return paperDir
-}
 
 function normalizeBodyText(value: unknown, maxLength: number) {
   if (typeof value !== 'string') {
@@ -138,68 +109,56 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const paperDir = getPaperDir(slug)
+  const paperDir = requirePaperDir(slug)
+  if (selectedFile) resolvePublicFile(slug, selectedFile)
   const fallbackPrompt = buildPaperChatPrompt(paperDir, question, selectedFile)
+  const safeFallbackPrompt = fallbackPrompt.split(paperDir).join('[local paper package]')
 
-  if (activeRequests.has(slug)) {
-    throw createFallbackError(
-      409,
-      'Codex is already answering a question for this paper',
-      fallbackPrompt
-    )
-  }
+  return withOperationLocks([`paper:${slug}`], async () => {
+    try {
+      const { answer } = await askCodexWorker({
+        slug,
+        paperDir,
+        prompt: fallbackPrompt
+      })
 
-  activeRequests.add(slug)
+      if (!answer) {
+        throw createFallbackError(
+          502,
+          'Codex returned an empty answer',
+          safeFallbackPrompt
+        )
+      }
 
-  try {
-    const { answer } = await askCodexWorker({
-      slug,
-      paperDir,
-      prompt: fallbackPrompt
-    })
+      const forbiddenResidues = findForbiddenResidues(answer)
+      if (forbiddenResidues.length > 0) {
+        throw createFallbackError(
+          502,
+          'Codex answer contained internal extraction residue',
+          safeFallbackPrompt,
+          `Forbidden residues: ${forbiddenResidues.join(', ')}`
+        )
+      }
 
-    if (!answer) {
+      const savedNote = appendChatNote(
+        paperDir,
+        redactForbiddenResidues(question),
+        redactForbiddenResidues(answer),
+        selectedFile
+      )
+
+      return {
+        answer,
+        savedTo: savedNote.savedTo,
+        entryId: savedNote.entryId
+      }
+    } catch (e: any) {
+      if (e.statusCode) throw e
       throw createFallbackError(
         502,
-        'Codex returned an empty answer',
-        fallbackPrompt
+        'Failed to run Codex for this question',
+        safeFallbackPrompt
       )
     }
-
-    const forbiddenResidues = findForbiddenResidues(answer)
-    if (forbiddenResidues.length > 0) {
-      throw createFallbackError(
-        502,
-        'Codex answer contained internal extraction residue',
-        fallbackPrompt,
-        `Forbidden residues: ${forbiddenResidues.join(', ')}`
-      )
-    }
-
-    const savedNote = appendChatNote(
-      paperDir,
-      redactForbiddenResidues(question),
-      redactForbiddenResidues(answer),
-      selectedFile
-    )
-
-    return {
-      answer,
-      savedTo: savedNote.savedTo,
-      entryId: savedNote.entryId
-    }
-  } catch (e: any) {
-    if (e.statusCode) {
-      throw e
-    }
-
-    throw createFallbackError(
-      502,
-      'Failed to run Codex for this question',
-      fallbackPrompt,
-      e.message
-    )
-  } finally {
-    activeRequests.delete(slug)
-  }
+  })
 })

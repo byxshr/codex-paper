@@ -1,27 +1,5 @@
-import fs from 'fs'
 import path from 'path'
-import { requirePaperDir, validateSlug } from '../../../utils/paperAccess'
-
-const HIDDEN_MACHINE_FILES = new Set([
-  '.study-validation.json',
-  'analysis.json',
-  'evidence-ledger.json',
-  'external-evidence.json',
-  'facts.json',
-  'meta.json',
-  'paper-data.json',
-  'reasoning-analysis.json'
-])
-
-function hasHiddenPathSegment(relativePath: string) {
-  return relativePath
-    .split(path.sep)
-    .some((segment) => segment.startsWith('.'))
-}
-
-function isHiddenMachinePath(relativePath: string) {
-  return HIDDEN_MACHINE_FILES.has(path.basename(relativePath))
-}
+import { LIMITS, readFileNoFollow, resolvePublicFile, validateSlug } from '../../../utils/librarySecurity.mjs'
 
 function getFileType(filename: string): string {
   const ext = path.extname(filename).toLowerCase()
@@ -200,34 +178,7 @@ export default defineEventHandler((event) => {
   }
 
   try {
-    const paperDir = requirePaperDir(slug!)
-    const fullPath = path.resolve(paperDir, filePath)
-    const relativeFullPath = path.relative(paperDir, fullPath)
-
-    // Security: ensure the path is within the paper directory
-    if (relativeFullPath.startsWith('..') || path.isAbsolute(relativeFullPath)) {
-      throw createError({
-        statusCode: 403,
-        statusMessage: 'Access denied'
-      })
-    }
-
-    if (
-      hasHiddenPathSegment(relativeFullPath) ||
-      isHiddenMachinePath(relativeFullPath)
-    ) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'File not found'
-      })
-    }
-
-    if (!fs.existsSync(fullPath)) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'File not found'
-      })
-    }
+    const resolved = resolvePublicFile(slug!, filePath)
 
     const fileType = getFileType(filePath)
 
@@ -242,7 +193,7 @@ export default defineEventHandler((event) => {
     }
 
     // For text-based files, read and return content
-    const content = fs.readFileSync(fullPath, 'utf-8')
+    const content = readFileNoFollow(resolved.path, LIMITS.publicTextBytes).toString('utf-8')
 
     // For notebooks, convert to structured HTML
     if (fileType === 'notebook') {
@@ -265,7 +216,7 @@ export default defineEventHandler((event) => {
 
     throw createError({
       statusCode: 500,
-      statusMessage: e.message || 'Failed to load file'
+      statusMessage: 'Failed to load file'
     })
   }
 })

@@ -632,7 +632,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | ID | 优先级 | 开发项 | 开发状态 | 交付状态 | 工作位置 | 验收证据 | 下一步 | 最后更新 |
 |---|---|---|---|---|---|---|---|---|
 | `S0-1` | 前置 | 唯一 active tree 与契约基线 | `Review 完成` | `未推送` | `codex/audit-optimizations-2026-07-10`；`plugins/codex-paper/`；`docs/adr/0001-active-tree-and-contract-baseline.md` | repo guard 31/31、study 23/23、reasoning 12/12、package 10/10、parser 5/5、build/smoke/plugin validator 通过；active path 已确认；版本 `2.0.0+codex.20260710083739`；两轮外部 Review 均批准且无阻塞 | 开始 `P0-A1` 本地服务、危险写操作与路径边界 | 2026-07-11 |
-| `P0-A1` | P0 | 本地服务、危险写操作与路径边界 | `未开始` | `未推送` | — | — | 先修 loopback、delete/tag/file/raw 共用校验及可恢复删除 | 2026-07-10 |
+| `P0-A1` | P0 | 本地服务、危险写操作与路径边界 | `Review 完成` | `未推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A1_IMPLEMENTATION_PLAN.md`；`docs/P0-A1_CODE_REVIEW_SUMMARY.md`；`docs/P0-A1_CODE_REVIEW_RESULT.md`；`docs/P0-A1_CODE_REVIEW_ROUND2.md`；`docs/local-viewer-security.md` | 两轮独立安全 Review 最终 Approve、无遗留 findings；guard/security 43/43、study 23/23、parser 5/5、reasoning 12/12、package 10/10、build/smoke/HTTP integration/Browser QA/plugin validator 通过；active path `plugins/codex-paper/`；版本 `2.0.0+codex.20260711152652` | 开始 `P0-A2` Web 主动内容隔离 | 2026-07-12 |
 | `P0-A2` | P0 | Web 主动内容隔离 | `未开始` | `未推送` | — | — | 默认关闭主动预览，并建立 Markdown/Ask/Notebook/SVG 恶意 fixture | 2026-07-10 |
 | `P0-A3` | P0 | 生成代码执行策略与 sandbox | `未开始` | `未推送` | — | — | 从标准流程移除 `--run-code`，定义 capability gate、显式同意和 sandbox contract | 2026-07-10 |
 | `P0-A4` | P0 | 下载器与 PDF parser 隔离/限额 | `未开始` | `未推送` | — | — | 定义 SSRF 地址策略、字节/页数上限和 parser 资源预算 | 2026-07-10 |
@@ -659,10 +659,10 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 优先级 | 总数 | 未开始 | 开发中 | 开发完成 | Review 中 | Review 完成 | 阻塞/暂缓/取消 |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 前置 | 1 | 0 | 0 | 0 | 0 | 1 | 0 |
-| P0 | 9 | 9 | 0 | 0 | 0 | 0 | 0 |
+| P0 | 9 | 8 | 0 | 0 | 0 | 1 | 0 |
 | P1 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | P2 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **22** | **21** | **0** | **0** | **0** | **1** | **0** |
+| **合计** | **22** | **20** | **0** | **0** | **0** | **2** | **0** |
 
 | 交付状态 | 未推送 | 已推送 | 已合并 | 合计 |
 |---|---:|---:|---:|---:|
@@ -681,3 +681,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 2026-07-10 16:48 | `S0-1` | `开发完成 / 未推送` → `Review 完成 / 未推送` | 两轮独立对抗 Review 后封堵第二 manifest、dangling symlink 与 fixture 许可绕过；最终无阻塞项 | Codex |
 | 2026-07-11 | `S0-1` | 状态保持 `Review 完成 / 未推送` | 复核外部 Code Review 结论；采纳 CLI 参数解析健壮性建议并补回归测试，guard 更新为 29/29；澄清 hooks 的已验证证据与新任务人工验证边界 | Codex |
 | 2026-07-11 | `S0-1` | 状态保持 `Review 完成 / 未推送` | 复核第二轮 Code Review；排除生成型 lockfile 的 legacy 文本误报，并将三条默认提示固化为门禁，guard 更新为 31/31；补充原子暂存 checklist | Codex |
+| 2026-07-11 | `P0-A1` | `未开始 / 未推送` → `开发中 / 未推送` | 开始实施 loopback、配对 session、Host/Origin/CSRF、统一 no-follow resolver 和可恢复回收站 | Codex |
+| 2026-07-11 22:45 | `P0-A1` | `开发中 / 未推送` → `开发完成 / 未推送` | 完成服务配对、共享路径边界、可恢复删除与恢复 UI；全量回归、真实 HTTP 集成、Browser QA、官方 validator 和 active plugin 重装通过，版本 `2.0.0+codex.20260711144506` | Codex |
+| 2026-07-11 | `P0-A1` | 状态保持 `开发完成 / 未推送` | 采纳首轮 Review 的 N1–N4：修复 delete/restore 回滚链、原子临时文件 no-follow/exclusive、confirmation 上限和默认端口 Host；安全回归增至 12 项；重装版本 `2.0.0+codex.20260711152652` | Codex |
+| 2026-07-12 | `P0-A1` | `开发完成 / 未推送` → `Review 完成 / 未推送` | 第二轮独立安全 Review 最终 Approve，确认 N1–N4 修复正确且无新增 findings；进入阶段性提交 | Codex |

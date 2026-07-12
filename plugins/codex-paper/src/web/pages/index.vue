@@ -5,6 +5,9 @@
         <span class="logo-icon">◈</span>
         <span class="logo-text">Research Library</span>
       </div>
+      <button class="trash-toggle" type="button" @click="trashOpen = !trashOpen">
+        Trash <span v-if="trash.length">({{ trash.length }})</span>
+      </button>
     </nav>
 
     <div class="library-content">
@@ -12,6 +15,29 @@
         <h1>Your Research Collection</h1>
         <p class="subtitle">All papers stored in: <code>~/codex-papers/papers/</code></p>
       </div>
+
+      <section v-if="trashOpen" class="trash-panel" aria-label="Recoverable trash">
+        <div class="trash-panel__header">
+          <div>
+            <h2>Recoverable Trash</h2>
+            <p>Papers remain here until you restore them. Permanent deletion is not available.</p>
+          </div>
+          <button type="button" @click="loadTrash">Refresh</button>
+        </div>
+        <p v-if="trashError" class="trash-error" role="alert">{{ trashError }}</p>
+        <p v-else-if="trash.length === 0" class="trash-empty">Trash is empty.</p>
+        <ul v-else class="trash-list">
+          <li v-for="item in trash" :key="item.trashId">
+            <div>
+              <strong>{{ item.title || item.slug }}</strong>
+              <small>Moved {{ formatTrashDate(item.deletedAt) }}</small>
+            </div>
+            <button type="button" :disabled="restoringTrashId === item.trashId" @click="handleRestore(item.trashId)">
+              {{ restoringTrashId === item.trashId ? 'Restoring…' : 'Restore' }}
+            </button>
+          </li>
+        </ul>
+      </section>
 
       <SearchFilterBar
         v-if="!loading && !error && papers.length > 0"
@@ -100,7 +126,7 @@
 <script setup lang="ts">
 import type { Paper } from '~/composables/usePapers'
 
-const { papers, loading, error, loadPapers, updatePaperTags, removePaper } = usePapers()
+const { papers, loading, error, trash, trashError, loadPapers, updatePaperTags, removePaper, loadTrash, restorePaper } = usePapers()
 
 const searchQuery = ref('')
 const selectedTags = ref<string[]>([])
@@ -110,9 +136,11 @@ const editingPaper = ref<Paper | null>(null)
 const tagSaveError = ref<string | null>(null)
 const directoryCollapsed = ref(false)
 const expandedPaperSlugs = ref<string[]>([])
+const trashOpen = ref(false)
+const restoringTrashId = ref<string | null>(null)
 
 onMounted(async () => {
-  await loadPapers()
+  await Promise.all([loadPapers(), loadTrash()])
 })
 
 const availableTags = computed(() => {
@@ -236,10 +264,22 @@ const handleTagsUpdate = async (newTags: string[]) => {
 const handleRemovePaper = async (slug: string) => {
   const paper = papers.value.find(p => p.slug === slug)
   const title = paper?.title || slug
-  if (!confirm(`Delete "${title}"? This will permanently remove the paper and all its study materials.`)) {
+  if (!confirm(`Move "${title}" to recoverable trash? You can restore it from this page.`)) {
     return
   }
-  await removePaper(slug)
+  const success = await removePaper(slug)
+  if (!success) window.alert('The paper could not be moved to trash. Refresh and try again.')
+}
+
+const handleRestore = async (trashId: string) => {
+  restoringTrashId.value = trashId
+  await restorePaper(trashId)
+  restoringTrashId.value = null
+}
+
+const formatTrashDate = (value: string) => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 useHead({
@@ -270,6 +310,18 @@ useHead({
   z-index: 100;
   backdrop-filter: blur(10px);
 }
+
+.trash-toggle { margin-left: auto; border: 1px solid #d1d5db; border-radius: 999px; background: #fff; padding: .45rem .9rem; color: #374151; cursor: pointer; }
+.trash-panel { margin-bottom: 2rem; padding: 1.25rem; border: 1px solid #e5e7eb; border-radius: 12px; background: #fafaf9; }
+.trash-panel__header { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
+.trash-panel h2 { margin: 0 0 .25rem; font-family: 'Crimson Pro', serif; }
+.trash-panel p { margin: 0; color: #6b7280; }
+.trash-panel button { border: 1px solid #c7cdd4; border-radius: 7px; background: white; padding: .45rem .75rem; cursor: pointer; }
+.trash-list { margin: 1rem 0 0; padding: 0; list-style: none; }
+.trash-list li { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: .75rem 0; border-top: 1px solid #e5e7eb; }
+.trash-list small { display: block; margin-top: .2rem; color: #6b7280; }
+.trash-error { margin-top: 1rem !important; color: #b42318 !important; }
+.trash-empty { margin-top: 1rem !important; }
 
 .logo {
   display: flex;
