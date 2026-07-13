@@ -26,8 +26,8 @@ P0-A3 removes the remaining generated-code bare-host execution path and introduc
 - Production build, Viewer HTTP security integration and smoke test: passed.
 - Missing-Docker contract: `sandbox-status=unavailable`, exit `3`; no approval is issued and run fails closed.
 - Real Docker conformance: intentionally pending the mandatory CI gate because this Mac has no Docker/Podman/OrbStack. Review must not mark the work item complete until that gate passes.
-- Official plugin validator and reinstall: passed; active source `plugins/codex-paper/`, version `2.0.0+codex.20260713105405`.
-- Real-Docker follow-up: diagnostics identified a minimal-only Python image missing `json`; after that fix, CI verified that Linux signals a file-size violation with `SIGXFSZ`. Conformance now accepts only the matching exit `153` plus trusted resource status `-25`, pending full CI completion.
+- Official plugin validator and reinstall: passed; active source `plugins/codex-paper/`, version `2.0.0+codex.20260713105712`.
+- Real-Docker follow-up: diagnostics identified a minimal-only Python image missing `json`; after that fix, CI showed the 64 MiB `/tmp` cap can raise `ENOSPC` before `RLIMIT_FSIZE` raises `SIGXFSZ`. The synthetic probe now removes its own oversized file after `ENOSPC` so the trusted wrapper can write its report; the signal path still requires matching exit `153` plus resource status `-25`, pending full CI completion.
 - Independent review rounds 1 and 2: all findings resolved, no new defects; approved pending the mandatory real-Docker CI conformance gate.
 
 ## Requested reviewer focus

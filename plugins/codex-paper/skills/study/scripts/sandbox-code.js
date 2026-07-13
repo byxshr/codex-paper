@@ -743,6 +743,7 @@ async function runConformance({ env = process.env } = {}) {
       '  with pathlib.Path("/tmp/oversized").open("wb") as target:',
       '    for _ in range(70): target.write(b"x" * 1024 * 1024)',
       'except OSError:',
+      '  pathlib.Path("/tmp/oversized").unlink(missing_ok=True)',
       '  print("file limit activated")',
       '  sys.exit(0)',
       'raise SystemExit("file limit did not activate")',
