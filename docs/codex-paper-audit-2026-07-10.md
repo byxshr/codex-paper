@@ -634,7 +634,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | `S0-1` | 前置 | 唯一 active tree 与契约基线 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`plugins/codex-paper/`；`docs/adr/0001-active-tree-and-contract-baseline.md` | repo guard 31/31、study 23/23、reasoning 12/12、package 10/10、parser 5/5、build/smoke/plugin validator 通过；active path 已确认；版本 `2.0.0+codex.20260710083739`；两轮外部 Review 均批准且无阻塞 | 开始 `P0-A1` 本地服务、危险写操作与路径边界 | 2026-07-13 |
 | `P0-A1` | P0 | 本地服务、危险写操作与路径边界 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A1_IMPLEMENTATION_PLAN.md`；`docs/P0-A1_CODE_REVIEW_SUMMARY.md`；`docs/P0-A1_CODE_REVIEW_RESULT.md`；`docs/P0-A1_CODE_REVIEW_ROUND2.md`；`docs/local-viewer-security.md` | 两轮独立安全 Review 最终 Approve、无遗留 findings；guard/security 43/43、study 23/23、parser 5/5、reasoning 12/12、package 10/10、build/smoke/HTTP integration/Browser QA/plugin validator 通过；active path `plugins/codex-paper/`；版本 `2.0.0+codex.20260711152652` | 开始 `P0-A2` Web 主动内容隔离 | 2026-07-13 |
 | `P0-A2` | P0 | Web 主动内容隔离 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A2_IMPLEMENTATION_PLAN.md`；`docs/P0-A2_CODE_REVIEW_SUMMARY.md`；`docs/P0-A2_CODE_REVIEW_RESULT.md`；`docs/P0-A2_CODE_REVIEW_RESULT_ROUND2.md`；`docs/web-active-content-security.md` | 两轮独立 Review 均通过、无阻断项；L1/L2 整改复核有效；repository/security 52/52、study 23/23、parser 5/5、reasoning 12/12、package 10/10、build/security/官方 validator 通过；active path `plugins/codex-paper/`；版本 `2.0.0+codex.20260712051635` | 开始 `P0-A3` 生成代码执行策略与 sandbox | 2026-07-13 |
-| `P0-A3` | P0 | 生成代码执行策略与 sandbox | `Review 中` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A3_IMPLEMENTATION_PLAN.md`；`docs/P0-A3_CODE_REVIEW_SUMMARY.md`；`docs/P0-A3_CODE_REVIEW_FINDINGS.md`；`docs/P0-A3_CODE_REVIEW_FINDINGS_ROUND2.md`；`docs/generated-code-sandbox-security.md` | 两轮独立 Review 已通过；真实 Docker 诊断确认 minimal-only Python 缺少 entrypoint 所需标准库，且文件边界由 `SIGXFSZ` 或 64 MiB `/tmp` 的 `ENOSPC` 强制执行；已改用完整 `python3`、加入防回退 Guard，并修正 synthetic 探针清理与 signal/status 严格匹配；Guard 37/37、repository/security 75/75、study 23/23、parser 5/5、reasoning 12/12、package 11/11、build/HTTP security/smoke/官方 validator 通过；active 版本 `2.0.0+codex.20260713105712` | 等待最终真实 Docker conformance；CI 全绿后更新为 `Review 完成` | 2026-07-13 |
+| `P0-A3` | P0 | 生成代码执行策略与 sandbox | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A3_IMPLEMENTATION_PLAN.md`；`docs/P0-A3_CODE_REVIEW_SUMMARY.md`；`docs/P0-A3_CODE_REVIEW_FINDINGS.md`；`docs/P0-A3_CODE_REVIEW_FINDINGS_ROUND2.md`；`docs/generated-code-sandbox-security.md` | 两轮独立 Review 已通过；真实 Docker 诊断确认 minimal-only Python 缺少 entrypoint 所需标准库，且文件边界由 `SIGXFSZ` 或 64 MiB `/tmp` 的 `ENOSPC` 强制执行；已改用完整 `python3`、加入防回退 Guard，并修正 synthetic 探针清理与 signal/status 严格匹配；Guard 37/37、repository/security 75/75、study 23/23、parser 5/5、reasoning 12/12、package 11/11、官方 validator 与 [CI run 29244582383](https://github.com/byxshr/codex-paper/actions/runs/29244582383) 全部通过；active 版本 `2.0.0+codex.20260713105712` | 开始 `P0-A4` 下载器与 PDF parser 隔离/限额 | 2026-07-13 |
 | `P0-A4` | P0 | 下载器与 PDF parser 隔离/限额 | `未开始` | `未推送` | — | — | 定义 SSRF 地址策略、字节/页数上限和 parser 资源预算 | 2026-07-10 |
 | `P0-B1` | P0 | 不可跳过的确定性回归与验收契约 | `未开始` | `未推送` | — | — | 提交可再分发的 Attention 风格失败 fixture，并令 all-skip 失败 | 2026-07-10 |
 | `P0-B2` | P0 | Typed ResultClaim、噪声过滤与直接证据引用 | `未开始` | `未推送` | — | — | 先定 schema/迁移，再实现年份、脚注、版权和数值绑定规则 | 2026-07-10 |
@@ -659,10 +659,10 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 优先级 | 总数 | 未开始 | 开发中 | 开发完成 | Review 中 | Review 完成 | 阻塞/暂缓/取消 |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 前置 | 1 | 0 | 0 | 0 | 0 | 1 | 0 |
-| P0 | 9 | 6 | 0 | 0 | 1 | 2 | 0 |
+| P0 | 9 | 6 | 0 | 0 | 0 | 3 | 0 |
 | P1 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | P2 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **22** | **18** | **0** | **0** | **1** | **3** | **0** |
+| **合计** | **22** | **18** | **0** | **0** | **0** | **4** | **0** |
 
 | 交付状态 | 未推送 | 已推送 | 已合并 | 合计 |
 |---|---:|---:|---:|---:|
@@ -697,3 +697,4 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 2026-07-13 | `P0-A3` | 状态保持 `Review 中 / 已推送` | PR #3 首次真实 Docker CI 在 `conformance.js` 失败；新增有界容器诊断、显式 JS invariant 错误与回归测试，repository/security 增至 73/73，插件版本 `2.0.0+codex.20260713104741` | Codex |
 | 2026-07-13 | `P0-A3` | 状态保持 `Review 中 / 已推送` | 诊断 CI 确认 `python3-minimal` 缺少可信 entrypoint 所需 `json` 标准库；镜像改装完整 `python3` 且新增防回退 Guard，repository/security 74/74，插件版本 `2.0.0+codex.20260713105027` | Codex |
 | 2026-07-13 | `P0-A3` | 状态保持 `Review 中 / 已推送` | 后续真实 Docker CI 越过 entrypoint，并确认文件边界会以 Linux `SIGXFSZ` 或受限 `/tmp` 的 `ENOSPC` 生效；conformance 增加探针清理并严格匹配 signal exit/resource status，新增回归后 repository/security 75/75，插件版本 `2.0.0+codex.20260713105712` | Codex |
+| 2026-07-13 | `P0-A3` | `Review 中 / 已推送` → `Review 完成 / 已推送` | [CI run 29244582383](https://github.com/byxshr/codex-paper/actions/runs/29244582383) 的真实 Docker conformance、benchmarks、production build、Viewer security integration 与 smoke test 全部通过，关闭最终强制验收条件；下一项为 `P0-A4` | Codex |

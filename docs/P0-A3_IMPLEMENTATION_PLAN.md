@@ -2,7 +2,7 @@
 
 - 分支：`codex/audit-optimizations-2026-07-10`
 - 开始日期：2026-07-13
-- 开发状态：`Review 中`
+- 开发状态：`Review 完成`
 - 交付状态：`已推送`
 
 ## 决策
@@ -45,15 +45,15 @@
 
 ## 验证结果
 
-- Repository Contract：通过，当前 tracked baseline 156 个文件。
+- Repository Contract：通过，当前 tracked baseline 167 个文件。
 - Repository Guard：37/37；repository/security tests：75/75，其中 P0-A3 sandbox tests 17/17；study tests 23/23。
 - parser 5/5、reasoning 12/12、package 11/11。
 - production build、Viewer HTTP security integration、smoke test：通过。
 - 本机实际 `sandbox-status`：`unavailable`，原因 `docker CLI is not installed`，exit `3`；plan 不签发 token，run fail closed。
 - 官方 plugin validator、Repository Contract、marketplace reinstall 和 active-path/version 检查：通过。
-- 两轮独立 Code Review 已通过且无遗留代码 finding；Round 2 结论为 merge-ready pending real-Docker CI。
-- 真实 Docker conformance 未在本机运行，按已确认方案由后续 push/PR CI 强制执行；在 CI 通过前不得将 P0-A3 标为 `Review 完成`。
-- PR #3 首次真实 Docker CI 在 JavaScript conformance fixture 失败；诊断 CI 确认可信 entrypoint 因 `python3-minimal` 缺少 `json` 标准库而在 artifact 启动前退出。镜像现安装 Debian `python3` 完整标准库（不安装 pip），并新增 Repository Guard 防止回退到 minimal-only 配置。后续 CI 已越过该入口，确认文件写入会由 `RLIMIT_FSIZE` 的 Linux `SIGXFSZ` 或 64 MiB `/tmp` 的 `ENOSPC` 强制终止；synthetic fixture 在捕获 `ENOSPC` 后清理探针文件，让可信 wrapper 有空间写资源报告，且 signal 路径仍须严格匹配 exit `153` 与资源 status `-25`。等待下一轮完整 CI 复验。
+- 两轮独立 Code Review 已通过且无遗留代码 finding；Round 2 结论为 merge-ready，并已由 mandatory real-Docker CI 关闭最后验收条件。
+- 本机仍保持 `sandbox-status=unavailable` 的 fail-closed 契约；真实 Docker conformance 已在 GitHub Actions Ubuntu runner 完整通过。
+- PR #3 首次真实 Docker CI 在 JavaScript conformance fixture 失败；诊断 CI 确认可信 entrypoint 因 `python3-minimal` 缺少 `json` 标准库而在 artifact 启动前退出。镜像现安装 Debian `python3` 完整标准库（不安装 pip），并新增 Repository Guard 防止回退到 minimal-only 配置。后续 CI 确认文件写入会由 `RLIMIT_FSIZE` 的 Linux `SIGXFSZ` 或 64 MiB `/tmp` 的 `ENOSPC` 强制终止；synthetic fixture 在捕获 `ENOSPC` 后清理探针文件，让可信 wrapper 有空间写资源报告，且 signal 路径仍须严格匹配 exit `153` 与资源 status `-25`。最终 [CI run 29244582383](https://github.com/byxshr/codex-paper/actions/runs/29244582383) 的 conformance、benchmarks、production build、Viewer security 与 smoke test 全部通过。
 
 ## 已知非阻塞项
 

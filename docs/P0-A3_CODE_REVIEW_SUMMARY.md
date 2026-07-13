@@ -25,10 +25,10 @@ P0-A3 removes the remaining generated-code bare-host execution path and introduc
 - Local non-container verification: passed — Repository Guard 37/37, repository/security 75/75, study 23/23, parser 5/5, reasoning 12/12 and package 11/11.
 - Production build, Viewer HTTP security integration and smoke test: passed.
 - Missing-Docker contract: `sandbox-status=unavailable`, exit `3`; no approval is issued and run fails closed.
-- Real Docker conformance: intentionally pending the mandatory CI gate because this Mac has no Docker/Podman/OrbStack. Review must not mark the work item complete until that gate passes.
+- Real Docker conformance: passed in [GitHub Actions run 29244582383](https://github.com/byxshr/codex-paper/actions/runs/29244582383); this Mac intentionally remains on the tested fail-closed missing-Docker path.
 - Official plugin validator and reinstall: passed; active source `plugins/codex-paper/`, version `2.0.0+codex.20260713105712`.
-- Real-Docker follow-up: diagnostics identified a minimal-only Python image missing `json`; after that fix, CI showed the 64 MiB `/tmp` cap can raise `ENOSPC` before `RLIMIT_FSIZE` raises `SIGXFSZ`. The synthetic probe now removes its own oversized file after `ENOSPC` so the trusted wrapper can write its report; the signal path still requires matching exit `153` plus resource status `-25`, pending full CI completion.
-- Independent review rounds 1 and 2: all findings resolved, no new defects; approved pending the mandatory real-Docker CI conformance gate.
+- Real-Docker follow-up: diagnostics identified a minimal-only Python image missing `json`; after that fix, CI showed the 64 MiB `/tmp` cap can raise `ENOSPC` before `RLIMIT_FSIZE` raises `SIGXFSZ`. The synthetic probe now removes its own oversized file after `ENOSPC` so the trusted wrapper can write its report; the signal path still requires matching exit `153` plus resource status `-25`.
+- Independent review rounds 1 and 2: all findings resolved, no new defects; mandatory real-Docker conformance and the complete CI pipeline passed.
 
 ## Requested reviewer focus
 
