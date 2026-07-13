@@ -127,7 +127,7 @@ function createV1Package() {
   return dir;
 }
 
-function runValidator(dir, args = ['--run-code']) {
+function runValidator(dir, args = []) {
   const result = spawnSync(process.execPath, [validatorPath, dir, ...args], {
     encoding: 'utf8'
   });
@@ -139,7 +139,18 @@ function runValidator(dir, args = ['--run-code']) {
 
 const fixtures = [
   { name: 'valid-v2-package', make: createV2Package, expectPass: true },
-  { name: 'legacy-v1-ok', make: createV1Package, args: ['--legacy-ok', '--run-code'], expectPass: true },
+  { name: 'legacy-v1-ok', make: createV1Package, args: ['--legacy-ok'], expectPass: true },
+  {
+    name: 'legacy-run-code-rejected-without-execution',
+    make: createV2Package,
+    args: ['--run-code'],
+    mutate: (dir) => {
+      fs.rmSync('/tmp/codex-paper-validator-must-not-execute', { force: true });
+      write(path.join(dir, 'code/core-concept-demo.py'), 'from pathlib import Path\nPath("/tmp/codex-paper-validator-must-not-execute").write_text("unsafe")\n');
+    },
+    expectText: '--run-code was removed',
+    verify: () => !fs.existsSync('/tmp/codex-paper-validator-must-not-execute'),
+  },
   { name: 'missing-reflection-heading', make: createV2Package, mutate: (dir) => write(path.join(dir, 'reflection.md'), '# Reflection\n\n## 最弱假设\nOnly one section.\n'), expectText: 'reflection.md is missing required v2 heading' },
   { name: 'method-no-falsification', make: createV2Package, mutate: (dir) => write(path.join(dir, 'method.md'), '# Method\n\nSupport criteria: positive direction.\n'), expectText: 'method.md must include minimal reproduction falsification criteria' },
   { name: 'visible-leaks-evidenceRefs', make: createV2Package, mutate: (dir) => fs.appendFileSync(path.join(dir, 'summary.md'), '\nevidenceRefs leak\n'), expectText: 'contains machine residue' },
@@ -156,7 +167,8 @@ for (const fixture of fixtures) {
   try {
     fixture.mutate?.(dir);
     const result = runValidator(dir, fixture.args);
-    const pass = fixture.expectPass ? result.status === 0 : result.status !== 0 && result.output.includes(fixture.expectText);
+    const expectedResult = fixture.expectPass ? result.status === 0 : result.status !== 0 && result.output.includes(fixture.expectText);
+    const pass = expectedResult && (fixture.verify ? fixture.verify(dir, result) : true);
     results.push({ name: fixture.name, pass, exitCode: result.status, expected: fixture.expectPass ? 'PASS' : fixture.expectText });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

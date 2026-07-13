@@ -256,8 +256,25 @@ Validate one completed study package:
 
 ```bash
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --strict
-node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug} --run-code
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug}
 ```
+
+Study-package validation is static and never executes generated code. Optional execution uses a separately prepared Docker sandbox and requires a fresh, code-hash-bound approval for every run:
+
+```bash
+# Explicit setup: build the digest-pinned image and run conformance tests
+bash scripts/codex-paper.sh sandbox-setup
+
+# Inspect files, hashes, commands, permissions, and limits
+bash scripts/codex-paper.sh sandbox-plan ~/codex-papers/papers/{paper-slug}
+
+# Only after the user approves that exact plan
+bash scripts/codex-paper.sh sandbox-run ~/codex-papers/papers/{paper-slug} --approval-token <one-time-token>
+```
+
+The token binds the exact plan and prevents replay; it does not authenticate a human. Agent workflows must stop after showing the plan and wait for a new explicit user approval before running it.
+
+Without a conformant Docker engine the runner reports `unavailable` or `nonconformant` and never falls back to host Python, Node, or a shell. The container has no network, sees only `code/` read-only, inherits no host credentials, and can write only to a bounded temporary directory.
 
 Migrate an older package to draft evidence/reasoning files without inventing high-level analysis:
 
@@ -374,7 +391,10 @@ node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pd
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug --strict
 
 # Validate a generated study package
-node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh --run-code
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh
+
+# Check optional generated-code sandbox capability (does not execute code)
+bash scripts/codex-paper.sh sandbox-status
 
 # Run parser, reasoning, and package benchmarks
 bash scripts/codex-paper.sh benchmark-all

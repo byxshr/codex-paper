@@ -634,7 +634,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | `S0-1` | 前置 | 唯一 active tree 与契约基线 | `Review 完成` | `未推送` | `codex/audit-optimizations-2026-07-10`；`plugins/codex-paper/`；`docs/adr/0001-active-tree-and-contract-baseline.md` | repo guard 31/31、study 23/23、reasoning 12/12、package 10/10、parser 5/5、build/smoke/plugin validator 通过；active path 已确认；版本 `2.0.0+codex.20260710083739`；两轮外部 Review 均批准且无阻塞 | 开始 `P0-A1` 本地服务、危险写操作与路径边界 | 2026-07-11 |
 | `P0-A1` | P0 | 本地服务、危险写操作与路径边界 | `Review 完成` | `未推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A1_IMPLEMENTATION_PLAN.md`；`docs/P0-A1_CODE_REVIEW_SUMMARY.md`；`docs/P0-A1_CODE_REVIEW_RESULT.md`；`docs/P0-A1_CODE_REVIEW_ROUND2.md`；`docs/local-viewer-security.md` | 两轮独立安全 Review 最终 Approve、无遗留 findings；guard/security 43/43、study 23/23、parser 5/5、reasoning 12/12、package 10/10、build/smoke/HTTP integration/Browser QA/plugin validator 通过；active path `plugins/codex-paper/`；版本 `2.0.0+codex.20260711152652` | 开始 `P0-A2` Web 主动内容隔离 | 2026-07-12 |
 | `P0-A2` | P0 | Web 主动内容隔离 | `Review 完成` | `未推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A2_IMPLEMENTATION_PLAN.md`；`docs/P0-A2_CODE_REVIEW_SUMMARY.md`；`docs/P0-A2_CODE_REVIEW_RESULT.md`；`docs/P0-A2_CODE_REVIEW_RESULT_ROUND2.md`；`docs/web-active-content-security.md` | 两轮独立 Review 均通过、无阻断项；L1/L2 整改复核有效；repository/security 52/52、study 23/23、parser 5/5、reasoning 12/12、package 10/10、build/security/官方 validator 通过；active path `plugins/codex-paper/`；版本 `2.0.0+codex.20260712051635` | 开始 `P0-A3` 生成代码执行策略与 sandbox | 2026-07-12 |
-| `P0-A3` | P0 | 生成代码执行策略与 sandbox | `未开始` | `未推送` | — | — | 从标准流程移除 `--run-code`，定义 capability gate、显式同意和 sandbox contract | 2026-07-10 |
+| `P0-A3` | P0 | 生成代码执行策略与 sandbox | `Review 中` | `未推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A3_IMPLEMENTATION_PLAN.md`；`docs/P0-A3_CODE_REVIEW_SUMMARY.md`；`docs/P0-A3_CODE_REVIEW_FINDINGS.md`；`docs/P0-A3_CODE_REVIEW_FINDINGS_ROUND2.md`；`docs/generated-code-sandbox-security.md` | 两轮独立 Review 已通过，全部 findings 关闭且无新增缺陷；Guard 36/36、repository/security 72/72、study 23/23、parser 5/5、reasoning 12/12、package 11/11、build/HTTP security/smoke/官方 validator 通过；本机无 Docker 时 `unavailable`/exit 3 且不签发 token；active 版本 `2.0.0+codex.20260713091303` | 提交并推送分支以运行真实 Docker conformance；CI 通过后更新为 `Review 完成` | 2026-07-13 |
 | `P0-A4` | P0 | 下载器与 PDF parser 隔离/限额 | `未开始` | `未推送` | — | — | 定义 SSRF 地址策略、字节/页数上限和 parser 资源预算 | 2026-07-10 |
 | `P0-B1` | P0 | 不可跳过的确定性回归与验收契约 | `未开始` | `未推送` | — | — | 提交可再分发的 Attention 风格失败 fixture，并令 all-skip 失败 | 2026-07-10 |
 | `P0-B2` | P0 | Typed ResultClaim、噪声过滤与直接证据引用 | `未开始` | `未推送` | — | — | 先定 schema/迁移，再实现年份、脚注、版权和数值绑定规则 | 2026-07-10 |
@@ -659,10 +659,10 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 优先级 | 总数 | 未开始 | 开发中 | 开发完成 | Review 中 | Review 完成 | 阻塞/暂缓/取消 |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 前置 | 1 | 0 | 0 | 0 | 0 | 1 | 0 |
-| P0 | 9 | 7 | 0 | 0 | 0 | 2 | 0 |
+| P0 | 9 | 6 | 0 | 0 | 1 | 2 | 0 |
 | P1 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | P2 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **22** | **19** | **0** | **0** | **0** | **3** | **0** |
+| **合计** | **22** | **18** | **0** | **0** | **1** | **3** | **0** |
 
 | 交付状态 | 未推送 | 已推送 | 已合并 | 合计 |
 |---|---:|---:|---:|---:|
@@ -689,3 +689,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 2026-07-12 | `P0-A2` | `开发中 / 未推送` → `开发完成 / 未推送` | 完成统一净化、SPA 严格 CSP、静态 HTML 预览、Notebook/SVG 降级与恶意 fixture；全量回归、HTTP integration、Browser canary、官方 validator 和 active plugin 重装通过，版本 `2.0.0+codex.20260712030120` | Codex |
 | 2026-07-12 | `P0-A2` | `开发完成 / 未推送` → `Review 完成 / 未推送` | 独立 Review 结论为通过且无阻断项；采纳 L1 删除无消费者白名单导出、采纳 L2 补全 pinned KaTeX 布局类并新增复杂公式回归；repository/security 52/52，重装版本 `2.0.0+codex.20260712051635` | Codex |
 | 2026-07-12 | `P0-A2` | 状态保持 `Review 完成 / 未推送` | 第二轮独立 Review 再次同意合并且无阻断项，确认 L1/L2 整改无安全弱化；信息级 O1 固化为 KaTeX 升级时同步审计类白名单与复杂公式回归的维护约束 | Codex |
+| 2026-07-13 | `P0-A3` | `未开始 / 未推送` → `开发中 / 未推送` | 开始移除 validator 裸机执行，实施 Docker-only capability/conformance gate、两步单次授权和结构化执行报告 | Codex |
+| 2026-07-13 | `P0-A3` | `开发中 / 未推送` → `开发完成 / 未推送` | 完成静态 validator、digest-pinned Docker runner、审批快照、资源边界、CI gate 与文档；本地全量回归和插件重装通过，版本 `2.0.0+codex.20260713082445`；真实 Docker conformance 等待后续 CI | Codex |
+| 2026-07-13 | `P0-A3` | 状态保持 `开发完成 / 未推送` | 复核首轮安全 Review：明确 token 不认证人类身份的 workflow 信任边界并加入 Guard，清理过期授权文件，严格校验并标记非权威资源统计；repository/security 72/72，重装版本 `2.0.0+codex.20260713091303` | Codex |
+| 2026-07-13 | `P0-A3` | `开发完成 / 未推送` → `Review 中 / 未推送` | 第二轮独立 Review 确认首轮 findings 全部关闭、无新增缺陷并批准合并；真实 Docker conformance 仍是完成 Review 的强制 CI gate，先创建阶段 commit | Codex |

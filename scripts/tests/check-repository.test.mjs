@@ -15,6 +15,9 @@ const SENTINELS = [
   'plugins/codex-paper/package.json',
   'plugins/codex-paper/package-lock.json',
   'plugins/codex-paper/skills/study/SKILL.md',
+  'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
+  'plugins/codex-paper/sandbox/Dockerfile',
+  'plugins/codex-paper/sandbox/policy.json',
   'plugins/codex-paper/src/web/package.json',
   'plugins/codex-paper/hooks/hooks.json',
   '.agents/plugins/marketplace.json',
@@ -264,6 +267,45 @@ test('README layout cannot present the legacy tree as active', () => withFixture
 test('README prose cannot reference the legacy plugin path', () => withFixture((fixture) => {
   writeFileSync(join(fixture.root, 'README.md'), `${readFileSync(join(fixture.root, 'README.md'), 'utf8')}\nInstall from plugin/ now.\n`)
   assert.match(errorsFor(fixture), /README\.md references the legacy plugin path/)
+}))
+
+test('package validator cannot regain generated-code process execution', () => withFixture((fixture) => {
+  const validator = 'plugins/codex-paper/skills/study/scripts/validate-study-package.js'
+  write(fixture.root, validator, "import { spawn } from 'node:child_process'\n")
+  fixture.trackedFiles.push(validator)
+  assert.match(errorsFor(fixture), /must remain static-only/)
+}))
+
+test('study instructions cannot recommend legacy validator execution flags', () => withFixture((fixture) => {
+  const skill = join(fixture.root, 'plugins/codex-paper/skills/study/SKILL.md')
+  writeFileSync(skill, `${readFileSync(skill, 'utf8')}\nnode validate-study-package.js paper --run-code\n`)
+  assert.match(errorsFor(fixture), /must not recommend legacy generated-code execution/)
+}))
+
+test('study instructions preserve the explicit human-consent workflow boundary', () => withFixture((fixture) => {
+  const skill = join(fixture.root, 'plugins/codex-paper/skills/study/SKILL.md')
+  writeFileSync(skill, readFileSync(skill, 'utf8').replace('does not authenticate a human', 'authenticates a human'))
+  assert.match(errorsFor(fixture), /must preserve the explicit human-consent workflow boundary/)
+}))
+
+test('sandbox policy requires digest-pinned image and fixed contract versions', () => withFixture((fixture) => {
+  const dockerfile = join(fixture.root, 'plugins/codex-paper/sandbox/Dockerfile')
+  writeFileSync(dockerfile, readFileSync(dockerfile, 'utf8').replace(/@sha256:[a-f0-9]{64}/, ''))
+  const policyPath = join(fixture.root, 'plugins/codex-paper/sandbox/policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  policy.baseImage = 'node:20-bookworm-slim'
+  policy.policyVersion = 'dev'
+  writeFileSync(policyPath, JSON.stringify(policy))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /Dockerfile base image must be pinned/)
+  assert.match(errors, /policy\.json baseImage must be digest-pinned/)
+  assert.match(errors, /policy and conformance version 1\.0\.0/)
+}))
+
+test('sandbox runner cannot enable a shell or import exec helpers', () => withFixture((fixture) => {
+  const runner = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/sandbox-code.js')
+  writeFileSync(runner, "import { execFileSync } from 'node:child_process'\nspawn('tool', [], { shell: true })\n")
+  assert.match(errorsFor(fixture), /argv-array process execution without a shell/)
 }))
 
 test('modifying any frozen 2.0 schema fails', () => {

@@ -252,6 +252,33 @@ cmd_security_test() {
   "$NODE_BIN" "$REPO_ROOT/scripts/tests/viewer-security.integration.mjs"
 }
 
+cmd_sandbox_status() {
+  ensure_node
+  "$NODE_BIN" "$SANDBOX_RUNNER" status "$@"
+}
+
+cmd_sandbox_setup() {
+  ensure_node
+  print_section "Generated-code Sandbox Setup"
+  "$NODE_BIN" "$SANDBOX_RUNNER" setup "$@"
+}
+
+cmd_sandbox_test() {
+  ensure_node
+  print_section "Generated-code Sandbox Conformance"
+  "$NODE_BIN" "$SANDBOX_RUNNER" test "$@"
+}
+
+cmd_sandbox_plan() {
+  ensure_node
+  "$NODE_BIN" "$SANDBOX_RUNNER" plan "$@"
+}
+
+cmd_sandbox_run() {
+  ensure_node
+  "$NODE_BIN" "$SANDBOX_RUNNER" run "$@"
+}
+
 cmd_help() {
   cat <<'EOF'
 Usage:
@@ -273,6 +300,11 @@ Commands:
   benchmark-report  Print the latest benchmark report
   smoke-test   Run an end-to-end local smoke test
   security-test Run the real HTTP Viewer security integration test
+  sandbox-status Show whether the Docker sandbox is ready, unavailable, or nonconformant
+  sandbox-setup Build the pinned sandbox image and run conformance tests
+  sandbox-test Re-run real Docker sandbox conformance tests
+  sandbox-plan <paper> [--json] Show the exact execution plan and issue a short-lived token only when ready
+  sandbox-run <paper> --approval-token <token> [--json] Consume one approval token and run demos in Docker
   help         Show this help message
 EOF
 }
@@ -325,6 +357,26 @@ case "$command_name" in
     ;;
   security-test)
     cmd_security_test
+    ;;
+  sandbox-status)
+    shift
+    cmd_sandbox_status "$@"
+    ;;
+  sandbox-setup)
+    shift
+    cmd_sandbox_setup "$@"
+    ;;
+  sandbox-test)
+    shift
+    cmd_sandbox_test "$@"
+    ;;
+  sandbox-plan)
+    shift
+    cmd_sandbox_plan "$@"
+    ;;
+  sandbox-run)
+    shift
+    cmd_sandbox_run "$@"
     ;;
   help|-h|--help)
     cmd_help

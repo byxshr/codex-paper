@@ -2,7 +2,6 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawnSync } from 'child_process';
 import { validateReasoningPackage } from './validate-reasoning.js';
 import { REQUIRED_REFLECTION_HEADINGS } from '../profiles/profile-rules.js';
 
@@ -78,16 +77,14 @@ const BODY_IMAGE_MIN_HEIGHT = 220;
 const BODY_IMAGE_MIN_PIXELS = 160000;
 
 function usage() {
-  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code|--run-artifacts] [--legacy-ok] [--timeout-ms 20000]');
+  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--legacy-ok]');
 }
 
 function parseArgs(argv) {
   const args = {
     input: null,
     lang: null,
-    runCode: false,
-    legacyOk: false,
-    timeoutMs: 20000
+    legacyOk: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -96,12 +93,9 @@ function parseArgs(argv) {
       args.lang = argv[index + 1];
       index += 1;
     } else if (arg === '--run-code' || arg === '--run-artifacts') {
-      args.runCode = true;
+      throw new Error(`${arg} was removed because package validation must never execute generated code. Use "bash scripts/codex-paper.sh sandbox-plan <paper>" and, after explicit user approval, sandbox-run.`);
     } else if (arg === '--legacy-ok') {
       args.legacyOk = true;
-    } else if (arg === '--timeout-ms') {
-      args.timeoutMs = Number(argv[index + 1]);
-      index += 1;
     } else if (!args.input) {
       args.input = arg;
     } else {
@@ -115,10 +109,6 @@ function parseArgs(argv) {
 
   if (args.lang && !['zh', 'en'].includes(args.lang)) {
     throw new Error('--lang must be zh or en.');
-  }
-
-  if (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0) {
-    throw new Error('--timeout-ms must be a positive number.');
   }
 
   return args;
@@ -911,53 +901,6 @@ function checkVisualAssetsIndex(paperDir, findings) {
   }
 }
 
-function commandForCodeFile(filename) {
-  const ext = path.extname(filename).toLowerCase();
-  if (ext === '.py') {
-    return { command: 'python3', args: [filename] };
-  }
-  if (ext === '.js' || ext === '.mjs') {
-    return { command: 'node', args: [filename] };
-  }
-  return null;
-}
-
-function runCodeDemos(paperDir, codeFiles, timeoutMs, findings) {
-  const codeDir = path.join(paperDir, 'code');
-  const runnable = codeFiles
-    .map((filename) => ({ filename, runner: commandForCodeFile(filename) }))
-    .filter((item) => item.runner);
-
-  if (runnable.length === 0) {
-    addFinding(findings, 'errors', '--run-code was requested, but no Python or JavaScript demo was found.');
-    return;
-  }
-
-  for (const item of runnable) {
-    const result = spawnSync(item.runner.command, item.runner.args, {
-      cwd: codeDir,
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      maxBuffer: 1024 * 1024
-    });
-
-    if (result.error?.code === 'ETIMEDOUT') {
-      addFinding(findings, 'errors', `code/${item.filename} timed out after ${timeoutMs}ms.`);
-      continue;
-    }
-
-    if (result.error) {
-      addFinding(findings, 'errors', `code/${item.filename} failed to run: ${result.error.message}`);
-      continue;
-    }
-
-    if (result.status !== 0) {
-      const stderr = (result.stderr || result.stdout || '').trim().split('\n').slice(-4).join(' ');
-      addFinding(findings, 'errors', `code/${item.filename} exited with ${result.status}.${stderr ? ` Output: ${stderr}` : ''}`);
-    }
-  }
-}
-
 function validate(args) {
   const paperDir = resolvePaperDir(args.input);
   const findings = {
@@ -973,7 +916,7 @@ function validate(args) {
   const v2Package = isV2Package(paperDir);
   checkReasoningLayer(paperDir, args, findings);
 
-  const codeFiles = checkRequiredFiles(paperDir, findings);
+  checkRequiredFiles(paperDir, findings);
   checkForbiddenResidues(paperDir, findings);
   checkNoImagegenResidues(paperDir, findings);
   checkQa(paperDir, findings);
@@ -984,10 +927,6 @@ function validate(args) {
   checkVisualDensity(paperDir, findings);
   if (v2Package) {
     checkV2VisibleContentContract(paperDir, findings);
-  }
-
-  if (args.runCode) {
-    runCodeDemos(paperDir, codeFiles, args.timeoutMs, findings);
   }
 
   return { paperDir, findings };
@@ -1023,5 +962,5 @@ try {
 } catch (error) {
   usage();
   console.error(`Error: ${error.message}`);
-  process.exit(1);
+  process.exit(2);
 }

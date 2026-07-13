@@ -27,7 +27,9 @@ The ledger is consumed by:
 
 ```bash
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js "<paper-dir>" --strict
-node plugins/codex-paper/skills/study/scripts/validate-study-package.js "<paper-dir>" --run-code
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js "<paper-dir>"
 ```
+
+Both commands are static validators. Generated-code execution is a separate, explicitly approved Docker sandbox workflow documented in the repository README.
 
 Visible Markdown and HTML must cite evidence by natural location, such as page, section, figure, table, or appendix. They must not expose `ev-*` IDs or internal JSON field names.

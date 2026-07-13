@@ -43,6 +43,9 @@ const SENTINELS = [
   'plugins/codex-paper/package.json',
   'plugins/codex-paper/package-lock.json',
   'plugins/codex-paper/skills/study/SKILL.md',
+  'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
+  'plugins/codex-paper/sandbox/Dockerfile',
+  'plugins/codex-paper/sandbox/policy.json',
   'plugins/codex-paper/src/web/package.json',
   'plugins/codex-paper/hooks/hooks.json',
 ]
@@ -296,6 +299,48 @@ export function checkRepository({
     }
     if (legacyReference.test(content)) {
       errors.push(`${readmePath} references the legacy plugin path`)
+    }
+  }
+
+  const validatorRelative = `${activePath}/skills/study/scripts/validate-study-package.js`
+  const studySkillRelative = `${activePath}/skills/study/SKILL.md`
+  const sandboxRunnerRelative = `${activePath}/skills/study/scripts/sandbox-code.js`
+  const sandboxPolicyRelative = `${activePath}/sandbox/policy.json`
+  const sandboxDockerfileRelative = `${activePath}/sandbox/Dockerfile`
+  const validatorSource = existsSync(join(root, validatorRelative)) ? readFileSync(join(root, validatorRelative), 'utf8') : ''
+  if (/node:child_process|from ['"]child_process['"]|require\(['"](?:node:)?child_process['"]\)/.test(validatorSource)) {
+    errors.push(`${validatorRelative} must remain static-only and must not execute child processes`)
+  }
+  for (const prosePath of ['README.md', 'README.zh-CN.md', studySkillRelative]) {
+    if (!existsSync(join(root, prosePath))) continue
+    const content = readFileSync(join(root, prosePath), 'utf8')
+    if (/validate-study-package\.js[^\n`]*--run-(?:code|artifacts)/.test(content)) {
+      errors.push(`${prosePath} must not recommend legacy generated-code execution through the package validator`)
+    }
+  }
+  if (existsSync(join(root, studySkillRelative))) {
+    const studySkill = readFileSync(join(root, studySkillRelative), 'utf8')
+    if (!studySkill.includes('does not authenticate a human') || !studySkill.includes('Never issue and consume a token in one uninterrupted turn')) {
+      errors.push(`${studySkillRelative} must preserve the explicit human-consent workflow boundary`)
+    }
+  }
+  if (existsSync(join(root, sandboxRunnerRelative))) {
+    const runnerSource = readFileSync(join(root, sandboxRunnerRelative), 'utf8')
+    if (/\bshell\s*:\s*true\b|import\s*\{[^}]*\bexec(?:File)?(?:Sync)?\b[^}]*\}\s*from\s*['"](?:node:)?child_process['"]/.test(runnerSource)) {
+      errors.push(`${sandboxRunnerRelative} must use argv-array process execution without a shell or exec fallback`)
+    }
+  }
+  if (existsSync(join(root, sandboxDockerfileRelative))) {
+    const dockerfile = readFileSync(join(root, sandboxDockerfileRelative), 'utf8')
+    if (!/^ARG BASE_IMAGE=[^\s]+@sha256:[a-f0-9]{64}$/m.test(dockerfile)) {
+      errors.push(`${sandboxDockerfileRelative} base image must be pinned to an exact sha256 manifest digest`)
+    }
+  }
+  if (existsSync(join(root, sandboxPolicyRelative))) {
+    const policy = readJson(join(root, sandboxPolicyRelative), errors, sandboxPolicyRelative)
+    if (!String(policy?.baseImage || '').match(/@sha256:[a-f0-9]{64}$/)) errors.push(`${sandboxPolicyRelative} baseImage must be digest-pinned`)
+    if (policy?.policyVersion !== '1.0.0' || policy?.conformanceVersion !== '1.0.0') {
+      errors.push(`${sandboxPolicyRelative} must declare P0-A3 policy and conformance version 1.0.0`)
     }
   }
 

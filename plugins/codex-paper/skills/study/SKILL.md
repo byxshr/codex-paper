@@ -367,6 +367,7 @@ Rules:
 
 * Name the file after a core concept, not `demo.py` or `model_demo.py` unless that is truly specific.
 * Make it self-contained and runnable independently.
+* Use only Python/Node standard-library capabilities. Do not add `pip install`, `npm install`, package-manager bootstrap, or network-dependent setup instructions.
 * Prefer a compact educational implementation or visualization of the paper's central mechanism.
 * Include short comments explaining why each step matters.
 * Do not claim to reproduce the paper unless the code actually does so.
@@ -498,12 +499,21 @@ Run the validation script after generating the package:
 
 ```bash
 node ./scripts/validate-reasoning.js "{paper-slug-or-dir}" --strict
-node ./scripts/validate-study-package.js "{paper-slug-or-dir}" --lang zh --run-code
+node ./scripts/validate-study-package.js "{paper-slug-or-dir}" --lang zh
 ```
 
 Use `--lang en` for English requests. If validation fails, fix the reported files and rerun it before responding. Warnings may be reported to the user when they reflect intentional trade-offs, such as a shorter QA set with an explanation.
 
-Run the code demo if feasible. If it cannot be run, explain why in the final response and in `README.md` only if the limitation matters for future readers.
+Package validation is static and must never execute generated code. Do not invoke a demo merely because it was generated or because Docker happens to be available.
+
+Only when the user explicitly asks to execute generated code:
+
+1. Run `bash scripts/codex-paper.sh sandbox-plan "{paper-slug-or-dir}"` from the repository root.
+2. Show the user every file, SHA-256, fixed command, mount/network/environment boundary, and resource limit printed by the plan.
+3. Ask for explicit approval for that exact plan. Do not treat the original paper-study request as execution consent.
+4. Only after approval, immediately run `bash scripts/codex-paper.sh sandbox-run "{paper-slug-or-dir}" --approval-token "<one-time-token>"`.
+
+The CLI token proves plan integrity and single-use authorization; it does not authenticate a human. Human consent is a workflow boundary: stop after showing the plan and require a new, explicit user reply before running it. Never issue and consume a token in one uninterrupted turn. The token expires after five minutes and is single-use. If the plan does not issue a token, the supported Docker sandbox is unavailable or nonconformant; report that generated code was not executed. Never use Python, Node, a shell, `sandbox-exec`, bubblewrap, Podman, or another fallback directly on the host.
 
 ## Step 12: Web UI
 

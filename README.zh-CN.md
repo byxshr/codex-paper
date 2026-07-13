@@ -256,8 +256,25 @@ bash scripts/codex-paper.sh build
 
 ```bash
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --strict
-node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug} --run-code
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug}
 ```
+
+学习包校验只做静态检查，绝不执行生成代码。可选执行使用单独准备的 Docker sandbox，并且每次都要求绑定当前代码哈希的新授权：
+
+```bash
+# 显式准备：构建 digest 固定的镜像并运行一致性测试
+bash scripts/codex-paper.sh sandbox-setup
+
+# 查看文件、哈希、命令、权限边界和资源限制
+bash scripts/codex-paper.sh sandbox-plan ~/codex-papers/papers/{paper-slug}
+
+# 仅在用户明确同意该计划后执行
+bash scripts/codex-paper.sh sandbox-run ~/codex-papers/papers/{paper-slug} --approval-token <one-time-token>
+```
+
+该令牌绑定精确计划并阻止重放，但不认证人类身份。Agent 流程必须在展示计划后暂停，等待用户新的明确同意后才能执行。
+
+没有通过一致性测试的 Docker 时，runner 会返回 `unavailable` 或 `nonconformant`，绝不会退回宿主机 Python、Node 或 shell。容器无网络，只读挂载 `code/`，不继承宿主凭据，并且只能写入受限临时目录。
 
 将旧学习包迁移为草稿证据/推理文件，不编造高层研究分析：
 
@@ -374,7 +391,10 @@ node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pd
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug --strict
 
 # 校验已生成的学习包
-node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh --run-code
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh
+
+# 查看可选生成代码 sandbox 能力（不会执行代码）
+bash scripts/codex-paper.sh sandbox-status
 
 # 跑 parser、reasoning 和 package benchmark
 bash scripts/codex-paper.sh benchmark-all

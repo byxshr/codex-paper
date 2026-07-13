@@ -25,8 +25,10 @@ After migration, Codex or a reviewer must fill the reasoning file from the evide
 
 ```bash
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js "<paper-dir>" --strict
-node plugins/codex-paper/skills/study/scripts/validate-study-package.js "<paper-dir>" --run-code
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js "<paper-dir>"
 ```
+
+Migration validation is static. It does not authorize or execute generated code; optional execution must use the separately approved Docker sandbox flow.
 
 Before filling the draft, you may sanity-check the migration output with:
 

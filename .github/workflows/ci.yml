@@ -34,6 +34,12 @@ jobs:
       - name: Unit tests
         run: bash scripts/codex-paper.sh test
 
+      - name: Generated-code sandbox setup and conformance
+        run: |
+          bash scripts/codex-paper.sh sandbox-setup
+          bash scripts/codex-paper.sh sandbox-test
+          bash scripts/codex-paper.sh sandbox-status
+
       - name: Benchmarks
         env:
           CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS: "1"
