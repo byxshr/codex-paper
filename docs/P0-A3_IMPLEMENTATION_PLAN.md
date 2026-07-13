@@ -41,18 +41,19 @@
 - token 只证明计划完整性、时效性和单次消费，不认证人类身份；human-in-the-loop 由 skill 流程强制在展示计划后暂停并等待新的用户明确回复。
 - 新建授权时清理过期 token；容器 wrapper 的资源统计经宿主严格校验并标记为非权威数据，不用于安全 gate。
 - 执行报告使用 no-follow 预留文件和原子发布，Viewer 不新增任何执行 API。
-- active plugin 已重装为 `2.0.0+codex.20260713091303`，路径为 `plugins/codex-paper/`。
+- active plugin 已重装为 `2.0.0+codex.20260713104741`，路径为 `plugins/codex-paper/`。
 
 ## 验证结果
 
 - Repository Contract：通过，当前 tracked baseline 156 个文件。
-- Repository Guard：36/36；repository/security tests：72/72，其中 P0-A3 sandbox tests 15/15；study tests 23/23。
+- Repository Guard：36/36；repository/security tests：73/73，其中 P0-A3 sandbox tests 16/16；study tests 23/23。
 - parser 5/5、reasoning 12/12、package 11/11。
 - production build、Viewer HTTP security integration、smoke test：通过。
 - 本机实际 `sandbox-status`：`unavailable`，原因 `docker CLI is not installed`，exit `3`；plan 不签发 token，run fail closed。
 - 官方 plugin validator、Repository Contract、marketplace reinstall 和 active-path/version 检查：通过。
 - 两轮独立 Code Review 已通过且无遗留代码 finding；Round 2 结论为 merge-ready pending real-Docker CI。
 - 真实 Docker conformance 未在本机运行，按已确认方案由后续 push/PR CI 强制执行；在 CI 通过前不得将 P0-A3 标为 `Review 完成`。
+- PR #3 首次真实 Docker CI 在 JavaScript conformance fixture 失败；镜像构建与此前所有 gate 均通过。runner 已增加有界 exit/signal/OOM/stdout/stderr 诊断并修复 macOS 临时目录 realpath 测试差异，等待 CI 给出精确容器错误。
 
 ## 已知非阻塞项
 

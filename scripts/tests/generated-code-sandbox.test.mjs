@@ -262,6 +262,25 @@ test('runner rejects malformed or exit-mismatched resource measurements', async 
   } finally { item.cleanup() }
 })
 
+test('real conformance failures expose bounded container diagnostics', () => {
+  const item = fixture()
+  try {
+    const result = spawnSync(process.execPath, [RUNNER, 'test'], {
+      encoding: 'utf8',
+      env: {
+        ...item.env,
+        FAKE_DOCKER_START_STATUS: '7',
+        FAKE_DOCKER_CONTAINER_EXIT: '7',
+        FAKE_DOCKER_STDERR: 'synthetic node startup failure',
+      },
+    })
+    assert.equal(result.status, 3, result.stderr)
+    assert.match(result.stderr, /Conformance failed for code\/conformance\.js/)
+    assert.match(result.stderr, /outcome=failed exitCode=7 signal=none oomKilled=false/)
+    assert.match(result.stderr, /stderr="synthetic node startup failure"/)
+  } finally { item.cleanup() }
+})
+
 test('Docker argv enforces isolation and fixed interpreter arguments without a shell', () => {
   const args = dockerCreateArgs({
     containerName: 'codex-paper-test',

@@ -37,6 +37,7 @@ if (args[0] === 'create') {
 if (args[0] === 'start') {
   if (process.env.FAKE_DOCKER_DELAY_MS) await new Promise((resolve) => setTimeout(resolve, Number(process.env.FAKE_DOCKER_DELAY_MS)))
   if (process.env.FAKE_DOCKER_OUTPUT_LIMIT === '1') await new Promise((resolve) => process.stdout.write('x'.repeat(1_100_000), resolve))
+  if (process.env.FAKE_DOCKER_STDERR) process.stderr.write(process.env.FAKE_DOCKER_STDERR)
   await new Promise((resolve) => process.stdout.write('fake sandbox output\n', resolve))
   process.exit(Number(process.env.FAKE_DOCKER_START_STATUS || 0))
 }

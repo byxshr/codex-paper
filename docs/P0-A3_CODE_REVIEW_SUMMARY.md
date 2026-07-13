@@ -22,11 +22,11 @@ P0-A3 removes the remaining generated-code bare-host execution path and introduc
 
 ## Verification status
 
-- Local non-container verification: passed — Repository Guard 36/36, repository/security 72/72, study 23/23, parser 5/5, reasoning 12/12 and package 11/11.
+- Local non-container verification: passed — Repository Guard 36/36, repository/security 73/73, study 23/23, parser 5/5, reasoning 12/12 and package 11/11.
 - Production build, Viewer HTTP security integration and smoke test: passed.
 - Missing-Docker contract: `sandbox-status=unavailable`, exit `3`; no approval is issued and run fails closed.
 - Real Docker conformance: intentionally pending the mandatory CI gate because this Mac has no Docker/Podman/OrbStack. Review must not mark the work item complete until that gate passes.
-- Official plugin validator and reinstall: passed; active source `plugins/codex-paper/`, version `2.0.0+codex.20260713091303`.
+- Official plugin validator and reinstall: passed; active source `plugins/codex-paper/`, version `2.0.0+codex.20260713104741`.
 - Independent review rounds 1 and 2: all findings resolved, no new defects; approved pending the mandatory real-Docker CI conformance gate.
 
 ## Requested reviewer focus

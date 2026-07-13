@@ -441,6 +441,20 @@ export function normalizeResourceUsage(value, expectedExitCode) {
   }
 }
 
+export function describeConformanceFailure(result) {
+  const bounded = (value) => JSON.stringify(String(value || '').slice(0, 4096))
+  return [
+    `outcome=${result?.outcome || 'unknown'}`,
+    `exitCode=${Number.isInteger(result?.exitCode) ? result.exitCode : 'null'}`,
+    `signal=${result?.signal || 'none'}`,
+    `oomKilled=${Boolean(result?.oomKilled)}`,
+    `stdoutTruncated=${Boolean(result?.stdoutTruncated)}`,
+    `stderrTruncated=${Boolean(result?.stderrTruncated)}`,
+    `stdout=${bounded(result?.stdout)}`,
+    `stderr=${bounded(result?.stderr)}`,
+  ].join(' ')
+}
+
 function spawnCaptured(command, args, { env, timeoutMs, stdoutLimit, stderrLimit, onLimit }) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -672,7 +686,7 @@ export async function executeApprovedPlan(input, token, { env = process.env } = 
 async function runConformance({ env = process.env } = {}) {
   const capability = getSandboxCapability({ env, requireStamp: false })
   if (capability.status !== 'ready') throw new SandboxError(capability.reason || 'Sandbox image is unavailable.', EXIT.UNAVAILABLE, 'sandbox_unavailable')
-  const root = mkdtempSync(path.join(os.tmpdir(), 'codex-paper-sandbox-conformance-'))
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'codex-paper-sandbox-conformance-')))
   const codeDir = path.join(root, 'code')
   mkdirSync(codeDir)
   try {
@@ -690,12 +704,19 @@ async function runConformance({ env = process.env } = {}) {
       'print("python conformance ok")',
       '',
     ].join('\n'))
-    writeFileSync(path.join(codeDir, 'conformance.js'), 'if (process.env.HOME !== "/tmp/home" || process.env.CODEX_PAPER_SECRET_CANARY) process.exit(3); console.log("node conformance ok")\n')
+    writeFileSync(path.join(codeDir, 'conformance.js'), [
+      'const failures = []',
+      'if (process.env.HOME !== "/tmp/home") failures.push(`unexpected HOME=${JSON.stringify(process.env.HOME)}`)',
+      'if (process.env.CODEX_PAPER_SECRET_CANARY) failures.push("host secret canary reached the container")',
+      'if (failures.length) { console.error(`node conformance failed: ${failures.join("; ")}`); process.exit(3) }',
+      'console.log("node conformance ok")',
+      '',
+    ].join('\n'))
     const scan = scanCodeTree(root)
     const envWithCanary = { ...env, CODEX_PAPER_SECRET_CANARY: 'must-not-enter-container' }
     for (const artifact of scan.artifacts) {
       const result = await runArtifactDocker(scan.codeDir, artifact, { env: envWithCanary })
-      if (result.outcome !== 'success') throw new SandboxError(`Conformance failed for ${artifact.relativePath}: ${result.outcome}`, EXIT.UNAVAILABLE, 'sandbox_nonconformant')
+      if (result.outcome !== 'success') throw new SandboxError(`Conformance failed for ${artifact.relativePath}: ${describeConformanceFailure(result)}`, EXIT.UNAVAILABLE, 'sandbox_nonconformant')
     }
     writeFileSync(path.join(codeDir, 'output-limit.py'), 'import sys\nsys.stdout.write("x" * 1100000)\n')
     const outputArtifact = scanCodeTree(root).artifacts.find((item) => item.filename === 'output-limit.py')
