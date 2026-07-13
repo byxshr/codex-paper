@@ -10,7 +10,7 @@ LABEL org.opencontainers.image.title="Codex Paper generated-code sandbox" \
       io.codex-paper.sandbox.policy-hash="${CODEX_PAPER_POLICY_HASH}"
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends python3-minimal \
+    && apt-get install --yes --no-install-recommends python3 \
     && rm -rf /var/lib/apt/lists/* /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY entrypoint.py /usr/local/lib/codex-paper-sandbox/entrypoint.py

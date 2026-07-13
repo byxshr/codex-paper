@@ -335,6 +335,9 @@ export function checkRepository({
     if (!/^ARG BASE_IMAGE=[^\s]+@sha256:[a-f0-9]{64}$/m.test(dockerfile)) {
       errors.push(`${sandboxDockerfileRelative} base image must be pinned to an exact sha256 manifest digest`)
     }
+    if (/python3-minimal/.test(dockerfile) || !/apt-get install --yes --no-install-recommends python3(?:\s|\\)/.test(dockerfile)) {
+      errors.push(`${sandboxDockerfileRelative} must install the Python 3 standard library required by the trusted entrypoint and demos`)
+    }
   }
   if (existsSync(join(root, sandboxPolicyRelative))) {
     const policy = readJson(join(root, sandboxPolicyRelative), errors, sandboxPolicyRelative)

@@ -8,6 +8,7 @@
 - Added synthetic sandbox policy/authorization tests and a real Docker conformance gate in CI.
 - Incorporated P0-A3 security review feedback by documenting the workflow-only human-consent boundary, sweeping expired approvals, and validating/marking container resource measurements as non-authoritative.
 - Added bounded exit/stdout/stderr diagnostics for real Docker conformance failures and normalized temporary conformance paths across macOS/Linux.
+- Fixed the sandbox image to include the Python 3 standard library required by its trusted entrypoint, with a repository guard against minimal-only regressions.
 - Converted the Viewer to a client-only SPA with a strict self-only script CSP and an externalized Nuxt bootstrap, removing remote fonts and inline executable scripts.
 - Added one server-side active-content pipeline for Markdown, Ask answers, Notebook Markdown, static HTML previews, and paper metadata URLs.
 - Replaced executable HTML previews with explicit scriptless static previews; Notebook HTML/SVG/JavaScript outputs are shown as blocked text, and SVG files are source/download only.

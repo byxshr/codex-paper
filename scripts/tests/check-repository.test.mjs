@@ -302,6 +302,12 @@ test('sandbox policy requires digest-pinned image and fixed contract versions', 
   assert.match(errors, /policy and conformance version 1\.0\.0/)
 }))
 
+test('sandbox image includes the Python standard library required by its trusted entrypoint', () => withFixture((fixture) => {
+  const dockerfile = join(fixture.root, 'plugins/codex-paper/sandbox/Dockerfile')
+  writeFileSync(dockerfile, readFileSync(dockerfile, 'utf8').replace('python3 \\', 'python3-minimal \\'))
+  assert.match(errorsFor(fixture), /must install the Python 3 standard library/)
+}))
+
 test('sandbox runner cannot enable a shell or import exec helpers', () => withFixture((fixture) => {
   const runner = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/sandbox-code.js')
   writeFileSync(runner, "import { execFileSync } from 'node:child_process'\nspawn('tool', [], { shell: true })\n")
