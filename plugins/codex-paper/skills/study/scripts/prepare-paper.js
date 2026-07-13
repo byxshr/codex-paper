@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { execFileSync } from 'child_process';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { parsePdfDetailed } from './parse-pdf.js';
 import { buildAnalysisFromArtifacts } from './build-analysis.js';
@@ -9,7 +9,9 @@ import { buildEvidenceLedger } from './build-evidence-ledger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LIBRARY_ROOT = path.join(process.env.HOME || '', 'codex-papers');
+const require = createRequire(import.meta.url);
+const { stagePdfInput } = require('./download-pdf.cjs');
+const LIBRARY_ROOT = path.resolve(process.env.PAPERS_DIR || path.join(process.env.HOME || '', 'codex-papers'));
 const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const INDEX_PATH = path.join(LIBRARY_ROOT, 'index.json');
 const PACKAGE_VERSION = '2.0.0';
@@ -224,22 +226,14 @@ function buildFacts(paperSlug, parsed) {
   };
 }
 
-function resolveInput(input) {
-  if (/^https?:\/\//i.test(input)) {
-    const scriptPath = path.join(__dirname, 'download-pdf.cjs');
-    const output = execFileSync(process.execPath, [scriptPath, input], {
-      encoding: 'utf8'
-    }).trim();
-
-    return {
-      inputPath: output.split('\n').pop().trim(),
-      sourceUrl: input
-    };
-  }
-
+async function resolveInput(input) {
+  const staged = await stagePdfInput(input);
   return {
-    inputPath: path.resolve(input),
-    sourceUrl: null
+    inputPath: staged.path,
+    sourceUrl: /^https:\/\//i.test(input) ? input : null,
+    sourceFilename: staged.sourceFilename,
+    inputWarnings: staged.warnings || [],
+    cleanup: staged.cleanup
   };
 }
 
@@ -331,14 +325,13 @@ export async function preparePaper(userInput, options = {}) {
 
   ensureDir(PAPERS_ROOT);
 
-  const { inputPath, sourceUrl } = resolveInput(userInput);
-  if (!fs.existsSync(inputPath)) {
-    throw new Error(`PDF not found: ${inputPath}`);
-  }
-
+  const resolvedInput = await resolveInput(userInput);
+  const { inputPath, sourceUrl } = resolvedInput;
+  try {
   const detailed = await parsePdfDetailed(inputPath);
   const parsed = detailed.publicData;
-  const sourceFilename = path.basename(inputPath);
+  parsed.warnings = Array.from(new Set([...(resolvedInput.inputWarnings || []), ...(parsed.warnings || [])]));
+  const sourceFilename = resolvedInput.sourceFilename || path.basename(inputPath);
   const paperSlug = slugify(parsed.title || path.basename(inputPath, path.extname(inputPath)));
   const paperDir = path.join(PAPERS_ROOT, paperSlug);
   const today = new Date().toISOString().slice(0, 10);
@@ -453,6 +446,9 @@ export async function preparePaper(userInput, options = {}) {
     profile,
     externalEvidencePath
   };
+  } finally {
+    resolvedInput.cleanup();
+  }
 }
 
 async function runCli() {

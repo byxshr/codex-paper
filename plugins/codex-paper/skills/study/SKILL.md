@@ -83,7 +83,7 @@ Use source types precisely:
 Inputs supported:
 
 * Local PDF path, for example `~/Downloads/paper.pdf`
-* Direct PDF URL
+* Direct HTTPS PDF URL
 * arXiv `/abs/` or `/pdf/` URL
 
 Run the preparation entrypoint from the study skill directory:
@@ -103,6 +103,8 @@ The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes `~/codex
 ```
 
 Treat these JSON files as evidence preparation only. They are not final study material.
+
+PDF ingestion is fail-closed. Never replace the preparation entrypoint with `curl`, `wget`, a browser download, or direct in-process parser calls. Remote inputs must be HTTPS; the downloader revalidates every redirect, pins DNS to a public address, verifies the connected peer, enforces a 128 MiB stream budget, and requires `%PDF-` magic. Local inputs are copied through a private no-follow staging snapshot. The parser runs only through its bounded supervisor with wall/CPU/RSS/output and 2000-page limits. Encrypted, malformed, oversized, over-page, or resource-exhausting inputs fail and may be retained only in the private bounded `~/codex-papers/.quarantine/`; do not open or reuse quarantined files as trusted evidence.
 
 ## Step 2: Read Before Reasoning
 

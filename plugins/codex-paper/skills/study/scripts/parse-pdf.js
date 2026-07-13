@@ -1,15 +1,18 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import pdf from 'pdf-parse';
 import { buildSectionTree } from './build-evidence-ledger.js';
+import { PDF_SECURITY_POLICY, PdfSecurityError, copyPdfSnapshot, preflightPdfFile, quarantinePdf, validateParsedPdf } from './pdf-security.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PLUGIN_ROOT = path.resolve(__dirname, '../../..');
 const PLUGIN_MANIFEST_PATH = path.join(PLUGIN_ROOT, '.codex-plugin', 'plugin.json');
+const PARSER_LAUNCHER_PATH = path.join(__dirname, 'pdf-parser-launcher.py');
+const PARSER_WORKER_PATH = path.join(__dirname, 'pdf-parser-worker.js');
 const PARSER_VERSION = readParserVersion();
 
 function readParserVersion() {
@@ -360,6 +363,12 @@ import statistics
 import fitz
 
 doc = fitz.open(sys.argv[1])
+if doc.needs_pass:
+    print("CODEX_PAPER_ENCRYPTED", file=sys.stderr)
+    raise SystemExit(42)
+if len(doc) > ${PDF_SECURITY_POLICY.maxPages}:
+    print("CODEX_PAPER_PAGE_LIMIT", file=sys.stderr)
+    raise SystemExit(43)
 payload = {
     "metadata": doc.metadata or {},
     "pageCount": len(doc),
@@ -419,17 +428,28 @@ with open(sys.argv[2], "w", encoding="utf-8") as handle:
     json.dump(payload, handle, ensure_ascii=False)
 `;
 
-  const result = spawnSync('python3', ['-c', script, pdfPath, outputPath], {
-    encoding: 'utf8'
+  const result = spawnSync(process.env.CODEX_PAPER_PYTHON_BIN || 'python3', ['-I', '-B', '-c', script, pdfPath, outputPath], {
+    encoding: 'utf8',
+    timeout: PDF_SECURITY_POLICY.parserWallTimeMs - 5000,
+    maxBuffer: PDF_SECURITY_POLICY.parserStderrBytes
   });
 
   const warnings = collectWarnings(result.stdout, result.stderr);
 
   if (result.status !== 0) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    if (result.status === 42 || warnings.some((item) => item.includes('CODEX_PAPER_ENCRYPTED'))) {
+      throw new PdfSecurityError('Encrypted PDFs are not accepted.', 'pdf_encrypted');
+    }
+    if (result.status === 43 || warnings.some((item) => item.includes('CODEX_PAPER_PAGE_LIMIT'))) {
+      throw new PdfSecurityError(`PDF exceeds the ${PDF_SECURITY_POLICY.maxPages}-page limit.`, 'pdf_page_limit');
+    }
+    if (result.error?.code === 'ETIMEDOUT') throw new PdfSecurityError('PyMuPDF extraction timed out.', 'parser_timeout');
     throw new Error(warnings.join(' | ') || 'PyMuPDF extraction failed');
   }
 
   if (!fs.existsSync(outputPath)) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
     throw new Error('PyMuPDF extraction did not produce output');
   }
 
@@ -523,10 +543,17 @@ async function extractRawPdfData(pdfPath) {
       }
     };
   } catch (error) {
+    if (error instanceof PdfSecurityError) throw error;
     parserWarnings.push(`PyMuPDF unavailable: ${error.message}`);
   }
 
-  const { result, capturedStdout, capturedStderr } = await capturePdfParseOutput(dataBuffer);
+  let fallback;
+  try {
+    fallback = await capturePdfParseOutput(dataBuffer);
+  } catch (error) {
+    throw new PdfSecurityError(`${parserWarnings.join(' | ')}${parserWarnings.length ? ' | ' : ''}pdf-parse failed: ${error.message}`, 'pdf_parse_failed');
+  }
+  const { result, capturedStdout, capturedStderr } = fallback;
   const warnings = parserWarnings.concat(collectWarnings(capturedStdout, capturedStderr));
   const lines = safeSplitLines(result.text || '');
 
@@ -564,7 +591,10 @@ function buildOffsetTextSource(pages) {
   return pages.map((page) => typeof page === 'string' ? page : page.text || '').join('\n\n');
 }
 
-export async function parsePdfDetailed(pdfPath) {
+export async function parsePdfDetailedWorkerInternal(pdfPath, { sourceFilename } = {}) {
+  if (process.env.CODEX_PAPER_PARSER_WORKER !== '1') {
+    throw new PdfSecurityError('In-process PDF parsing is disabled; use the bounded parser supervisor.', 'parser_isolation_required');
+  }
   if (!pdfPath) {
     throw new Error('PDF path is required');
   }
@@ -580,7 +610,7 @@ export async function parsePdfDetailed(pdfPath) {
   const titleInfo = buildTitleFromBlocks(
     firstPageBlocks,
     source.metadata?.title || source.metadata?.Title,
-    buildFallbackTitle(pdfPath)
+    buildFallbackTitle(sourceFilename || pdfPath)
   );
   const authorInfo = extractAuthors(
     firstPageBlocks,
@@ -625,7 +655,7 @@ export async function parsePdfDetailed(pdfPath) {
     parserMetadata: source.parserMetadata || {}
   });
 
-  return {
+  return validateParsedPdf({
     publicData,
     rawText,
     pages: source.pages,
@@ -636,7 +666,160 @@ export async function parsePdfDetailed(pdfPath) {
       hasLayout: false,
       warnings: source.warnings || []
     }
-  };
+  });
+}
+
+function killParserGroup(child) {
+  if (!child?.pid) return;
+  try {
+    if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
+    else child.kill('SIGKILL');
+  } catch {}
+}
+
+function parserGroupRssBytes(pid) {
+  if (!pid || process.platform === 'win32') return null;
+  if (process.platform === 'linux' && fs.existsSync('/proc')) {
+    try {
+      let totalKiB = 0;
+      for (const entry of fs.readdirSync('/proc')) {
+        if (!/^\d+$/.test(entry)) continue;
+        const stat = fs.readFileSync(`/proc/${entry}/stat`, 'utf8');
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        if (Number(fields[2]) !== pid) continue;
+        const status = fs.readFileSync(`/proc/${entry}/status`, 'utf8');
+        const rss = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
+        if (rss) totalKiB += Number(rss[1]);
+      }
+      return totalKiB * 1024;
+    } catch { return null; }
+  }
+  const result = spawnSync('ps', ['-o', 'rss=', '-g', String(pid)], { encoding: 'utf8', timeout: 1000 });
+  if (result.status !== 0) return null;
+  return String(result.stdout || '').split(/\s+/).map(Number).filter(Number.isFinite).reduce((sum, value) => sum + value * 1024, 0);
+}
+
+function runBoundedParser(inputPath, outputPath, tempDir, sourceFilename) {
+  return new Promise((resolve, reject) => {
+    const python = process.env.CODEX_PAPER_PYTHON_BIN || 'python3';
+    const child = spawn(python, [
+      '-I', '-B', PARSER_LAUNCHER_PATH,
+      String(PDF_SECURITY_POLICY.parserCpuSeconds),
+      String(PDF_SECURITY_POLICY.parserOutputBytes),
+      String(PDF_SECURITY_POLICY.parserOpenFiles),
+      process.execPath,
+      '--max-old-space-size=512',
+      PARSER_WORKER_PATH,
+      inputPath,
+      outputPath,
+      sourceFilename
+    ], {
+      cwd: tempDir,
+      detached: process.platform !== 'win32',
+      env: {
+        HOME: tempDir,
+        LANG: process.env.LANG || 'C.UTF-8',
+        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+        CODEX_PAPER_PYTHON_BIN: python
+      },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const stdout = [];
+    const stderr = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let termination = null;
+    let memoryMonitorFailures = 0;
+    let settled = false;
+    const terminate = (reason) => {
+      if (termination) return;
+      termination = reason;
+      killParserGroup(child);
+    };
+    const capture = (target, chunk, kind) => {
+      const limit = kind === 'stdout' ? PDF_SECURITY_POLICY.parserStdoutBytes : PDF_SECURITY_POLICY.parserStderrBytes;
+      const current = kind === 'stdout' ? stdoutBytes : stderrBytes;
+      const remaining = Math.max(0, limit - current);
+      if (remaining) target.push(chunk.subarray(0, remaining));
+      if (kind === 'stdout') stdoutBytes += chunk.length;
+      else stderrBytes += chunk.length;
+      if (current + chunk.length > limit) terminate('parser_output_limit');
+    };
+    child.stdout.on('data', (chunk) => capture(stdout, chunk, 'stdout'));
+    child.stderr.on('data', (chunk) => capture(stderr, chunk, 'stderr'));
+    const wallTimer = setTimeout(() => terminate('parser_timeout'), PDF_SECURITY_POLICY.parserWallTimeMs);
+    const memoryTimer = setInterval(() => {
+      const rssBytes = parserGroupRssBytes(child.pid);
+      if (rssBytes === null) {
+        memoryMonitorFailures += 1;
+        if (memoryMonitorFailures >= 3) terminate('parser_memory_monitor_unavailable');
+        return;
+      }
+      memoryMonitorFailures = 0;
+      if (rssBytes > PDF_SECURITY_POLICY.parserMemoryBytes) terminate('parser_memory_limit');
+    }, 100);
+    child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(wallTimer);
+      clearInterval(memoryTimer);
+      reject(error);
+    });
+    child.on('close', (status, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(wallTimer);
+      clearInterval(memoryTimer);
+      resolve({
+        status,
+        signal,
+        termination,
+        stdout: Buffer.concat(stdout).toString('utf8'),
+        stderr: Buffer.concat(stderr).toString('utf8'),
+        stdoutTruncated: stdoutBytes > PDF_SECURITY_POLICY.parserStdoutBytes,
+        stderrTruncated: stderrBytes > PDF_SECURITY_POLICY.parserStderrBytes
+      });
+    });
+  });
+}
+
+export async function parsePdfDetailed(pdfPath) {
+  if (!pdfPath) throw new PdfSecurityError('PDF path is required.', 'pdf_path_required');
+  const absolutePath = path.resolve(pdfPath);
+  let tempDir;
+  let parserInputPath;
+  try {
+    preflightPdfFile(absolutePath);
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-parser-supervisor-'));
+    fs.chmodSync(tempDir, 0o700);
+    parserInputPath = path.join(tempDir, 'input.pdf');
+    copyPdfSnapshot(absolutePath, parserInputPath);
+    const outputPath = path.join(tempDir, `result-${path.basename(tempDir)}.json`);
+    const result = await runBoundedParser(parserInputPath, outputPath, tempDir, path.basename(absolutePath));
+    if (result.termination) throw new PdfSecurityError(`PDF parser stopped by ${result.termination}.`, result.termination);
+    if (result.status !== 0) {
+      const diagnostic = String(result.stderr || result.stdout || 'PDF parser worker failed').replace(/[\r\n]+/g, ' ').slice(0, 2048);
+      const code = diagnostic.match(/^([a-z][a-z0-9_]+):/)?.[1] || 'pdf_parse_failed';
+      throw new PdfSecurityError(`PDF parser worker failed: ${diagnostic}`, code);
+    }
+    if (!fs.existsSync(outputPath)) throw new PdfSecurityError('PDF parser produced no result.', 'parser_output_missing');
+    const outputInfo = fs.lstatSync(outputPath);
+    if (outputInfo.isSymbolicLink() || !outputInfo.isFile() || outputInfo.size > PDF_SECURITY_POLICY.parserOutputBytes) {
+      throw new PdfSecurityError('PDF parser result violates the output-file policy.', 'parser_output_limit');
+    }
+    return validateParsedPdf(JSON.parse(fs.readFileSync(outputPath, 'utf8')));
+  } catch (error) {
+    let quarantine = null;
+    try {
+      const quarantineSource = parserInputPath && fs.existsSync(parserInputPath) ? parserInputPath : absolutePath;
+      if (fs.existsSync(quarantineSource)) quarantine = quarantinePdf(quarantineSource, error);
+    } catch {}
+    const wrapped = error instanceof PdfSecurityError ? error : new PdfSecurityError(error.message || 'PDF parsing failed.', error.code || 'pdf_parse_failed');
+    if (quarantine) wrapped.quarantineId = quarantine.entryId;
+    throw wrapped;
+  } finally {
+    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 export async function parsePdf(pdfPath) {

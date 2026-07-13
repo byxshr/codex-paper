@@ -16,6 +16,12 @@ const SENTINELS = [
   'plugins/codex-paper/package-lock.json',
   'plugins/codex-paper/skills/study/SKILL.md',
   'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
+  'plugins/codex-paper/skills/study/scripts/download-pdf.cjs',
+  'plugins/codex-paper/skills/study/scripts/parse-pdf.js',
+  'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
+  'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
+  'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json',
+  'plugins/codex-paper/skills/study/scripts/prepare-paper.js',
   'plugins/codex-paper/sandbox/Dockerfile',
   'plugins/codex-paper/sandbox/policy.json',
   'plugins/codex-paper/src/web/package.json',
@@ -312,6 +318,44 @@ test('sandbox runner cannot enable a shell or import exec helpers', () => withFi
   const runner = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/sandbox-code.js')
   writeFileSync(runner, "import { execFileSync } from 'node:child_process'\nspawn('tool', [], { shell: true })\n")
   assert.match(errorsFor(fixture), /argv-array process execution without a shell/)
+}))
+
+test('PDF ingestion policy keeps HTTPS, resource budgets, and private bounded quarantine', () => withFixture((fixture) => {
+  const policyPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json')
+  const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
+  policy.httpsOnly = false
+  policy.maxInputBytes = Number.MAX_SAFE_INTEGER
+  policy.parserWallTimeMs = 0
+  policy.quarantineMaxEntries = Number.MAX_SAFE_INTEGER
+  writeFileSync(policyPath, JSON.stringify(policy))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /httpsOnly must be true/)
+  assert.match(errors, /maxInputBytes must be 134217728/)
+  assert.match(errors, /parserWallTimeMs must be 60000/)
+  assert.match(errors, /quarantineMaxEntries must be 32/)
+}))
+
+test('PDF downloader and prepare workflow cannot restore HTTP or shared staging', () => withFixture((fixture) => {
+  const downloader = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/download-pdf.cjs')
+  writeFileSync(downloader, "const http = require('http')\nconst DOWNLOAD_DIR='/tmp/codex-paper-downloads'\n")
+  const prepare = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
+  writeFileSync(prepare, "import { execFileSync } from 'node:child_process'\n")
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must not restore HTTP or shared predictable staging/)
+  assert.match(errors, /must use and clean secure PDF staging/)
+}))
+
+test('PDF parser worker and launcher cannot lose supervisor and hard-limit gates', () => withFixture((fixture) => {
+  const parser = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/parse-pdf.js')
+  writeFileSync(parser, 'export async function parsePdfDetailed() {}\n')
+  const worker = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js')
+  writeFileSync(worker, 'console.log("direct")\n')
+  const launcher = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py')
+  writeFileSync(launcher, 'import os\n')
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must preserve bounded parser control/)
+  assert.match(errors, /must remain supervisor-only and output-bounded/)
+  assert.match(errors, /must preserve hard parser resource limit/)
 }))
 
 test('modifying any frozen 2.0 schema fails', () => {

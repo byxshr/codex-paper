@@ -44,6 +44,11 @@ const SENTINELS = [
   'plugins/codex-paper/package-lock.json',
   'plugins/codex-paper/skills/study/SKILL.md',
   'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
+  'plugins/codex-paper/skills/study/scripts/download-pdf.cjs',
+  'plugins/codex-paper/skills/study/scripts/parse-pdf.js',
+  'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
+  'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
+  'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json',
   'plugins/codex-paper/sandbox/Dockerfile',
   'plugins/codex-paper/sandbox/policy.json',
   'plugins/codex-paper/src/web/package.json',
@@ -344,6 +349,59 @@ export function checkRepository({
     if (!String(policy?.baseImage || '').match(/@sha256:[a-f0-9]{64}$/)) errors.push(`${sandboxPolicyRelative} baseImage must be digest-pinned`)
     if (policy?.policyVersion !== '1.0.0' || policy?.conformanceVersion !== '1.0.0') {
       errors.push(`${sandboxPolicyRelative} must declare P0-A3 policy and conformance version 1.0.0`)
+    }
+  }
+
+  const pdfPolicyRelative = `${activePath}/skills/study/scripts/pdf-security-policy.json`
+  const downloaderRelative = `${activePath}/skills/study/scripts/download-pdf.cjs`
+  const parserRelative = `${activePath}/skills/study/scripts/parse-pdf.js`
+  const parserWorkerRelative = `${activePath}/skills/study/scripts/pdf-parser-worker.js`
+  const parserLauncherRelative = `${activePath}/skills/study/scripts/pdf-parser-launcher.py`
+  const prepareRelative = `${activePath}/skills/study/scripts/prepare-paper.js`
+  if (existsSync(join(root, pdfPolicyRelative))) {
+    const policy = readJson(join(root, pdfPolicyRelative), errors, pdfPolicyRelative)
+    const expected = {
+      policyVersion: '1.0.0', httpsOnly: true, maxInputBytes: 134217728, maxPages: 2000,
+      maxRedirects: 5, requestTimeoutMs: 30000, parserWallTimeMs: 60000,
+      parserCpuSeconds: 45, parserMemoryBytes: 1073741824, parserOutputBytes: 67108864,
+      parserStdoutBytes: 1048576, parserStderrBytes: 1048576, parserOpenFiles: 64,
+      quarantineRetentionDays: 7, quarantineMaxEntries: 32, quarantineMaxBytes: 536870912,
+    }
+    for (const [field, value] of Object.entries(expected)) {
+      if (policy?.[field] !== value) errors.push(`${pdfPolicyRelative} ${field} must be ${JSON.stringify(value)}`)
+    }
+  }
+  if (existsSync(join(root, downloaderRelative))) {
+    const source = readFileSync(join(root, downloaderRelative), 'utf8')
+    for (const required of ['https.request', 'resolveSafeTarget', 'remoteAddress', 'O_EXCL', 'O_NOFOLLOW', '%PDF-']) {
+      if (!source.includes(required)) errors.push(`${downloaderRelative} must preserve secure download boundary ${required}`)
+    }
+    if (/require\(['"](?:node:)?http['"]\)|codex-paper-downloads|url\.startsWith\(['"]http/.test(source)) {
+      errors.push(`${downloaderRelative} must not restore HTTP or shared predictable staging`)
+    }
+  }
+  if (existsSync(join(root, parserRelative))) {
+    const source = readFileSync(join(root, parserRelative), 'utf8')
+    for (const required of ['parserWallTimeMs', 'parserMemoryBytes', 'killParserGroup', 'copyPdfSnapshot', 'preflightPdfFile', 'quarantinePdf']) {
+      if (!source.includes(required)) errors.push(`${parserRelative} must preserve bounded parser control ${required}`)
+    }
+  }
+  if (existsSync(join(root, parserWorkerRelative))) {
+    const source = readFileSync(join(root, parserWorkerRelative), 'utf8')
+    if (!source.includes('CODEX_PAPER_PARSER_WORKER') || !source.includes('parserOutputBytes')) {
+      errors.push(`${parserWorkerRelative} must remain supervisor-only and output-bounded`)
+    }
+  }
+  if (existsSync(join(root, parserLauncherRelative))) {
+    const source = readFileSync(join(root, parserLauncherRelative), 'utf8')
+    for (const required of ['RLIMIT_CPU', 'RLIMIT_FSIZE', 'RLIMIT_NOFILE', 'os.execve']) {
+      if (!source.includes(required)) errors.push(`${parserLauncherRelative} must preserve hard parser resource limit ${required}`)
+    }
+  }
+  if (existsSync(join(root, prepareRelative))) {
+    const source = readFileSync(join(root, prepareRelative), 'utf8')
+    if (!source.includes('stagePdfInput') || !source.includes('resolvedInput.cleanup()') || /execFileSync/.test(source)) {
+      errors.push(`${prepareRelative} must use and clean secure PDF staging without a downloader subprocess`)
     }
   }
 

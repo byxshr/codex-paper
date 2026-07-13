@@ -39,7 +39,7 @@ Before generating a summary:
 
 Supports multiple input formats:
 - **Local path**: `~/Downloads/paper.pdf`
-- **Direct PDF URL**: `https://arxiv.org/pdf/1706.03762.pdf`
+- **Direct HTTPS PDF URL**: `https://arxiv.org/pdf/1706.03762.pdf`
 - **arXiv URL**: `https://arxiv.org/abs/1706.03762`
 
 Use the shared preparation entrypoint:
@@ -48,6 +48,8 @@ Use the shared preparation entrypoint:
 USER_INPUT="<user-input>"
 node ../study/scripts/prepare-paper.js "$USER_INPUT"
 ```
+
+Do not bypass this entrypoint with `curl`, `wget`, browser downloads, or in-process parsing. It enforces HTTPS redirect/SSRF checks, DNS pinning, bounded private staging, PDF magic, parser resource/page limits, and private quarantine for rejected inputs.
 
 The preparation step now writes `analysis.json` automatically. If it is missing or needs a refresh, rebuild it explicitly:
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Harden P0-A4 PDF ingestion after independent review: reject deprecated IPv4-compatible IPv6 destinations and ensure synchronous staging write failures are rejected through the normal private-temp cleanup path.
+- Replaced the shared predictable PDF downloader with HTTPS-only, per-redirect SSRF validation, DNS-pinned/peer-verified connections, 128 MiB streaming limits, `%PDF-` verification, and private random staging.
+- Moved production PDF parsing behind a bounded process-group supervisor with wall/CPU/RSS/output/file/page budgets and fail-closed encrypted/malformed handling.
+- Added a private 7-day, 32-entry/512 MiB PDF quarantine plus deterministic downloader/parser security tests, Repository Guard rules, and a CI gate.
 - Removed generated-code execution from package validation and the default paper-study workflow; legacy `--run-code`/`--run-artifacts` flags now fail closed.
 - Added a digest-pinned Docker sandbox with capability/conformance gating, no network, read-only source, scrubbed credentials, bounded resources, and no host-execution fallback.
 - Added code-hash-bound five-minute single-use approvals and persistent structured execution reports for explicitly requested demo runs.

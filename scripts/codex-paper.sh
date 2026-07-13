@@ -208,7 +208,7 @@ print(pdf_path)
 PY
 
   print_section "Parse PDF"
-  "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/parse-pdf.js" "$smoke_pdf"
+  PAPERS_DIR="$smoke_library" "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/parse-pdf.js" "$smoke_pdf"
 
   print_section "Extract Images"
   "$PYTHON_BIN" "$PLUGIN_ROOT/skills/study/scripts/extract-images.py" "$smoke_pdf" "$smoke_outdir"
@@ -250,6 +250,14 @@ cmd_security_test() {
   fi
   print_section "Viewer HTTP Security"
   "$NODE_BIN" "$REPO_ROOT/scripts/tests/viewer-security.integration.mjs"
+}
+
+cmd_pdf_security_test() {
+  ensure_node
+  ensure_python
+  ensure_pymupdf
+  print_section "PDF Ingestion Security"
+  "$NODE_BIN" --test "$REPO_ROOT/scripts/tests/pdf-ingestion-security.test.mjs"
 }
 
 cmd_sandbox_status() {
@@ -300,6 +308,7 @@ Commands:
   benchmark-report  Print the latest benchmark report
   smoke-test   Run an end-to-end local smoke test
   security-test Run the real HTTP Viewer security integration test
+  pdf-security-test Run downloader, parser-limit, and quarantine security tests
   sandbox-status Show whether the Docker sandbox is ready, unavailable, or nonconformant
   sandbox-setup Build the pinned sandbox image and run conformance tests
   sandbox-test Re-run real Docker sandbox conformance tests
@@ -357,6 +366,9 @@ case "$command_name" in
     ;;
   security-test)
     cmd_security_test
+    ;;
+  pdf-security-test)
+    cmd_pdf_security_test
     ;;
   sandbox-status)
     shift

@@ -32,6 +32,7 @@ Codex Paper 是一个 Codex 插件，可以把研究论文转化为可复用的�
 ## 功能特性
 
 - **自动 PDF 解析** - 使用分层解析器提取标题、作者、摘要、章节和代码链接
+- **有界 PDF 摄取** - HTTPS-only 下载、逐跳 SSRF 校验、DNS pin、128 MiB 流式上限、隔离解析、页数/资源预算和私有有界 quarantine
 - **长论文处理** - 解析大型论文时记录质量标记，并在抽取不完整时保守降级
 - **代码仓库检测** - 自动发现 GitHub、arXiv、CodeOcean 链接
 - **Evidence-first 论文准备** - 先生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`
@@ -145,6 +146,8 @@ enabled = true
 # arXiv 摘要链接（自动转换为 PDF）
 请使用 $paper-study 阅读 https://arxiv.org/abs/1706.03762 这篇论文
 ```
+
+远程论文输入必须使用 HTTPS。初始请求和每次重定向都会拒绝 private、loopback、link-local、metadata、reserved、ULA 和 IPv4-mapped 地址，并固定连接到已验证 IP。系统以 `%PDF-` 签名和受限 parser 成功为硬条件；`.pdf` 后缀和 `Content-Type` 只作为辅助信号。
 
 如果只需要快速摘要：
 
@@ -383,6 +386,9 @@ bash scripts/codex-paper.sh benchmark-report
 ```bash
 # 测试 PDF 解析
 node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
+
+# 测试 HTTPS downloader、parser 预算和私有 quarantine
+bash scripts/codex-paper.sh pdf-security-test
 
 # 先准备论文数据、facts.json 和 evidence-ledger.json
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf

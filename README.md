@@ -32,6 +32,7 @@ Codex Paper is a Codex plugin that turns research papers into local study worksp
 ## Features
 
 - **Automatic PDF parsing** - Extract title, authors, abstract, sections, and code links with a layered parser
+- **Bounded PDF ingestion** - HTTPS-only URL fetching with redirect SSRF checks, DNS pinning, 128 MiB streaming limits, isolated parsing, page/resource budgets, and private bounded quarantine
 - **Long-paper handling** - Parses large papers with quality flags and graceful fallbacks when extraction is incomplete
 - **Code repository detection** - Automatically finds GitHub, arXiv, CodeOcean links
 - **Evidence-first paper prep** - Generates internal evidence files such as `paper-data.json`, `facts.json`, and `analysis.json`
@@ -145,6 +146,8 @@ Use $paper-study to read https://arxiv.org/pdf/1706.03762.pdf
 # arXiv abstract URL (automatically converted to PDF)
 Use $paper-study to read https://arxiv.org/abs/1706.03762
 ```
+
+Remote paper inputs must use HTTPS. Every redirect is revalidated against private, loopback, link-local, metadata, reserved, ULA, and IPv4-mapped address ranges. A valid `%PDF-` signature and successful bounded parse are required; `.pdf` suffix and `Content-Type` are advisory only.
 
 For a quick summary only:
 
@@ -383,6 +386,9 @@ This keeps the local workflow in one place while `scripts/common.sh` stays inter
 ```bash
 # Test PDF parsing
 node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
+
+# Test HTTPS downloader, parser budgets, and private quarantine
+bash scripts/codex-paper.sh pdf-security-test
 
 # Prepare a paper into paper-data.json, facts.json, and evidence-ledger.json
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf

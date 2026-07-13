@@ -34,6 +34,9 @@ jobs:
       - name: Unit tests
         run: bash scripts/codex-paper.sh test
 
+      - name: PDF ingestion security
+        run: bash scripts/codex-paper.sh pdf-security-test
+
       - name: Generated-code sandbox setup and conformance
         run: |
           bash scripts/codex-paper.sh sandbox-setup
