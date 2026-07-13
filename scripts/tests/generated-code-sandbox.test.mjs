@@ -11,6 +11,7 @@ import {
   buildExecutionPlan,
   dockerCreateArgs,
   executeApprovedPlan,
+  fileSizeLimitActivated,
   getSandboxCapability,
   runArtifactDocker,
   sandboxPolicyFingerprint,
@@ -279,6 +280,13 @@ test('real conformance failures expose bounded container diagnostics', () => {
     assert.match(result.stderr, /outcome=failed exitCode=7 signal=none oomKilled=false/)
     assert.match(result.stderr, /stderr="synthetic node startup failure"/)
   } finally { item.cleanup() }
+})
+
+test('file-size conformance accepts Linux SIGXFSZ and caught write errors only', () => {
+  assert.equal(fileSizeLimitActivated({ outcome: 'success', stdout: 'file limit activated\n' }), true)
+  assert.equal(fileSizeLimitActivated({ outcome: 'failed', exitCode: 153, resourceUsage: { status: -25 } }), true)
+  assert.equal(fileSizeLimitActivated({ outcome: 'failed', exitCode: 153, resourceUsage: null }), false)
+  assert.equal(fileSizeLimitActivated({ outcome: 'failed', exitCode: 137, resourceUsage: { status: -9 } }), false)
 })
 
 test('Docker argv enforces isolation and fixed interpreter arguments without a shell', () => {

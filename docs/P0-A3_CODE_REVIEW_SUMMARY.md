@@ -22,12 +22,12 @@ P0-A3 removes the remaining generated-code bare-host execution path and introduc
 
 ## Verification status
 
-- Local non-container verification: passed — Repository Guard 37/37, repository/security 74/74, study 23/23, parser 5/5, reasoning 12/12 and package 11/11.
+- Local non-container verification: passed — Repository Guard 37/37, repository/security 75/75, study 23/23, parser 5/5, reasoning 12/12 and package 11/11.
 - Production build, Viewer HTTP security integration and smoke test: passed.
 - Missing-Docker contract: `sandbox-status=unavailable`, exit `3`; no approval is issued and run fails closed.
 - Real Docker conformance: intentionally pending the mandatory CI gate because this Mac has no Docker/Podman/OrbStack. Review must not mark the work item complete until that gate passes.
-- Official plugin validator and reinstall: passed; active source `plugins/codex-paper/`, version `2.0.0+codex.20260713105027`.
-- Real-Docker follow-up: diagnostics identified a minimal-only Python image missing `json`; the image now installs the standard library and a Repository Guard locks this requirement pending final CI verification.
+- Official plugin validator and reinstall: passed; active source `plugins/codex-paper/`, version `2.0.0+codex.20260713105405`.
+- Real-Docker follow-up: diagnostics identified a minimal-only Python image missing `json`; after that fix, CI verified that Linux signals a file-size violation with `SIGXFSZ`. Conformance now accepts only the matching exit `153` plus trusted resource status `-25`, pending full CI completion.
 - Independent review rounds 1 and 2: all findings resolved, no new defects; approved pending the mandatory real-Docker CI conformance gate.
 
 ## Requested reviewer focus

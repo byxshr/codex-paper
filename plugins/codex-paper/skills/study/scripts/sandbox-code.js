@@ -455,6 +455,16 @@ export function describeConformanceFailure(result) {
   ].join(' ')
 }
 
+export function fileSizeLimitActivated(result) {
+  if (result?.outcome === 'success' && result.stdout?.includes('file limit activated')) return true
+  // Linux delivers SIGXFSZ (signal 25) when an artifact exceeds RLIMIT_FSIZE.
+  // The trusted entrypoint preserves the child's negative signal status in its
+  // resource report and exits with the conventional 128 + signal code.
+  return result?.outcome === 'failed'
+    && result.exitCode === 153
+    && result.resourceUsage?.status === -25
+}
+
 function spawnCaptured(command, args, { env, timeoutMs, stdoutLimit, stderrLimit, onLimit }) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -740,7 +750,9 @@ async function runConformance({ env = process.env } = {}) {
     ].join('\n'))
     const fileArtifact = scanCodeTree(root).artifacts.find((item) => item.filename === 'file-limit.py')
     const fileResult = await runArtifactDocker(codeDir, fileArtifact, { env: envWithCanary })
-    if (fileResult.outcome !== 'success' || !fileResult.stdout.includes('file limit activated')) throw new SandboxError('Conformance file-size limit did not activate.', EXIT.UNAVAILABLE, 'sandbox_nonconformant')
+    if (!fileSizeLimitActivated(fileResult)) {
+      throw new SandboxError(`Conformance file-size limit did not activate: ${describeConformanceFailure(fileResult)}`, EXIT.UNAVAILABLE, 'sandbox_nonconformant')
+    }
 
     writeFileSync(path.join(codeDir, 'pid-limit.py'), [
       'import subprocess, sys',
