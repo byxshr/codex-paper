@@ -520,7 +520,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 
 ### M0：关闭安全基线并完成 Sprint 0 退出条件
 
-- 推送已经 Review 完成的 P0-A4 阶段 commit，并以远端 CI 复验 Repository Contract、PDF ingestion、sandbox、benchmarks、build、Viewer security 和 smoke gates；
+- 已完成：P0-A4 阶段 commit 已推送，并由 [CI run 29251157289](https://github.com/byxshr/codex-paper/actions/runs/29251157289) 复验 Repository Contract、PDF ingestion、sandbox、benchmarks、build、Viewer security 和 smoke gates；
 - 实施 P0-B1：在 `benchmarks/fixtures/pdf/` 提交许可明确的小型 synthetic fixtures、manifest、generator 和失败优先的 golden assertions；
 - mandatory parser fixture 必须通过受限 parser supervisor 实际运行，all-skip 或 executed=0 必须失败；
 - 真实 model-in-loop 继续作为 nightly/人工评测，不冒充 deterministic PR gate。
@@ -648,7 +648,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | `P0-A1` | P0 | 本地服务、危险写操作与路径边界 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A1_IMPLEMENTATION_PLAN.md`；`docs/P0-A1_CODE_REVIEW_SUMMARY.md`；`docs/P0-A1_CODE_REVIEW_RESULT.md`；`docs/P0-A1_CODE_REVIEW_ROUND2.md`；`docs/local-viewer-security.md` | 两轮独立安全 Review 最终 Approve、无遗留 findings；guard/security 43/43、study 23/23、parser 5/5、reasoning 12/12、package 10/10、build/smoke/HTTP integration/Browser QA/plugin validator 通过；active path `plugins/codex-paper/`；版本 `2.0.0+codex.20260711152652` | 开始 `P0-A2` Web 主动内容隔离 | 2026-07-13 |
 | `P0-A2` | P0 | Web 主动内容隔离 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A2_IMPLEMENTATION_PLAN.md`；`docs/P0-A2_CODE_REVIEW_SUMMARY.md`；`docs/P0-A2_CODE_REVIEW_RESULT.md`；`docs/P0-A2_CODE_REVIEW_RESULT_ROUND2.md`；`docs/web-active-content-security.md` | 两轮独立 Review 均通过、无阻断项；L1/L2 整改复核有效；repository/security 52/52、study 23/23、parser 5/5、reasoning 12/12、package 10/10、build/security/官方 validator 通过；active path `plugins/codex-paper/`；版本 `2.0.0+codex.20260712051635` | 开始 `P0-A3` 生成代码执行策略与 sandbox | 2026-07-13 |
 | `P0-A3` | P0 | 生成代码执行策略与 sandbox | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A3_IMPLEMENTATION_PLAN.md`；`docs/P0-A3_CODE_REVIEW_SUMMARY.md`；`docs/P0-A3_CODE_REVIEW_FINDINGS.md`；`docs/P0-A3_CODE_REVIEW_FINDINGS_ROUND2.md`；`docs/generated-code-sandbox-security.md` | 两轮独立 Review 已通过；真实 Docker 诊断确认 minimal-only Python 缺少 entrypoint 所需标准库，且文件边界由 `SIGXFSZ` 或 64 MiB `/tmp` 的 `ENOSPC` 强制执行；已改用完整 `python3`、加入防回退 Guard，并修正 synthetic 探针清理与 signal/status 严格匹配；Guard 37/37、repository/security 75/75、study 23/23、parser 5/5、reasoning 12/12、package 11/11、官方 validator 与 [CI run 29244582383](https://github.com/byxshr/codex-paper/actions/runs/29244582383) 全部通过；active 版本 `2.0.0+codex.20260713105712` | 开始 `P0-A4` 下载器与 PDF parser 隔离/限额 | 2026-07-13 |
-| `P0-A4` | P0 | 下载器与 PDF parser 隔离/限额 | `Review 完成` | `未推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A4_IMPLEMENTATION_PLAN.md`；`docs/P0-A4_CODE_REVIEW_SUMMARY.md`；`docs/P0-A4_CODE_REVIEW_RESULT.md`；`docs/P0-A4_CODE_REVIEW_RESULT_ROUND2.md`；`docs/pdf-ingestion-security.md` | 两轮独立 Review 均通过且无遗留 findings；首轮采纳 F1/F2，补齐 IPv4-compatible IPv6 拒绝和同步写盘失败清理，F3 总响应时限按 fail-closed 设计保留；第二轮复现 PDF security 12/12、Guard tests 40/40 和 repository contract；repository/security 90/90、study 23/23、parser 5/5、reasoning 12/12、package 11/11、build/HTTP security/smoke/官方 validator 通过；active 版本 `2.0.0+codex.20260713121349` | 推送 P0-A4 阶段 commit 并通过远端 CI；随后实施 `P0-B1` | 2026-07-13 |
+| `P0-A4` | P0 | 下载器与 PDF parser 隔离/限额 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A4_IMPLEMENTATION_PLAN.md`；`docs/P0-A4_CODE_REVIEW_SUMMARY.md`；`docs/P0-A4_CODE_REVIEW_RESULT.md`；`docs/P0-A4_CODE_REVIEW_RESULT_ROUND2.md`；`docs/pdf-ingestion-security.md` | 两轮独立 Review 均通过且无遗留 findings；首轮采纳 F1/F2，补齐 IPv4-compatible IPv6 拒绝和同步写盘失败清理，F3 总响应时限按 fail-closed 设计保留；第二轮复现 PDF security 12/12、Guard tests 40/40 和 repository contract；repository/security 90/90、study 23/23、parser 5/5、reasoning 12/12、package 11/11、build/HTTP security/smoke/官方 validator 通过；[CI run 29251157289](https://github.com/byxshr/codex-paper/actions/runs/29251157289) 远端全绿；active 版本 `2.0.0+codex.20260713121349` | 实施 `P0-B1` 不可跳过的确定性回归与验收契约 | 2026-07-13 |
 | `P0-B1` | P0 | 不可跳过的确定性回归与验收契约 | `未开始` | `未推送` | — | — | 在 `benchmarks/fixtures/pdf/` 提交有许可 manifest 的小型 synthetic fixtures，经受限 parser 执行并令 all-skip 失败 | 2026-07-13 |
 | `P0-B2` | P0 | Typed ResultClaim、噪声过滤与直接证据引用 | `未开始` | `未推送` | — | — | 实现已冻结的 2.1 `resultClaims`/直接 refs、`keyResults` projection、旧 refs reader 和确定性噪声规则 | 2026-07-13 |
 | `P0-B3` | P0 | 跨工件一致性门禁与三态健康状态 | `未开始` | `未推送` | — | — | 将现有 validation report 原位升级到 1.0，实现 scope、findings、`publishable` 与 `pass/pass_with_warnings/fail` | 2026-07-13 |
@@ -679,7 +679,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 
 | 交付状态 | 未推送 | 已推送 | 已合并 | 合计 |
 |---|---:|---:|---:|---:|
-| 工作包数量 | 18 | 4 | 0 | 22 |
+| 工作包数量 | 17 | 5 | 0 | 22 |
 
 完成率按 `Review 完成` 的开发项计数；交付状态通过上表单独统计，不计入开发完成率。前置项单独统计，不混入 P0 产品风险完成率。
 
@@ -716,3 +716,4 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 2026-07-13 | `P0-A4` | `开发完成 / 未推送` → `Review 完成 / 未推送` | 独立 Review 结论可交付且无阻塞项；采纳 F1/F2，拒绝 IPv4-compatible IPv6 并让同步写盘异常进入受控清理；F3 总响应时限按防无限滴流的 fail-closed 策略保留；repository/security 90/90、PDF security 12/12，重装版本 `2.0.0+codex.20260713121349` | Codex |
 | 2026-07-13 | `P0-A4` | 状态保持 `Review 完成 / 未推送` | 第二轮独立 Review 复现首轮两项修复和 Repository Guard，确认无新增阻塞或非阻塞 findings，建议直接交付且无遗留跟进项 | Codex |
 | 2026-07-13 | 剩余计划 | 状态不变，实施顺序重基线 | 保留 P0-B1→B2→B3→C1→C2 主线；将当前阶段改为 M0～M4 退出条件，按 S0 冻结契约收敛 B2/B3，明确 B3/C2 发布边界，删除 P1-5/P1-7 已完成范围，并拆分 P1-3a 依赖治理与 P1-3b 仓库工程化 | Codex |
+| 2026-07-13 | `P0-A4` | 交付状态 `未推送` → `已推送` | 阶段 commit `2f4376f` 与路线重基线 commit `9ccf213` 已推送；[CI run 29251157289](https://github.com/byxshr/codex-paper/actions/runs/29251157289) 的 Repository Contract、unit、PDF ingestion、Docker sandbox conformance、benchmarks、production build、Viewer security 和 smoke 全部通过 | Codex |
