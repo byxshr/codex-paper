@@ -30,6 +30,20 @@ const SENTINELS = [
   'docs/contracts/s0-contract-baseline.json',
   'README.md',
   'README.zh-CN.md',
+  '.github/workflows/ci.yml',
+  'scripts/codex-paper.sh',
+  'benchmarks/run-mandatory-benchmark.mjs',
+  'benchmarks/mandatory/run-fixture.mjs',
+  'benchmarks/mandatory/contract.mjs',
+  'benchmarks/mandatory/authoring-boundary.mjs',
+  'benchmarks/mandatory/manifest.json',
+  'benchmarks/mandatory/gold/front-matter-noise.json',
+  'benchmarks/mandatory/gold/result-conflict.json',
+  'benchmarks/fixtures/generate-pdf-fixtures.py',
+  'benchmarks/fixtures/pdf/front-matter-noise.pdf',
+  'benchmarks/fixtures/pdf/front-matter-noise.pdf.manifest.json',
+  'benchmarks/fixtures/pdf/result-conflict.pdf',
+  'benchmarks/fixtures/pdf/result-conflict.pdf.manifest.json',
 ]
 
 function write(root, path, content = '') {
@@ -263,6 +277,54 @@ test('tracked PDFs are restricted to licensed, hashed fixture sidecars', () => w
   assert.match(errors, /field id must be a non-empty string/)
   assert.match(errors, /field license must be a non-empty string/)
   assert.match(errors, /kind must be "pdf"/)
+}))
+
+test('mandatory regression manifest cannot be empty or contain duplicate fixture ids', () => withFixture((fixture) => {
+  const manifestPath = join(fixture.root, 'benchmarks/mandatory/manifest.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  manifest.fixtures = []
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  assert.match(errorsFor(fixture), /must declare at least one fixture/)
+
+  manifest.fixtures = [
+    { id: 'front-matter-noise', pdf: 'benchmarks/fixtures/pdf/front-matter-noise.pdf', licenseManifest: 'benchmarks/fixtures/pdf/front-matter-noise.pdf.manifest.json', gold: 'benchmarks/mandatory/gold/front-matter-noise.json' },
+    { id: 'front-matter-noise', pdf: 'benchmarks/fixtures/pdf/front-matter-noise.pdf', licenseManifest: 'benchmarks/fixtures/pdf/front-matter-noise.pdf.manifest.json', gold: 'benchmarks/mandatory/gold/front-matter-noise.json' },
+  ]
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  assert.match(errorsFor(fixture), /duplicate fixture id: front-matter-noise/)
+}))
+
+test('mandatory regression fails for missing gold, changed PDF hash, and wrong generator', () => withFixture((fixture) => {
+  rmSync(join(fixture.root, 'benchmarks/mandatory/gold/front-matter-noise.json'))
+  writeFileSync(join(fixture.root, 'benchmarks/fixtures/pdf/result-conflict.pdf'), 'changed fixture')
+  const licensePath = join(fixture.root, 'benchmarks/fixtures/pdf/result-conflict.pdf.manifest.json')
+  const license = JSON.parse(readFileSync(licensePath, 'utf8'))
+  license.generator = 'tests/not-the-canonical-generator'
+  writeFileSync(licensePath, JSON.stringify(license))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /fixture front-matter-noise gold is missing/)
+  assert.match(errors, /fixture result-conflict generator mismatch/)
+  assert.match(errors, /fixture result-conflict sha256 mismatch/)
+}))
+
+test('tracked mandatory manifest cannot reference an untracked fixture file', () => withFixture((fixture) => {
+  fixture.trackedFiles = fixture.trackedFiles.filter((path) => path !== 'benchmarks/mandatory/gold/front-matter-noise.json')
+  assert.match(errorsFor(fixture), /fixture front-matter-noise gold must be tracked/)
+}))
+
+test('mandatory worker cannot bypass prepare or honor the optional skip flag', () => withFixture((fixture) => {
+  const workerPath = join(fixture.root, 'benchmarks/mandatory/run-fixture.mjs')
+  writeFileSync(workerPath, 'import { parsePdfDetailedWorkerInternal } from "pdf-parser-worker";\nconst flag = process.env.CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS;\n')
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must enter the bounded pipeline through preparePaper/)
+  assert.match(errors, /must not bypass the parser supervisor or honor the optional skip flag/)
+}))
+
+test('CI cannot remove or reorder the mandatory regression gate', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  const workflow = readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh benchmark-mandatory', 'true')
+  writeFileSync(workflowPath, workflow)
+  assert.match(errorsFor(fixture), /must run benchmark-mandatory before the optional external corpus/)
 }))
 
 test('README layout cannot present the legacy tree as active', () => withFixture((fixture) => {

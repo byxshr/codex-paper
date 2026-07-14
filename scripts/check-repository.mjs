@@ -14,6 +14,22 @@ const ORIGINAL_PLUGIN = 'plugins/codex-paper/.codex-plugin/original-plugin.json'
 const BASELINE_PATH = 'docs/contracts/s0-contract-baseline.json'
 const EXPECTED_BASELINE_SHA256 = '85bb06acf0f22d7b979605d524717d45ac1f7097de8bf129b7d749eeb889a142'
 const FIXTURE_PDF_ROOT = 'benchmarks/fixtures/pdf/'
+const MANDATORY_MANIFEST = 'benchmarks/mandatory/manifest.json'
+const MANDATORY_RUNNER = 'benchmarks/run-mandatory-benchmark.mjs'
+const MANDATORY_WORKER = 'benchmarks/mandatory/run-fixture.mjs'
+const FIXTURE_GENERATOR = 'benchmarks/fixtures/generate-pdf-fixtures.py'
+const CI_WORKFLOW = '.github/workflows/ci.yml'
+const ROOT_SCRIPT = 'scripts/codex-paper.sh'
+const MANDATORY_SENTINELS = [
+  MANDATORY_MANIFEST,
+  MANDATORY_RUNNER,
+  MANDATORY_WORKER,
+  'benchmarks/mandatory/contract.mjs',
+  'benchmarks/mandatory/authoring-boundary.mjs',
+  FIXTURE_GENERATOR,
+  CI_WORKFLOW,
+  ROOT_SCRIPT,
+]
 const EXPECTED_DEFAULT_PROMPT_COUNT = 3
 const EXPECTED_ACTIVE_PLUGIN = Object.freeze({
   name: 'codex-paper',
@@ -126,6 +142,14 @@ function generatedArtifactReason(path) {
   return null
 }
 
+function isSafeRepositoryRelativePath(path) {
+  return typeof path === 'string'
+    && path.length > 0
+    && !path.startsWith('/')
+    && !path.includes('\\')
+    && path.split('/').every((segment) => segment && segment !== '.' && segment !== '..')
+}
+
 function isExecutableOrConfig(repoRoot, path) {
   if (path === 'scripts/check-repository.mjs' || path.startsWith('scripts/tests/')) return false
   if (LOCKFILE_NAMES.has(basename(path))) return false
@@ -167,6 +191,11 @@ export function checkRepository({
   for (const sentinel of SENTINELS) {
     if (!existsSync(join(root, sentinel))) errors.push(`active plugin sentinel is missing: ${sentinel}`)
     else if (isSymlink(join(root, sentinel))) errors.push(`active plugin sentinel must not be a symlink: ${sentinel}`)
+  }
+  for (const sentinel of MANDATORY_SENTINELS) {
+    if (!existsSync(join(root, sentinel))) errors.push(`mandatory regression sentinel is missing: ${sentinel}`)
+    else if (isSymlink(join(root, sentinel))) errors.push(`mandatory regression sentinel must not be a symlink: ${sentinel}`)
+    if (trackedSet.has(MANDATORY_MANIFEST) && !trackedSet.has(sentinel)) errors.push(`mandatory regression sentinel must be tracked: ${sentinel}`)
   }
 
   const pluginManifests = tracked.filter((path) => path === '.codex-plugin/plugin.json' || path.endsWith('/.codex-plugin/plugin.json'))
@@ -279,6 +308,80 @@ export function checkRepository({
     const actualPdfHash = sha256(absolutePdfPath)
     if (fixtureManifest?.sha256 !== actualPdfHash) {
       errors.push(`fixture manifest ${manifestPath} sha256 mismatch: expected ${actualPdfHash}, found ${fixtureManifest?.sha256}`)
+    }
+  }
+
+  if (existsSync(join(root, MANDATORY_MANIFEST))) {
+    const mandatory = readJson(join(root, MANDATORY_MANIFEST), errors, MANDATORY_MANIFEST)
+    const fixtures = mandatory?.fixtures
+    if (mandatory?.schemaVersion !== '1.0.0') errors.push(`${MANDATORY_MANIFEST} schemaVersion must be 1.0.0`)
+    if (!Array.isArray(fixtures) || fixtures.length === 0) {
+      errors.push(`${MANDATORY_MANIFEST} must declare at least one fixture`)
+    } else {
+      const fixtureIds = new Set()
+      for (const fixture of fixtures) {
+        const fixtureId = fixture?.id
+        if (typeof fixtureId !== 'string' || !fixtureId) {
+          errors.push(`${MANDATORY_MANIFEST} fixture id must be a non-empty string`)
+          continue
+        }
+        if (fixtureIds.has(fixtureId)) errors.push(`${MANDATORY_MANIFEST} has duplicate fixture id: ${fixtureId}`)
+        fixtureIds.add(fixtureId)
+        for (const field of ['pdf', 'licenseManifest', 'gold']) {
+          const relativePath = fixture[field]
+          if (!isSafeRepositoryRelativePath(relativePath)) {
+            errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} has unsafe ${field} path`)
+            continue
+          }
+          const absolutePath = join(root, relativePath)
+          if (!existsSync(absolutePath)) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} ${field} is missing: ${relativePath}`)
+          else if (isSymlink(absolutePath)) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} ${field} must not be a symlink: ${relativePath}`)
+          if (trackedSet.has(MANDATORY_MANIFEST) && !trackedSet.has(relativePath)) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} ${field} must be tracked: ${relativePath}`)
+        }
+        if (![fixture.pdf, fixture.licenseManifest, fixture.gold].every((value) => isSafeRepositoryRelativePath(value) && existsSync(join(root, value)))) continue
+        if (fixture.pdf !== `${FIXTURE_PDF_ROOT}${fixtureId}.pdf`) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} PDF path must match its id`)
+        if (fixture.licenseManifest !== `${fixture.pdf}.manifest.json`) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} license manifest must be adjacent to its PDF`)
+        const license = readJson(join(root, fixture.licenseManifest), errors, fixture.licenseManifest)
+        const gold = readJson(join(root, fixture.gold), errors, fixture.gold)
+        if (license?.id !== fixtureId || license?.origin !== 'original-synthetic' || license?.redistributable !== true) {
+          errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must use its original-synthetic redistributable license manifest`)
+        }
+        const expectedGenerator = `python3 ${FIXTURE_GENERATOR} --fixture ${fixtureId}`
+        if (license?.generator !== expectedGenerator) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} generator mismatch`)
+        if (license?.sha256 !== sha256(join(root, fixture.pdf))) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} sha256 mismatch`)
+        if (gold?.schemaVersion !== '1.0.0' || gold?.fixtureId !== fixtureId) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold identity mismatch`)
+        if (!gold?.requiredAssertions || !gold?.authoring) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold must define requiredAssertions and authoring`)
+        if (!Array.isArray(gold?.expectedFindings) || gold.expectedFindings.length === 0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} expectedFindings must be non-empty`)
+        if (!gold?.reservedTargets?.resultClaims2_1 || !gold?.reservedTargets?.validationReport1_0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must reserve B2 and B3 targets`)
+      }
+    }
+  }
+
+  if (existsSync(join(root, MANDATORY_WORKER))) {
+    const worker = readFileSync(join(root, MANDATORY_WORKER), 'utf8')
+    if (!worker.includes('preparePaper')) errors.push(`${MANDATORY_WORKER} must enter the bounded pipeline through preparePaper`)
+    if (/parsePdfDetailedWorkerInternal|pdf-parser-worker|CODEX_PAPER_PARSER_WORKER|CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS/.test(worker)) {
+      errors.push(`${MANDATORY_WORKER} must not bypass the parser supervisor or honor the optional skip flag`)
+    }
+  }
+  if (existsSync(join(root, MANDATORY_RUNNER))) {
+    const runner = readFileSync(join(root, MANDATORY_RUNNER), 'utf8')
+    if (!runner.includes('mandatoryTotalsPass') || !runner.includes('executed') || /CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS/.test(runner)) {
+      errors.push(`${MANDATORY_RUNNER} must fail closed on zero execution and must not honor the optional skip flag`)
+    }
+  }
+  if (existsSync(join(root, ROOT_SCRIPT))) {
+    const rootScript = readFileSync(join(root, ROOT_SCRIPT), 'utf8')
+    if (!rootScript.includes('benchmark-mandatory') || !rootScript.includes('run-mandatory-benchmark.mjs')) {
+      errors.push(`${ROOT_SCRIPT} must expose benchmark-mandatory`)
+    }
+  }
+  if (existsSync(join(root, CI_WORKFLOW))) {
+    const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
+    const mandatoryIndex = workflow.indexOf('benchmark-mandatory')
+    const optionalIndex = workflow.indexOf('CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS')
+    if (mandatoryIndex < 0 || optionalIndex < 0 || mandatoryIndex > optionalIndex) {
+      errors.push(`${CI_WORKFLOW} must run benchmark-mandatory before the optional external corpus`)
     }
   }
 

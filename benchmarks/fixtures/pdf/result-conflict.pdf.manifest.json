@@ -1,0 +1,11 @@
+{
+  "id": "result-conflict",
+  "kind": "pdf",
+  "origin": "original-synthetic",
+  "copyright": "Copyright 2026 Codex Paper contributors",
+  "spdx": "MIT",
+  "license": "MIT License",
+  "redistributable": true,
+  "sha256": "83e1e14cefca966bd5ef2df013468096b860b00df9f981430c080a746b76e510",
+  "generator": "python3 benchmarks/fixtures/generate-pdf-fixtures.py --fixture result-conflict"
+}

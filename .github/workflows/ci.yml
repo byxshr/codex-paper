@@ -43,10 +43,18 @@ jobs:
           bash scripts/codex-paper.sh sandbox-test
           bash scripts/codex-paper.sh sandbox-status
 
-      - name: Benchmarks
+      - name: Mandatory deterministic PDF regression
+        run: bash scripts/codex-paper.sh benchmark-mandatory
+
+      - name: Optional external parser corpus
         env:
           CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS: "1"
-        run: bash scripts/codex-paper.sh benchmark-all
+        run: bash scripts/codex-paper.sh benchmark
+
+      - name: Reasoning and package benchmarks
+        run: |
+          bash scripts/codex-paper.sh reasoning-test
+          bash scripts/codex-paper.sh package-test
 
       - name: Production build
         run: bash scripts/codex-paper.sh build

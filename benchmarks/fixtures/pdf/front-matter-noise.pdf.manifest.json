@@ -1,0 +1,11 @@
+{
+  "id": "front-matter-noise",
+  "kind": "pdf",
+  "origin": "original-synthetic",
+  "copyright": "Copyright 2026 Codex Paper contributors",
+  "spdx": "MIT",
+  "license": "MIT License",
+  "redistributable": true,
+  "sha256": "ea54025987ee36aea88fdcc2a03f8dc623f9a7fa17414ac1e5fac586b84c9e6c",
+  "generator": "python3 benchmarks/fixtures/generate-pdf-fixtures.py --fixture front-matter-noise"
+}

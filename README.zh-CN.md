@@ -250,6 +250,7 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 ```bash
 bash scripts/codex-paper.sh install
 bash scripts/codex-paper.sh test
+bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh build
@@ -337,11 +338,14 @@ codex-paper/
 │   ├── codex-paper.sh                # 根安装、构建和测试入口
 │   └── check-repository.mjs          # 仓库契约门禁
 ├── benchmarks/
-│   ├── manifest.json                    # 固定 parser benchmark 集
-│   ├── gold/                            # 5 篇论文的人工期望
+│   ├── fixtures/pdf/                    # 可再分发的确定性 PDF fixtures
+│   ├── mandatory/                       # 不可跳过的断言与预期缺陷
+│   ├── manifest.json                    # 可选外部 parser corpus
+│   ├── gold/                            # 外部论文的人工期望
 │   ├── reasoning/                       # reasoning validator fixtures
 │   ├── packages/                        # 可见学习包质量 fixtures
-│   ├── run-benchmark.mjs                # benchmark 执行器
+│   ├── run-mandatory-benchmark.mjs      # 受限 PDF-to-validator 门禁
+│   ├── run-benchmark.mjs                # 可选外部 benchmark 执行器
 │   ├── run-reasoning-benchmark.mjs      # reasoning benchmark 入口
 │   ├── run-package-benchmark.mjs        # package benchmark 入口
 │   └── benchmark-report.mjs             # 可读报告格式化脚本
@@ -374,6 +378,7 @@ bash scripts/codex-paper.sh start
 bash scripts/codex-paper.sh stop
 bash scripts/codex-paper.sh status
 bash scripts/codex-paper.sh smoke-test
+bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh benchmark-report
@@ -402,7 +407,10 @@ node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-sl
 # 查看可选生成代码 sandbox 能力（不会执行代码）
 bash scripts/codex-paper.sh sandbox-status
 
-# 跑 parser、reasoning 和 package benchmark
+# 运行不可跳过的 synthetic PDF-to-validator 回归
+bash scripts/codex-paper.sh benchmark-mandatory
+
+# 运行 mandatory PDF、可选外部 parser、reasoning 和 package benchmark
 bash scripts/codex-paper.sh benchmark-all
 
 # 测试网页查看器

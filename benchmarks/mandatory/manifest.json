@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "fixtures": [
+    {
+      "id": "front-matter-noise",
+      "pdf": "benchmarks/fixtures/pdf/front-matter-noise.pdf",
+      "licenseManifest": "benchmarks/fixtures/pdf/front-matter-noise.pdf.manifest.json",
+      "gold": "benchmarks/mandatory/gold/front-matter-noise.json"
+    },
+    {
+      "id": "result-conflict",
+      "pdf": "benchmarks/fixtures/pdf/result-conflict.pdf",
+      "licenseManifest": "benchmarks/fixtures/pdf/result-conflict.pdf.manifest.json",
+      "gold": "benchmarks/mandatory/gold/result-conflict.json"
+    }
+  ]
+}

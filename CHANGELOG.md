@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added two byte-reproducible, MIT-licensed synthetic PDFs for front-matter contamination and conflicting translation-result regressions.
+- Added a non-skippable mandatory PDF-to-prepare-to-validator benchmark that freezes current audited defects as explicit expected findings and reserves P0-B2/B3 target contracts.
+- Split CI reporting between the mandatory synthetic gate and the optional allow-missing external paper corpus, with Repository Guard mutation coverage against zero execution and bypasses.
 - Harden P0-A4 PDF ingestion after independent review: reject deprecated IPv4-compatible IPv6 destinations and ensure synchronous staging write failures are rejected through the normal private-temp cleanup path.
 - Replaced the shared predictable PDF downloader with HTTPS-only, per-redirect SSRF validation, DNS-pinned/peer-verified connections, 128 MiB streaming limits, `%PDF-` verification, and private random staging.
 - Moved production PDF parsing behind a bounded process-group supervisor with wall/CPU/RSS/output/file/page budgets and fail-closed encrypted/malformed handling.

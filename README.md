@@ -250,6 +250,7 @@ Run the full deterministic suite:
 ```bash
 bash scripts/codex-paper.sh install
 bash scripts/codex-paper.sh test
+bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh build
@@ -337,11 +338,14 @@ codex-paper/
 │   ├── codex-paper.sh                # Root install/build/test entrypoint
 │   └── check-repository.mjs          # Repository contract gate
 ├── benchmarks/
-│   ├── manifest.json                    # Fixed parser benchmark set
-│   ├── gold/                            # Gold expectations for the 5 papers
+│   ├── fixtures/pdf/                    # Redistributable deterministic PDF fixtures
+│   ├── mandatory/                       # Non-skippable assertions and expected findings
+│   ├── manifest.json                    # Optional external parser corpus
+│   ├── gold/                            # Gold expectations for the external papers
 │   ├── reasoning/                       # Reasoning validator fixtures
 │   ├── packages/                        # Visible package quality fixtures
-│   ├── run-benchmark.mjs                # Benchmark executor
+│   ├── run-mandatory-benchmark.mjs      # Bounded PDF-to-validator gate
+│   ├── run-benchmark.mjs                # Optional external benchmark executor
 │   ├── run-reasoning-benchmark.mjs      # Reasoning benchmark entrypoint
 │   ├── run-package-benchmark.mjs        # Package benchmark entrypoint
 │   └── benchmark-report.mjs             # Human-readable report formatter
@@ -374,6 +378,7 @@ bash scripts/codex-paper.sh start
 bash scripts/codex-paper.sh stop
 bash scripts/codex-paper.sh status
 bash scripts/codex-paper.sh smoke-test
+bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh benchmark-report
@@ -402,7 +407,10 @@ node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-sl
 # Check optional generated-code sandbox capability (does not execute code)
 bash scripts/codex-paper.sh sandbox-status
 
-# Run parser, reasoning, and package benchmarks
+# Run the non-skippable synthetic PDF-to-validator regression
+bash scripts/codex-paper.sh benchmark-mandatory
+
+# Run mandatory PDF, optional external parser, reasoning, and package benchmarks
 bash scripts/codex-paper.sh benchmark-all
 
 # Test web viewer

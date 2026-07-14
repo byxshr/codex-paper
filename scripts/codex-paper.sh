@@ -102,6 +102,22 @@ cmd_benchmark() {
   "$NODE_BIN" "$REPO_ROOT/benchmarks/run-benchmark.mjs"
 }
 
+cmd_benchmark_mandatory() {
+  ensure_node
+  ensure_python
+  ensure_pymupdf
+
+  if [ ! -d "$PLUGIN_ROOT/node_modules/pdf-parse" ]; then
+    print_section "Dependencies Missing"
+    cmd_install
+  fi
+
+  print_section "Mandatory Deterministic PDF Regression"
+  CODEX_PAPER_PYTHON_BIN="$PYTHON_BIN" \
+  MANDATORY_BENCHMARK_REPORT_FILE="$MANDATORY_BENCHMARK_REPORT_FILE" \
+  "$NODE_BIN" "$REPO_ROOT/benchmarks/run-mandatory-benchmark.mjs"
+}
+
 cmd_test() {
   ensure_node
 
@@ -135,6 +151,7 @@ cmd_package_test() {
 }
 
 cmd_benchmark_all() {
+  cmd_benchmark_mandatory
   cmd_benchmark
   cmd_reasoning_test
   cmd_package_test
@@ -157,6 +174,7 @@ cmd_benchmark_report() {
 
   print_section "Benchmark Report"
   BENCHMARK_REPORT_FILE="$BENCHMARK_REPORT_FILE" \
+  MANDATORY_BENCHMARK_REPORT_FILE="$MANDATORY_BENCHMARK_REPORT_FILE" \
   "$NODE_BIN" "$REPO_ROOT/benchmarks/benchmark-report.mjs"
 }
 
@@ -299,11 +317,12 @@ Commands:
   stop         Stop the local web viewer
   status       Show build and viewer status
   repo-check   Verify the active plugin, contract baseline, and repository hygiene
-  benchmark    Run the parser benchmark against the local paper examples
+  benchmark    Run the optional parser benchmark against local paper examples
+  benchmark-mandatory Run the non-skippable deterministic PDF regression
   test         Run deterministic unit tests
   reasoning-test Run reasoning validation fixtures
   package-test Run package quality fixtures
-  benchmark-all  Run parser, reasoning, and package benchmarks
+  benchmark-all  Run mandatory PDF, optional parser, reasoning, and package benchmarks
   migrate      Migrate a v1 package to v2 evidence/reasoning draft files
   benchmark-report  Print the latest benchmark report
   smoke-test   Run an end-to-end local smoke test
@@ -341,6 +360,9 @@ case "$command_name" in
     ;;
   benchmark)
     cmd_benchmark
+    ;;
+  benchmark-mandatory)
+    cmd_benchmark_mandatory
     ;;
   test)
     cmd_test
