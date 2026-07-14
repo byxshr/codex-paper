@@ -133,4 +133,4 @@ Round 2 independently re-ran the focused tests, confirmed the metadata false-pos
 - Consolidating or cross-checking the Guard/runtime manifest validators remains a P1-3b repository-engineering follow-up.
 - Existing npm audit findings remain assigned to P1-3a and were not modified here.
 
-Delivery status is `Review 完成 / 已推送`. The P0-B1 stage is committed on `codex/audit-optimizations-2026-07-10`; remote CI is still required before M0 is formally closed.
+Delivery status is `Review 完成 / 已推送`. Stage commit `d36fb3b` is on `codex/audit-optimizations-2026-07-10`, and [CI run 29313834426](https://github.com/byxshr/codex-paper/actions/runs/29313834426) passed every required gate. M0 is formally closed.
