@@ -37,6 +37,32 @@ fs.writeFileSync(path.join(paperDir, 'facts.json'), JSON.stringify({ schemaVersi
 fs.writeFileSync(path.join(paperDir, 'analysis.json'), JSON.stringify({ analysisVersion: '1.0.0', resultsTable: [] }))
 fs.writeFileSync(path.join(paperDir, 'evidence-ledger.json'), JSON.stringify({ schemaVersion: '2.0.0', evidence: [] }))
 fs.writeFileSync(path.join(paperDir, 'reasoning-analysis.json'), JSON.stringify({ schemaVersion: '2.0.0', centralClaims: [], researchQuestion: {}, authorReasoningPath: [], validations: [] }))
+fs.mkdirSync(path.join(paperDir, '.codex-paper'))
+fs.writeFileSync(path.join(paperDir, '.codex-paper', 'validation-report.json'), JSON.stringify({
+  schemaVersion: '1.0.0',
+  status: 'pass_with_warnings',
+  phase: 'complete',
+  publishable: true,
+  scope: { included: [{ artifact: 'facts.json', reason: 'fixture' }], excluded: [] },
+  gate: { policy: 'standard', outcome: 'allow_publish', blockingFindingCodes: [] },
+  validator: { name: 'codex-paper-validation', version: '1.0.0', pluginBaseVersion: '2.0.0' },
+  generatedAt: '2026-07-20T00:00:00.000Z',
+  findings: [{
+    id: 'finding-1234567890abcdef',
+    severity: 'warning',
+    code: 'RESULT_VALUE_CONFLICT',
+    category: 'cross_artifact',
+    artifact: 'facts.json',
+    path: 'resultClaims',
+    message: 'Synthetic warning.',
+    evidenceRefs: [],
+    locations: []
+  }],
+  referenceCoverage: { total: 0, valid: 0, invalid: 0, ratio: 1, byArtifact: [] },
+  reportHash: { algorithm: 'sha256', value: 'a'.repeat(64) },
+  errors: [],
+  warnings: []
+}))
 const unknownDir = path.join(libraryRoot, 'papers', 'unknown-paper')
 fs.mkdirSync(unknownDir, { recursive: true })
 fs.writeFileSync(path.join(unknownDir, 'meta.json'), JSON.stringify({ title: 'Unknown', slug: 'unknown-paper', packageVersion: '9.0.0' }))
@@ -48,11 +74,15 @@ fs.writeFileSync(path.join(mismatchDir, 'facts.json'), JSON.stringify({ keyResul
 fs.writeFileSync(path.join(mismatchDir, 'analysis.json'), JSON.stringify({ resultsTable: [] }))
 fs.writeFileSync(path.join(mismatchDir, 'reasoning-analysis.json'), JSON.stringify({ schemaVersion: '2.0.0', centralClaims: [], researchQuestion: {}, authorReasoningPath: [], validations: [] }))
 fs.writeFileSync(path.join(mismatchDir, 'evidence-ledger.json'), JSON.stringify({ schemaVersion: '3.0.0', evidence: [] }))
+fs.mkdirSync(path.join(mismatchDir, '.codex-paper'))
+fs.writeFileSync(path.join(mismatchDir, '.codex-paper', 'validation-report.json'), JSON.stringify({ status: 'pass', errors: [], warnings: [] }))
 const corruptLedgerDir = path.join(libraryRoot, 'papers', 'corrupt-ledger-paper')
 fs.mkdirSync(corruptLedgerDir, { recursive: true })
 fs.writeFileSync(path.join(corruptLedgerDir, 'facts.json'), JSON.stringify({ keyResults: [] }))
 fs.writeFileSync(path.join(corruptLedgerDir, 'analysis.json'), JSON.stringify({ resultsTable: [] }))
 fs.writeFileSync(path.join(corruptLedgerDir, 'evidence-ledger.json'), '{not-json')
+fs.mkdirSync(path.join(corruptLedgerDir, '.codex-paper'))
+fs.writeFileSync(path.join(corruptLedgerDir, '.codex-paper', 'validation-report.json'), '{not-json')
 const corruptMetaDir = path.join(libraryRoot, 'papers', 'corrupt-meta-paper')
 fs.mkdirSync(corruptMetaDir, { recursive: true })
 fs.writeFileSync(path.join(corruptMetaDir, 'facts.json'), JSON.stringify({ keyResults: [] }))
@@ -134,7 +164,7 @@ try {
   assert.match(bootstrap.text, /^window\.__NUXT__=\{\};window\.__NUXT__\.config=/)
   assert.equal((await request('GET', '/api/health', { host: `localhost:${port}` })).status, 200)
   assert.equal((await request('GET', '/api/health', { host: `evil.test:${port}` })).status, 403)
-  for (const requestPath of ['/api/papers', '/api/papers/sample-paper', '/api/papers/sample-paper/files', '/api/papers/sample-paper/file?path=README.md', '/api/papers/sample-paper/raw?path=README.md', '/api/trash']) {
+  for (const requestPath of ['/api/papers', '/api/papers/sample-paper', '/api/papers/sample-paper/files', '/api/papers/sample-paper/file?path=README.md', '/api/papers/sample-paper/raw?path=README.md', '/api/papers/sample-paper/validation', '/api/trash']) {
     assert.equal((await request('GET', requestPath)).status, 401, requestPath)
   }
   assert.equal((await request('PATCH', '/api/papers/sample-paper/tags', { headers: { Origin: origin }, body: { tags: [] } })).status, 401)
@@ -157,6 +187,26 @@ try {
   assert.equal(papers.json[0].url, null)
   assert.deepEqual(papers.json[0].githubLinks, ['https://github.com/example/repo'])
   assert.deepEqual(papers.json[0].codeLinks, [])
+
+  const validation = await request('GET', '/api/papers/sample-paper/validation', { headers: auth })
+  assert.equal(validation.status, 200)
+  assert.equal(validation.headers['cache-control'], 'no-store')
+  assert.equal(validation.json.status, 'pass_with_warnings')
+  assert.equal(validation.json.publishable, true)
+  assert.equal(validation.json.findingCount, 1)
+  assert.equal(validation.json.findings[0].code, 'RESULT_VALUE_CONFLICT')
+  const missingValidation = await request('GET', '/api/papers/unknown-paper/validation', { headers: auth })
+  assert.equal(missingValidation.status, 200)
+  assert.equal(missingValidation.json.available, false)
+  assert.equal(missingValidation.json.diagnostics[0].code, 'VALIDATION_REPORT_MISSING')
+  const legacyValidation = await request('GET', '/api/papers/mismatch-paper/validation', { headers: auth })
+  assert.equal(legacyValidation.status, 200)
+  assert.equal(legacyValidation.json.legacy, true)
+  assert.equal(legacyValidation.json.publishable, false)
+  const corruptValidation = await request('GET', '/api/papers/corrupt-ledger-paper/validation', { headers: auth })
+  assert.equal(corruptValidation.status, 200)
+  assert.equal(corruptValidation.json.available, false)
+  assert.equal(corruptValidation.json.diagnostics[0].code, 'VALIDATION_REPORT_INVALID')
 
   const detail = await request('GET', '/api/papers/sample-paper', { headers: auth })
   assert.equal(detail.status, 200)

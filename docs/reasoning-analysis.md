@@ -50,11 +50,15 @@ New 2.1 facts and low-level analysis use direct `ev-*` references. Readers conti
 - Critical-analysis fields for assumptions, reproduction, counterexamples, and follow-up ideas.
 - Template residue and low evidence coverage.
 
-The report is written to:
+Both validators update the single authoritative report:
 
 ```text
 {paper-dir}/.codex-paper/validation-report.json
 ```
+
+Reasoning validation produces `phase: "draft"` and, when no error blocks it, `gate.outcome: "allow_authoring"`. Complete package validation adds user-visible materials and produces the publish gate. Intrinsic health is `pass`, `pass_with_warnings`, or `fail`; a complete warning-only package remains publishable under the standard policy.
+
+`--strict` is a caller policy, not a different quality result. It blocks warnings through `gate.outcome` and CLI exit while leaving intrinsic status, findings, publishability, and report hash unchanged. See [Validation Report 1.0](validation-report-1.0.md).
 
 Draft skeletons created by migration or scaffolding can be checked with:
 

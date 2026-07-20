@@ -180,10 +180,10 @@ Rules:
 Run:
 
 ```bash
-node ./scripts/validate-reasoning.js "~/codex-papers/papers/{paper-slug}" --strict
+node ./scripts/validate-reasoning.js "~/codex-papers/papers/{paper-slug}"
 ```
 
-Fix every error before writing user-facing materials. Review warnings and either fix them or explicitly reflect the limitation in the visible package. Complete `.codex-paper/reasoning-review.md` before authoring final Markdown and HTML.
+The reasoning gate writes a draft-phase Validation Report and must return `allow_authoring` before visible authoring begins. Fix every error before writing user-facing materials. Review warnings and either fix them or explicitly reflect the limitation in the visible package. Complete `.codex-paper/reasoning-review.md` before authoring final Markdown and HTML. `--strict` is an optional warning-blocking policy; it does not change the intrinsic report status or findings.
 
 ## Step 5: Tags
 
@@ -502,11 +502,11 @@ Verify:
 Run the validation script after generating the package:
 
 ```bash
-node ./scripts/validate-reasoning.js "{paper-slug-or-dir}" --strict
+node ./scripts/validate-reasoning.js "{paper-slug-or-dir}"
 node ./scripts/validate-study-package.js "{paper-slug-or-dir}" --lang zh
 ```
 
-Use `--lang en` for English requests. If validation fails, fix the reported files and rerun it before responding. Warnings may be reported to the user when they reflect intentional trade-offs, such as a shorter QA set with an explanation.
+Use `--lang en` for English requests. The final standard gate permits a complete `pass_with_warnings` package to publish when there are no errors; use `--strict` only when the user explicitly wants warnings to block. If validation fails, fix the reported files and rerun it before responding. Warnings must be visible to the user when they reflect parser limits, result conflicts, or intentional trade-offs.
 
 Package validation is static and must never execute generated code. Do not invoke a demo merely because it was generated or because Docker happens to be available.
 

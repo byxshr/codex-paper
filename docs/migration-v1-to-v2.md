@@ -24,7 +24,7 @@ The migration is conservative:
 After migration, Codex or a reviewer must fill the reasoning file from the evidence ledger, set `status` to `complete`, and run:
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js "<paper-dir>" --strict
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js "<paper-dir>"
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js "<paper-dir>"
 ```
 

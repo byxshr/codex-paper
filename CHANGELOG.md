@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Upgraded the single package validation report in place to Validation Report 1.0 with structured findings, explicit scope, reference coverage, three-state intrinsic health, publishability, and a stable intrinsic SHA-256.
+- Unified reasoning and complete-package validation around one engine; standard and strict policies now differ only in gate outcome and CLI exit.
+- Added deterministic cross-artifact checks for evidence references, ResultClaim projections, numeric divergence, result conflicts/disclosure, visible result claims, and parser front-matter contamination.
+- Added an authenticated read-only Viewer Validation API and quality panel with missing/legacy/corrupt degradation and evidence navigation.
+- Migrated mandatory fixtures to active Validation Report 1.0 assertions and added a dedicated `validation-test` CI gate.
+- Hardened P0-B3 after independent review: conflict disclosure now matches complete numeric tokens instead of substrings, and 2.0 compatibility validation no longer applies native 2.1 ResultClaim projection or grounding rules.
 - Added package contract 2.1 with typed `resultClaims`, deterministic metric/value binding, and a backward-compatible `keyResults` projection.
 - Switched newly generated facts and analysis to direct `ev-*` references while preserving read-only 2.0 legacy-reference compatibility across scripts and Viewer APIs.
 - Migrated mandatory B2 defect signatures to positive ResultClaim assertions; only P0-B3 parser-contamination and conflict-warning findings remain expected.

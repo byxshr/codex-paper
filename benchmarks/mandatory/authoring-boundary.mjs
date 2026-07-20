@@ -141,13 +141,22 @@ function buildReasoning({ fixtureId, gold, evidenceRefs }) {
       evidenceRefs
     },
     limitations: [node('limitation-01', 'The fixture intentionally excludes multi-column and table-grid reconstruction.', 'inference')],
-    uncertaintyZones: [{
-      topic: 'layout generalization',
-      reason: 'The fixture has a simple one-page layout.',
-      impact: 'It cannot calibrate advanced reading order.',
-      neededEvidence: 'Dedicated P1-1 layout fixtures.',
-      evidenceRefs
-    }]
+    uncertaintyZones: [
+      {
+        topic: 'layout generalization',
+        reason: 'The fixture has a simple one-page layout.',
+        impact: 'It cannot calibrate advanced reading order.',
+        neededEvidence: 'Dedicated P1-1 layout fixtures.',
+        evidenceRefs
+      },
+      ...(conflict ? [{
+        topic: 'result value conflict',
+        reason: conflict,
+        impact: 'The 41.8 and 41.0 BLEU values remain inconsistent until the source discrepancy is resolved.',
+        neededEvidence: 'An authoritative correction or table provenance that resolves the conflict.',
+        evidenceRefs
+      }] : [])
+    ]
   };
 }
 

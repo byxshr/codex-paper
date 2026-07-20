@@ -2,12 +2,6 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-export const KNOWN_FINDING_CODES = new Set([
-  'FRONT_MATTER_FOOTNOTE_IN_ABSTRACT',
-  'FRONT_MATTER_COPYRIGHT_IN_ABSTRACT',
-  'RESULT_CONFLICT_HAS_NO_VALIDATION_WARNING'
-]);
-
 const REQUIRED_LICENSE_FIELDS = [
   'id', 'kind', 'origin', 'copyright', 'spdx', 'license', 'redistributable', 'sha256', 'generator'
 ];
@@ -42,7 +36,7 @@ function readJson(filePath, label, errors) {
 export function validateReservedTargets(gold, evidenceText = '') {
   const errors = [];
   const resultTarget = gold?.requiredAssertions?.resultClaims2_1;
-  const reportTarget = gold?.reservedTargets?.validationReport1_0;
+  const reportTarget = gold?.requiredAssertions?.validationReport1_0;
   if (!resultTarget || !Array.isArray(resultTarget.required) || resultTarget.required.length === 0) {
     errors.push('requiredAssertions.resultClaims2_1.required must be non-empty');
   } else if (evidenceText) {
@@ -60,10 +54,10 @@ export function validateReservedTargets(gold, evidenceText = '') {
     errors.push('requiredAssertions.resultClaims2_1.requiresDirectEvidenceRefs must be true');
   }
   if (reportTarget?.expectedStatus !== 'pass_with_warnings') {
-    errors.push('reservedTargets.validationReport1_0.expectedStatus must be pass_with_warnings');
+    errors.push('requiredAssertions.validationReport1_0.expectedStatus must be pass_with_warnings');
   }
   if (!Array.isArray(reportTarget?.expectedFindingCodes) || reportTarget.expectedFindingCodes.length === 0) {
-    errors.push('reservedTargets.validationReport1_0.expectedFindingCodes must be non-empty');
+    errors.push('requiredAssertions.validationReport1_0.expectedFindingCodes must be non-empty');
   }
   return errors;
 }
@@ -123,48 +117,39 @@ export function validateMandatoryManifest({ repoRoot, manifest }) {
     const expectedGenerator = `python3 benchmarks/fixtures/generate-pdf-fixtures.py --fixture ${entry.id}`;
     if (license.generator !== expectedGenerator) errors.push(`mandatory fixture ${entry.id} generator mismatch`);
 
-    if (gold.schemaVersion !== '1.1.0') errors.push(`mandatory fixture ${entry.id} gold schemaVersion must be 1.1.0`);
+    if (gold.schemaVersion !== '1.2.0') errors.push(`mandatory fixture ${entry.id} gold schemaVersion must be 1.2.0`);
     if (gold.fixtureId !== entry.id) errors.push(`mandatory fixture ${entry.id} gold fixtureId mismatch`);
     if (!gold.requiredAssertions || !gold.authoring) errors.push(`mandatory fixture ${entry.id} gold is missing required assertions or authoring`);
-    if (!Array.isArray(gold.expectedFindings) || gold.expectedFindings.length === 0) {
-      errors.push(`mandatory fixture ${entry.id} expectedFindings must be non-empty`);
-    } else {
-      const findingIds = new Set();
-      for (const finding of gold.expectedFindings) {
-        if (!KNOWN_FINDING_CODES.has(finding)) errors.push(`mandatory fixture ${entry.id} has unknown finding code: ${finding}`);
-        if (findingIds.has(finding)) errors.push(`mandatory fixture ${entry.id} repeats finding code: ${finding}`);
-        findingIds.add(finding);
-      }
-    }
     errors.push(...validateReservedTargets(gold).map((error) => `mandatory fixture ${entry.id} ${error}`));
     fixtures.push({ entry, pdfPath, licensePath, goldPath, license, gold });
   }
   return { errors, fixtures };
 }
 
-export function detectExpectedFindings({ fixtureId, paperData, reasoningReport }) {
-  const detected = [];
-  const abstract = String(paperData?.abstract || '');
-  if (fixtureId === 'front-matter-noise') {
-    if (abstract.includes('Equal contribution')) detected.push('FRONT_MATTER_FOOTNOTE_IN_ABSTRACT');
-    if (abstract.includes('Copyright 2026')) detected.push('FRONT_MATTER_COPYRIGHT_IN_ABSTRACT');
+export function validateValidationReportTarget(report, target, { strictReport = null } = {}) {
+  const errors = [];
+  const codes = new Set((report?.findings || []).map((finding) => finding.code));
+  if (report?.schemaVersion !== '1.0.0') errors.push('validation report schemaVersion must be 1.0.0');
+  if (report?.status !== target?.expectedStatus) errors.push(`validation report status must be ${target?.expectedStatus}`);
+  if (report?.phase !== 'complete') errors.push('validation report phase must be complete');
+  if (report?.publishable !== true) errors.push('standard validation report must be intrinsically publishable');
+  if (report?.gate?.policy !== 'standard' || report?.gate?.outcome !== 'allow_publish') {
+    errors.push('standard validation gate must allow_publish');
   }
-  if (fixtureId === 'result-conflict') {
-    const warnings = reasoningReport?.warnings || [];
-    if (!warnings.some((warning) => /conflict/i.test(`${warning.code || ''} ${warning.message || ''}`))) {
-      detected.push('RESULT_CONFLICT_HAS_NO_VALIDATION_WARNING');
+  for (const code of target?.expectedFindingCodes || []) {
+    if (!codes.has(code)) errors.push(`validation report is missing finding ${code}`);
+  }
+  if (strictReport) {
+    if (strictReport.gate?.policy !== 'strict' || strictReport.gate?.outcome !== 'block') {
+      errors.push('strict validation gate must block warnings');
     }
+    for (const field of ['status', 'phase', 'publishable']) {
+      if (strictReport[field] !== report?.[field]) errors.push(`strict validation changed intrinsic ${field}`);
+    }
+    if (strictReport.reportHash?.value !== report?.reportHash?.value) errors.push('strict validation changed reportHash');
+    if (JSON.stringify(strictReport.findings) !== JSON.stringify(report?.findings)) errors.push('strict validation changed findings');
   }
-  return detected;
-}
-
-export function compareFindingContract(expected, observed) {
-  const expectedSet = new Set(expected);
-  const observedSet = new Set(observed);
-  return {
-    missingExpected: expected.filter((code) => !observedSet.has(code)),
-    unexpected: observed.filter((code) => !expectedSet.has(code))
-  };
+  return errors;
 }
 
 export function mandatoryTotalsPass(totals) {

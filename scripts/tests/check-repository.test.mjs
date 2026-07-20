@@ -24,11 +24,14 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/scripts/prepare-paper.js',
   'plugins/codex-paper/skills/study/scripts/extract-facts.js',
   'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
+  'plugins/codex-paper/skills/study/scripts/validation-report.js',
   'plugins/codex-paper/skills/study/scripts/migrate-package.js',
   'plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json',
+  'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json',
   'plugins/codex-paper/src/shared/package-compatibility.mjs',
   'plugins/codex-paper/src/web/server/utils/packageCompatibility.mjs',
   'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs',
+  'plugins/codex-paper/src/web/server/api/papers/[slug]/validation.get.ts',
   'plugins/codex-paper/sandbox/Dockerfile',
   'plugins/codex-paper/sandbox/policy.json',
   'plugins/codex-paper/src/web/package.json',
@@ -392,6 +395,29 @@ test('CI cannot remove or reorder the mandatory regression gate', () => withFixt
   const workflow = readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh benchmark-mandatory', 'true')
   writeFileSync(workflowPath, workflow)
   assert.match(errorsFor(fixture), /must run benchmark-mandatory before the optional external corpus/)
+}))
+
+test('CI cannot remove the Validation Report 1.0 gate', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  const workflow = readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh validation-test', 'true')
+  writeFileSync(workflowPath, workflow)
+  assert.match(errorsFor(fixture), /must run validation-test before benchmark-mandatory/)
+}))
+
+test('Validation Report 1.0 schema is a required repository sentinel', () => withFixture((fixture) => {
+  const schema = 'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json'
+  rmSync(join(fixture.root, schema))
+  fixture.trackedFiles = fixture.trackedFiles.filter((path) => path !== schema)
+  assert.match(errorsFor(fixture), /active plugin sentinel is missing: .*validation-report-1\.0\.schema\.json/)
+}))
+
+test('Validation engine cannot introduce a parallel report path', () => withFixture((fixture) => {
+  const engine = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/validation-report.js')
+  writeFileSync(engine, readFileSync(engine, 'utf8').replace(
+    "const REPORT_PATH = '.codex-paper/validation-report.json'",
+    "const REPORT_PATH = '.codex-paper/validation-report-v2.json'"
+  ))
+  assert.match(errorsFor(fixture), /must write only \.codex-paper\/validation-report\.json/)
 }))
 
 test('README layout cannot present the legacy tree as active', () => withFixture((fixture) => {

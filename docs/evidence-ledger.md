@@ -29,7 +29,7 @@ The ledger schema remains `2.0.0` when the surrounding package contract is `2.1.
 The ledger is consumed by:
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js "<paper-dir>" --strict
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js "<paper-dir>"
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js "<paper-dir>"
 ```
 

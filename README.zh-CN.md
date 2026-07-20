@@ -260,11 +260,11 @@ bash scripts/codex-paper.sh build
 验证一个已完成的学习包：
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --strict
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug}
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug}
 ```
 
-学习包校验只做静态检查，绝不执行生成代码。可选执行使用单独准备的 Docker sandbox，并且每次都要求绑定当前代码哈希的新授权：
+reasoning 命令生成 draft 阶段的 `allow_authoring` 门禁；最终标准门禁允许 `pass_with_warnings` 发布，只有在明确要求 warning 也阻断时才添加 `--strict`。两个命令都原位更新唯一的 `.codex-paper/validation-report.json`。学习包校验只做静态检查，绝不执行生成代码。可选执行使用单独准备的 Docker sandbox，并且每次都要求绑定当前代码哈希的新授权：
 
 ```bash
 # 显式准备：构建 digest 固定的镜像并运行一致性测试
@@ -400,10 +400,13 @@ bash scripts/codex-paper.sh pdf-security-test
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
 
 # 校验研究推理
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug --strict
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug
 
 # 校验已生成的学习包
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh
+
+# 运行 Validation Report 1.0 契约测试
+bash scripts/codex-paper.sh validation-test
 
 # 查看可选生成代码 sandbox 能力（不会执行代码）
 bash scripts/codex-paper.sh sandbox-status

@@ -637,7 +637,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 
 - 跟踪基线：2026-07-10
 - 开发分支：`codex/audit-optimizations-2026-07-10`
-- 当前阶段：`M1`“完成 P0-B 可信质量链”；M0 已由 P0-B1 阶段 commit `d36fb3b` 和 [CI run 29313834426](https://github.com/byxshr/codex-paper/actions/runs/29313834426) 正式关闭；P0-B2 已完成四轮独立 Review，下一项进入 P0-B3。
+- 当前阶段：`M1`“完成 P0-B 可信质量链”；M0 已由 P0-B1 阶段 commit `d36fb3b` 和 [CI run 29313834426](https://github.com/byxshr/codex-paper/actions/runs/29313834426) 正式关闭；P0-B3 已通过两轮独立 Review，等待阶段提交、推送和远端 CI，M1 在远端 CI 通过前不关闭。
 - 编号规则：与第 3 章优先级总表一致；一个工作包可拆成多个 Issue，但父项按最保守子项状态汇总。
 - 子项映射：`P1-2` 对应 migration/alias 与 recovery 两个 Issue，`P1-3` 对应 dependency/runtime governance 与 repository engineering 两个 Issue，`P1-7` 对应 a11y 与 privacy/lifecycle controls 两个 Issue；更新父项时必须在“工作位置”列出全部关联 Issue。
 - 初始化说明：下表的 `未开始` 表示“尚未在本台账登记本轮实现活动”，不表示仓库中完全没有相关基础能力。
@@ -651,7 +651,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | `P0-A4` | P0 | 下载器与 PDF parser 隔离/限额 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-A4_IMPLEMENTATION_PLAN.md`；`docs/P0-A4_CODE_REVIEW_SUMMARY.md`；`docs/P0-A4_CODE_REVIEW_RESULT.md`；`docs/P0-A4_CODE_REVIEW_RESULT_ROUND2.md`；`docs/pdf-ingestion-security.md` | 两轮独立 Review 均通过且无遗留 findings；首轮采纳 F1/F2，补齐 IPv4-compatible IPv6 拒绝和同步写盘失败清理，F3 总响应时限按 fail-closed 设计保留；第二轮复现 PDF security 12/12、Guard tests 40/40 和 repository contract；repository/security 90/90、study 23/23、parser 5/5、reasoning 12/12、package 11/11、build/HTTP security/smoke/官方 validator 通过；[CI run 29251157289](https://github.com/byxshr/codex-paper/actions/runs/29251157289) 远端全绿；active 版本 `2.0.0+codex.20260713121349` | 实施 `P0-B1` 不可跳过的确定性回归与验收契约 | 2026-07-13 |
 | `P0-B1` | P0 | 不可跳过的确定性回归与验收契约 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；commit `d36fb3b`；`docs/P0-B1_IMPLEMENTATION_PLAN.md`；`docs/P0-B1_CODE_REVIEW_SUMMARY.md`；`docs/P0-B1_CODE_REVIEW_RESULT.md`；`docs/P0-B1_CODE_REVIEW_RESULT_ROUND2.md`；`docs/deterministic-regression-contract.md`；`benchmarks/mandatory/`；`benchmarks/fixtures/pdf/` | 两轮独立 Review 最终无条件 Approve、无新增缺陷；首轮唯一合并前建议已通过内容限定 detector 和双向元数据回归关闭；两个 MIT synthetic PDF 可逐字节复现；mandatory `declared/executed/completed/passed=2/2/2/2`、10 条预期缺陷全部稳定观测；repository/security 104/104、study 23/23、PDF security 12/12、external parser 5/5、reasoning 12/12、package 11/11、build/HTTP security/smoke/官方 plugin validator 通过；[CI run 29313834426](https://github.com/byxshr/codex-paper/actions/runs/29313834426) 全部通过；2.0 schema 与 active plugin 版本未改；manifest 双重校验漂移风险转入 P1-3b | 开始 `P0-B2` Typed ResultClaim、噪声过滤与直接证据引用 | 2026-07-14 |
 | `P0-B2` | P0 | Typed ResultClaim、噪声过滤与直接证据引用 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-B2_IMPLEMENTATION_PLAN.md`；`docs/P0-B2_CODE_REVIEW_SUMMARY.md`；`docs/P0-B2_CODE_REVIEW_FINDINGS.md`；`docs/P0-B2_CODE_REVIEW_FINDINGS_ROUND2.md`；`docs/P0-B2_CODE_REVIEW_FINDINGS_ROUND3.md`；`docs/P0-B2_CODE_REVIEW_FINDINGS_ROUND4.md`；`plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json`；`plugins/codex-paper/skills/study/scripts/extract-facts.js`；`plugins/codex-paper/src/shared/package-compatibility.mjs`；`benchmarks/mandatory/gold/` | 新 writer 输出 package/facts `2.1.0`，evidence/reasoning 三份冻结 schema 仍为 `2.0.0`；typed ResultClaim、`keyResults` 投影、直接 `ev-*` refs、2.0/v1/unknown 只读兼容及 Viewer compatibility 已落地；四轮 Review findings 均已关闭，第四轮修订后的独立复核通过；migration 全 artifact/JSON 零写入预检、facts/analysis 损坏 meta 安全降级和准确混合版本诊断已确认；Viewer compatibility 是轻量版本视图，不替代 validator/P0-B3 完整性与发布门禁；mandatory `2/2` 通过并只保留 3 个 P0-B3 预期 finding；repository/security 108/108、study 44/44、PDF security 12/12、external parser 5/5、reasoning 12/12、package 12/12、production build、HTTP security、smoke 和官方 validator 通过；Attention 样本经临时库只读验收包含 28.4/41.8/41.0、无 2014/2017 年份结果，原目录 hash/mtime 不变；active 版本 `2.0.0+codex.20260716070151` | 实施 `P0-B3` 跨工件一致性门禁与三态健康状态；M1 在 B3 Review 和远端 CI 通过前不关闭 | 2026-07-20 |
-| `P0-B3` | P0 | 跨工件一致性门禁与三态健康状态 | `未开始` | `未推送` | — | — | 将现有 validation report 原位升级到 1.0，实现 scope、findings、`publishable` 与 `pass/pass_with_warnings/fail` | 2026-07-13 |
+| `P0-B3` | P0 | 跨工件一致性门禁与三态健康状态 | `Review 完成` | `未推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-B3_IMPLEMENTATION_PLAN.md`；`docs/P0-B3_CODE_REVIEW_SUMMARY.md`；`docs/P0-B3_CODE_REVIEW_RESULT.md`；`docs/P0-B3_CODE_REVIEW_RESULT_ROUND2.md`；`docs/validation-report-1.0.md`；`plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json`；`plugins/codex-paper/skills/study/scripts/validation-report.js`；Viewer Validation API/UI；`benchmarks/mandatory/` | Validation Report 1.0 引擎、统一 CLI、mandatory 正向契约、Viewer API/UI、Repository Guard 与 CI gate 已完成；首轮独立 Review 的 F1–F4 全部采纳：数值披露改为完整 token 精确比较，typed ResultClaim 规则仅用于 native 2.1，并新增合法 2.0 warning-only/publishable 回归；第二轮独立 Review 逐项复现修复有效、未发现新 soundness 缺陷并 Approve；千分位数值识别作为非阻塞已知限制记录，动态 metric 正则确认已安全转义；repository/security 114/114、study 58/58、Validation 20/20、PDF security 12/12、mandatory 2/2、external parser 5/5、reasoning 12/12、package 12/12、production build、HTTP security、smoke、Browser QA 和官方 validator 全部通过；Browser 已验证配对、三态面板、刷新 session 与 evidence drawer；Attention 样本仅复制到临时库验收，41.8/41.0 conflict 与 front-matter contamination 可见，同时诚实发现既有 F1 及 2/28.4 跨工件分叉，原样本 hash/mtime 不变；active path `plugins/codex-paper/`，版本 `2.0.0+codex.20260720134033` | 创建阶段性 commit、推送并验证远端 CI；CI 通过后关闭 M1，下一开发项为 `P0-C1` | 2026-07-20 |
 | `P0-C1` | P0 | 防碰撞 identity、幂等与禁止静默覆盖 | `未开始` | `未推送` | — | — | 冻结 paper/source/generation ID 与 immutable/overlay 分层，作为 C2 连续 epic 的前半段 | 2026-07-13 |
 | `P0-C2` | P0 | 事务发布、共享锁、原子索引与最小 manifest | `未开始` | `未推送` | — | — | 升级 A1 进程内锁为跨进程统一 writer，并以 B3 gate/report hash 驱动事务发布 | 2026-07-13 |
 | `P1-1` | P1 | 深层版面解析与 benchmark 校准 | `未开始` | `未推送` | — | — | 建立双栏、header/footer、脚注和表格 grid benchmark | 2026-07-10 |
@@ -672,14 +672,14 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 优先级 | 总数 | 未开始 | 开发中 | 开发完成 | Review 中 | Review 完成 | 阻塞/暂缓/取消 |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 前置 | 1 | 0 | 0 | 0 | 0 | 1 | 0 |
-| P0 | 9 | 3 | 0 | 1 | 0 | 5 | 0 |
+| P0 | 9 | 2 | 0 | 0 | 0 | 7 | 0 |
 | P1 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | P2 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **22** | **15** | **0** | **1** | **0** | **6** | **0** |
+| **合计** | **22** | **14** | **0** | **0** | **0** | **8** | **0** |
 
 | 交付状态 | 未推送 | 已推送 | 已合并 | 合计 |
 |---|---:|---:|---:|---:|
-| 工作包数量 | 16 | 6 | 0 | 22 |
+| 工作包数量 | 15 | 7 | 0 | 22 |
 
 完成率按 `Review 完成` 的开发项计数；交付状态通过上表单独统计，不计入开发完成率。前置项单独统计，不混入 P0 产品风险完成率。
 
@@ -731,3 +731,7 @@ P0 先提供明确三态和 warning；只有 benchmark 样本足够后，才建�
 | 2026-07-16 | `P0-B2` | 状态保持 `开发完成 / 未推送` | 复核第四轮 5 组 finding：migration 在任何写入前预检 meta/ledger/reasoning JSON 与 ancillary schema，默认/`--force` 均拒绝不支持版本；损坏 meta 不再阻断 facts/analysis，混合版本诊断准确指出实际 offender；确认 Viewer 权威 meta 快速分类与 CLI validator 穷尽校验属于不同信任边界，Viewer `readOnly` 不代表完整性或 publishable；repository/security 108/108、study 44/44、mandatory 2/2、PDF security 12/12、parser 5/5、reasoning 12/12、package 12/12、production build/HTTP security/smoke/官方 validator 全部通过，重装版本 `2.0.0+codex.20260716070151`；等待修订后独立复核 | Codex |
 | 2026-07-20 | `P0-B2` | `开发完成 / 未推送` → `Review 完成 / 未推送` | 第四轮修订后的独立 Code Review 通过，四轮 findings 全部关闭且无遗留 Review 阻塞项；P0-B2 Review gate 正式关闭，下一步创建阶段性 commit、执行远端 CI 验证并进入 P0-B3；M1 尚未关闭 | Codex |
 | 2026-07-20 | `P0-B2` | 交付状态 `未推送` → `已推送` | P0-B2 阶段实现、四轮 Review 修订、总结文档和台账已纳入阶段性提交并推送至 `codex/audit-optimizations-2026-07-10`；远端 CI 作为本次交付验收 | Codex |
+| 2026-07-20 | `P0-B3` | `未开始 / 未推送` → `开发中 / 未推送` | 开始将唯一 validation report 原位升级到 1.0，实施跨 evidence/facts/analysis/reasoning/可见材料的一致性门禁、三态质量、稳定 intrinsic hash、独立 Viewer Validation API 和 mandatory 正向契约；M1 在独立 Review 和远端 CI 通过前不关闭 | Codex |
+| 2026-07-20 | `P0-B3` | `开发中 / 未推送` → `开发完成 / 未推送` | 完成 Validation Report 1.0、跨工件一致性与冲突披露门禁、独立 Viewer Validation API/UI、mandatory 正向契约及 CI/Guard 接入；repository/security 114/114、study 56/56、Validation 18/18、PDF security 12/12、mandatory 2/2、external parser 5/5、reasoning/package 各 12/12、build/HTTP security/smoke/Browser QA/官方 validator 全部通过；active 版本 `2.0.0+codex.20260720125242`，等待独立 Review，M1 尚未关闭 | Codex |
+| 2026-07-20 | `P0-B3` | `开发完成 / 未推送` → `开发中 / 未推送` → `开发完成 / 未推送` | 复核首轮独立 Review 并采纳 F1–F4：修复 `41.8` 子串错误满足 `41.0` 披露的 fail-open，限制 typed ResultClaim projection/grounding/conflict 规则仅适用于 native 2.1，并新增合法 2.0 warning-only/publishable 回归；repository/security 114/114、study 58/58、Validation 20/20、mandatory 2/2、reasoning/package 各 12/12 通过，重装版本 `2.0.0+codex.20260720134033`；等待修订后独立复核，M1 尚未关闭 | Codex |
+| 2026-07-20 | `P0-B3` | `开发完成 / 未推送` → `Review 完成 / 未推送` | 第二轮独立 Review 逐项验证首轮 F1–F4 修复，确认没有新 soundness 缺陷并 Approve；千分位数值识别记录为非阻塞契约限制，动态 metric 正则确认已正确转义且无需修改；P0-B3 Review gate 关闭，等待阶段提交、推送和远端 CI，M1 尚未关闭 | Codex |

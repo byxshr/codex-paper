@@ -7,12 +7,11 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
-  compareFindingContract,
-  detectExpectedFindings,
   mandatoryTotalsPass,
   parseProjectedResultValue,
   validateMandatoryManifest,
-  validateReservedTargets
+  validateReservedTargets,
+  validateValidationReportTarget
 } from '../../benchmarks/mandatory/contract.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -42,23 +41,21 @@ test('missing mandatory PDF remains fatal even when optional corpus skipping is 
   }
 });
 
-test('expected finding disappearance is an XPASS contract failure', () => {
-  const result = compareFindingContract(
-    ['FRONT_MATTER_FOOTNOTE_IN_ABSTRACT', 'FRONT_MATTER_COPYRIGHT_IN_ABSTRACT'],
-    ['FRONT_MATTER_FOOTNOTE_IN_ABSTRACT']
-  );
-  assert.deepEqual(result.missingExpected, ['FRONT_MATTER_COPYRIGHT_IN_ABSTRACT']);
-  assert.deepEqual(result.unexpected, []);
-});
-
-test('front-matter expected findings now cover parser contamination only', () => {
-  const detected = detectExpectedFindings({
-    fixtureId: 'front-matter-noise',
-    paperData: { abstract: '*Equal contribution. Copyright 2026.' },
-    facts: { resultClaims: [{ value: 28.4 }] },
-    analysis: { resultsTable: [{ value: '28.4' }] }
+test('Validation Report 1.0 target rejects a missing active warning', () => {
+  const report = {
+    schemaVersion: '1.0.0',
+    status: 'pass_with_warnings',
+    phase: 'complete',
+    publishable: true,
+    findings: [],
+    gate: { policy: 'standard', outcome: 'allow_publish' },
+    reportHash: { value: 'a'.repeat(64) }
+  };
+  const errors = validateValidationReportTarget(report, {
+    expectedStatus: 'pass_with_warnings',
+    expectedFindingCodes: ['PARSER_FRONT_MATTER_CONTAMINATION']
   });
-  assert.deepEqual(detected, ['FRONT_MATTER_FOOTNOTE_IN_ABSTRACT', 'FRONT_MATTER_COPYRIGHT_IN_ABSTRACT']);
+  assert.match(errors.join('\n'), /PARSER_FRONT_MATTER_CONTAMINATION/);
 });
 
 test('active ResultClaim targets require evidence-backed values and B3 warning semantics', () => {

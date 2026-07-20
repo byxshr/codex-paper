@@ -260,11 +260,11 @@ bash scripts/codex-paper.sh build
 Validate one completed study package:
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --strict
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug}
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug}
 ```
 
-Study-package validation is static and never executes generated code. Optional execution uses a separately prepared Docker sandbox and requires a fresh, code-hash-bound approval for every run:
+The reasoning command emits a draft-phase `allow_authoring` gate. The final standard package gate permits `pass_with_warnings`; add `--strict` only when warnings should block. Both commands update the single `.codex-paper/validation-report.json` report. Study-package validation is static and never executes generated code. Optional execution uses a separately prepared Docker sandbox and requires a fresh, code-hash-bound approval for every run:
 
 ```bash
 # Explicit setup: build the digest-pinned image and run conformance tests
@@ -400,10 +400,13 @@ bash scripts/codex-paper.sh pdf-security-test
 node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
 
 # Validate research reasoning
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug --strict
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug
 
 # Validate a generated study package
 node plugins/codex-paper/skills/study/scripts/validate-study-package.js paper-slug --lang zh
+
+# Run the Validation Report 1.0 contract tests
+bash scripts/codex-paper.sh validation-test
 
 # Check optional generated-code sandbox capability (does not execute code)
 bash scripts/codex-paper.sh sandbox-status

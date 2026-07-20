@@ -2,9 +2,17 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { validateReasoningPackage } from './validate-reasoning.js';
 import { REQUIRED_REFLECTION_HEADINGS } from '../profiles/profile-rules.js';
 import { classifyInvalidPackageArtifacts, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
+import {
+  createValidationReport,
+  makeFinding,
+  writeValidationReportAtomic
+} from './validation-report.js';
+
+const __filename = fileURLToPath(import.meta.url);
 
 const REQUIRED_FILES = [
   'README.md',
@@ -78,14 +86,16 @@ const BODY_IMAGE_MIN_HEIGHT = 220;
 const BODY_IMAGE_MIN_PIXELS = 160000;
 
 function usage() {
-  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--legacy-ok]');
+  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--legacy-ok] [--json] [--strict]');
 }
 
 function parseArgs(argv) {
   const args = {
     input: null,
     lang: null,
-    legacyOk: false
+    legacyOk: false,
+    json: false,
+    strict: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -97,6 +107,10 @@ function parseArgs(argv) {
       throw new Error(`${arg} was removed because package validation must never execute generated code. Use "bash scripts/codex-paper.sh sandbox-plan <paper>" and, after explicit user approval, sandbox-run.`);
     } else if (arg === '--legacy-ok') {
       args.legacyOk = true;
+    } else if (arg === '--json') {
+      args.json = true;
+    } else if (arg === '--strict') {
+      args.strict = true;
     } else if (!args.input) {
       args.input = arg;
     } else {
@@ -385,24 +399,22 @@ function checkReasoningLayer(paperDir, args, findings, compatibility) {
   if (compatibility.mode === 'unknown_read_only') {
     const primaryDiagnostic = compatibility.diagnostics[0] || { code: 'PACKAGE_VERSION_UNSUPPORTED', message: 'Package compatibility could not be established.' };
     addFinding(findings, 'errors', `${primaryDiagnostic.code}: ${primaryDiagnostic.message}`);
-    return;
+    return null;
   }
   if (compatibility.mode === 'legacy_v1') {
     if (!args.legacyOk) {
       addFinding(findings, 'errors', 'LEGACY_PACKAGE_REQUIRES_LEGACY_OK: Legacy v1 packages require --legacy-ok for limited read-only validation; this flag does not authorize artifact writes.');
-      return;
+      return null;
     }
     addFinding(findings, 'warnings', 'Legacy v1 package: limited read-only validation is enabled by --legacy-ok; v2 reasoning validation is skipped and artifact writers remain disabled.');
-    return;
+    return null;
   }
 
-  const result = validateReasoningPackage(paperDir, { strict: false });
-  for (const error of result.report.errors) {
-    addFinding(findings, 'errors', `Reasoning ${error.code} at ${error.path}: ${error.message}`);
-  }
-  for (const warning of result.report.warnings) {
-    addFinding(findings, 'warnings', `Reasoning ${warning.code} at ${warning.path}: ${warning.message}`);
-  }
+  return validateReasoningPackage(paperDir, {
+    strict: args.strict,
+    phase: 'complete',
+    writeReport: false
+  });
 }
 
 function checkRequiredFiles(paperDir, findings) {
@@ -911,7 +923,19 @@ function checkVisualAssetsIndex(paperDir, findings) {
   }
 }
 
-function validate(args) {
+function structuredStudyFinding(message, severity) {
+  const artifactMatch = String(message).match(/\b([A-Za-z0-9._-]+\.(?:md|html|json|pdf))(?:[:\s]|$)/);
+  return makeFinding({
+    severity,
+    code: severity === 'error' ? 'STUDY_PACKAGE_CONTRACT_FAILED' : 'STUDY_PACKAGE_CONTRACT_WARNING',
+    category: 'package',
+    artifact: artifactMatch?.[1] || 'user-visible materials',
+    path: '/',
+    message
+  });
+}
+
+export function validateStudyPackage(args) {
   const paperDir = resolvePaperDir(args.input);
   const findings = {
     errors: [],
@@ -925,7 +949,7 @@ function validate(args) {
 
   const compatibility = compatibilityForPackage(paperDir);
   const v2Package = ['native_2_1', 'compatible_2_0'].includes(compatibility.mode);
-  checkReasoningLayer(paperDir, args, findings, compatibility);
+  const reasoningResult = checkReasoningLayer(paperDir, args, findings, compatibility);
 
   checkRequiredFiles(paperDir, findings);
   checkForbiddenResidues(paperDir, findings);
@@ -940,38 +964,64 @@ function validate(args) {
     checkV2VisibleContentContract(paperDir, findings);
   }
 
-  return { paperDir, findings };
+  if (!v2Package || !reasoningResult) {
+    return { paperDir, findings, report: null, reportWritten: false };
+  }
+  const report = createValidationReport({
+    phase: 'complete',
+    strict: args.strict,
+    scope: reasoningResult.report.scope,
+    referenceCoverage: reasoningResult.report.referenceCoverage,
+    findings: [
+      ...reasoningResult.report.findings,
+      ...findings.errors.map((message) => structuredStudyFinding(message, 'error')),
+      ...findings.warnings.map((message) => structuredStudyFinding(message, 'warning'))
+    ]
+  });
+  writeValidationReportAtomic(paperDir, report);
+  return { paperDir, findings, report, reportWritten: true };
 }
 
 function printReport(result) {
-  const { paperDir, findings } = result;
-  const status = findings.errors.length === 0 ? 'PASS' : 'FAIL';
+  const { paperDir, findings, report } = result;
+  const status = report?.status || (findings.errors.length === 0 ? 'pass' : 'fail');
 
-  console.log(`Study package validation: ${status}`);
+  console.log(`Study package validation: ${status.toUpperCase()}`);
   console.log(`Paper directory: ${paperDir}`);
 
-  if (findings.errors.length > 0) {
+  const errors = report?.errors || findings.errors;
+  const warnings = report?.warnings || findings.warnings;
+  if (errors.length > 0) {
     console.log('\nErrors:');
-    findings.errors.forEach((message) => console.log(`- ${message}`));
+    errors.forEach((finding) => console.log(`- ${finding?.code ? `${finding.code} ${finding.artifact}:${finding.path}: ${finding.message}` : finding}`));
   }
 
-  if (findings.warnings.length > 0) {
+  if (warnings.length > 0) {
     console.log('\nWarnings:');
-    findings.warnings.forEach((message) => console.log(`- ${message}`));
+    warnings.forEach((finding) => console.log(`- ${finding?.code ? `${finding.code} ${finding.artifact}:${finding.path}: ${finding.message}` : finding}`));
   }
 
-  if (findings.errors.length === 0 && findings.warnings.length === 0) {
+  if (errors.length === 0 && warnings.length === 0) {
     console.log('\nNo issues found.');
   }
+  if (report) console.log(`\nGate: ${report.gate.policy}/${report.gate.outcome}`);
 }
 
-try {
-  const args = parseArgs(process.argv.slice(2));
-  const result = validate(args);
-  printReport(result);
-  process.exit(result.findings.errors.length === 0 ? 0 : 1);
-} catch (error) {
-  usage();
-  console.error(`Error: ${error.message}`);
-  process.exit(2);
+if (process.argv[1] === __filename) {
+  try {
+    const args = parseArgs(process.argv.slice(2));
+    const result = validateStudyPackage(args);
+    if (args.json && result.report) {
+      process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
+    } else {
+      printReport(result);
+    }
+    process.exit(result.report
+      ? (result.report.gate.outcome === 'block' ? 1 : 0)
+      : (result.findings.errors.length === 0 ? 0 : 1));
+  } catch (error) {
+    usage();
+    console.error(`Error: ${error.message}`);
+    process.exit(2);
+  }
 }

@@ -222,7 +222,7 @@ async function runCli() {
       status: result.skeleton.status,
       paperType: result.skeleton.paperType,
       contextMode: result.skeleton.contextMode,
-      next: 'Codex must read evidence-ledger.json, fill reasoning-analysis.json, set status to complete, and run validate-reasoning.js --strict before authoring visible materials.'
+      next: 'Codex must read evidence-ledger.json, fill reasoning-analysis.json, set status to complete, and run validate-reasoning.js before authoring visible materials. Use --strict only as an explicit warning-blocking policy.'
     }, null, 2)}\n`);
   } catch (error) {
     usage();

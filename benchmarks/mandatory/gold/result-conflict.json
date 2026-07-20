@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "fixtureId": "result-conflict",
   "requiredAssertions": {
     "title": "Synthetic Translation Result Conflict",
@@ -24,11 +24,12 @@
       "requiresKeyResultsProjection": true,
       "forbiddenCorePhrases": [],
       "forbiddenAnalysisPhrases": []
+    },
+    "validationReport1_0": {
+      "expectedStatus": "pass_with_warnings",
+      "expectedFindingCodes": ["RESULT_VALUE_CONFLICT"]
     }
   },
-  "expectedFindings": [
-    "RESULT_CONFLICT_HAS_NO_VALIDATION_WARNING"
-  ],
   "authoring": {
     "summary": "The synthetic paper reports 28.4 BLEU on EN-DE and 41.8 BLEU on WMT 2014 EN-FR.",
     "primaryResult": "41.8 BLEU",
@@ -40,11 +41,5 @@
     ],
     "conflictEvidenceSelector": "The prose reports 41.0 BLEU for EN-FR, conflicting with Table 2.",
     "visibleConflict": "The prose reports 41.0 BLEU while the abstract and Table 2 report 41.8 BLEU; the discrepancy remains unresolved."
-  },
-  "reservedTargets": {
-    "validationReport1_0": {
-      "expectedStatus": "pass_with_warnings",
-      "expectedFindingCodes": ["RESULT_VALUE_CONFLICT"]
-    }
   }
 }

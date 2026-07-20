@@ -26,6 +26,9 @@ const PACKAGE_COMPATIBILITY = 'plugins/codex-paper/src/shared/package-compatibil
 const STUDY_VALIDATOR = 'plugins/codex-paper/skills/study/scripts/validate-study-package.js'
 const MIGRATION_SCRIPT = 'plugins/codex-paper/skills/study/scripts/migrate-package.js'
 const VIEWER_COMPATIBILITY = 'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs'
+const VALIDATION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json'
+const VALIDATION_ENGINE = 'plugins/codex-paper/skills/study/scripts/validation-report.js'
+const VALIDATION_API = 'plugins/codex-paper/src/web/server/api/papers/[slug]/validation.get.ts'
 const MANDATORY_SENTINELS = [
   MANDATORY_MANIFEST,
   MANDATORY_RUNNER,
@@ -74,6 +77,9 @@ const SENTINELS = [
   STUDY_VALIDATOR,
   MIGRATION_SCRIPT,
   VIEWER_COMPATIBILITY,
+  VALIDATION_SCHEMA,
+  VALIDATION_ENGINE,
+  VALIDATION_API,
   'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
   'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json',
@@ -361,10 +367,10 @@ export function checkRepository({
         const expectedGenerator = `python3 ${FIXTURE_GENERATOR} --fixture ${fixtureId}`
         if (license?.generator !== expectedGenerator) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} generator mismatch`)
         if (license?.sha256 !== sha256(join(root, fixture.pdf))) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} sha256 mismatch`)
-        if (gold?.schemaVersion !== '1.1.0' || gold?.fixtureId !== fixtureId) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold identity mismatch`)
+        if (gold?.schemaVersion !== '1.2.0' || gold?.fixtureId !== fixtureId) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold identity mismatch`)
         if (!gold?.requiredAssertions || !gold?.authoring) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold must define requiredAssertions and authoring`)
-        if (!Array.isArray(gold?.expectedFindings) || gold.expectedFindings.length === 0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} expectedFindings must be non-empty`)
-        if (!gold?.requiredAssertions?.resultClaims2_1 || !gold?.reservedTargets?.validationReport1_0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must require B2 and reserve B3 targets`)
+        if (!gold?.requiredAssertions?.resultClaims2_1 || !gold?.requiredAssertions?.validationReport1_0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must require B2 and Validation Report 1.0`)
+        if (gold?.reservedTargets?.validationReport1_0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must activate, not reserve, Validation Report 1.0`)
       }
     }
   }
@@ -387,6 +393,7 @@ export function checkRepository({
     if (!rootScript.includes('benchmark-mandatory') || !rootScript.includes('run-mandatory-benchmark.mjs')) {
       errors.push(`${ROOT_SCRIPT} must expose benchmark-mandatory`)
     }
+    if (!rootScript.includes('validation-test') || !rootScript.includes('validation-report.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose validation-test`)
   }
   if (existsSync(join(root, CI_WORKFLOW))) {
     const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
@@ -395,6 +402,8 @@ export function checkRepository({
     if (mandatoryIndex < 0 || optionalIndex < 0 || mandatoryIndex > optionalIndex) {
       errors.push(`${CI_WORKFLOW} must run benchmark-mandatory before the optional external corpus`)
     }
+    const validationIndex = workflow.indexOf('validation-test')
+    if (validationIndex < 0 || validationIndex > mandatoryIndex) errors.push(`${CI_WORKFLOW} must run validation-test before benchmark-mandatory`)
   }
 
   const legacyReference = new RegExp(`(^|[^A-Za-z0-9_-])${LEGACY_TREE}/`)
@@ -559,6 +568,13 @@ export function checkRepository({
     if (!source.includes('classifyStoredPackageCompatibility')) errors.push(`${VIEWER_COMPATIBILITY} must preserve cross-endpoint compatibility classification`)
     if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${VIEWER_COMPATIBILITY} must preserve corrupt-artifact compatibility diagnostics`)
     if (!source.includes("readCompatibilityArtifact(slug, 'meta.json'")) errors.push(`${VIEWER_COMPATIBILITY} must preserve corrupt-meta compatibility fallback`)
+  }
+  if (existsSync(join(root, VALIDATION_ENGINE))) {
+    const source = readFileSync(join(root, VALIDATION_ENGINE), 'utf8')
+    for (const required of ['pass_with_warnings', 'allow_authoring', 'allow_publish', 'reportHash', 'writeValidationReportAtomic', 'RESULT_VALUE_CONFLICT', 'PARSER_FRONT_MATTER_CONTAMINATION']) {
+      if (!source.includes(required)) errors.push(`${VALIDATION_ENGINE} must preserve Validation Report 1.0 contract ${required}`)
+    }
+    if (source.includes('validation-report-v2') || source.includes('validation-report-1.0.json')) errors.push(`${VALIDATION_ENGINE} must write only .codex-paper/validation-report.json`)
   }
 
   if (Array.isArray(baseline?.schemas)) {

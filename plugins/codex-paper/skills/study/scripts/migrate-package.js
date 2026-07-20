@@ -321,7 +321,7 @@ export async function migratePackage(input, options = {}) {
     contextMode,
     profile,
     wrote,
-    next: 'Fill reasoning-analysis.json from evidence-ledger.json, change status to complete, then run validate-reasoning.js --strict.'
+    next: 'Fill reasoning-analysis.json from evidence-ledger.json, change status to complete, then run validate-reasoning.js. Use --strict only as an explicit warning-blocking policy.'
   };
 }
 

@@ -143,6 +143,15 @@ cmd_reasoning_test() {
   "$NODE_BIN" "$REPO_ROOT/benchmarks/run-reasoning-benchmark.mjs"
 }
 
+cmd_validation_test() {
+  ensure_node
+
+  print_section "Validation Report 1.0"
+  "$NODE_BIN" --test \
+    "$PLUGIN_ROOT/skills/study/scripts/tests/validation-report.test.mjs" \
+    "$PLUGIN_ROOT/skills/study/scripts/tests/validate-reasoning.test.mjs"
+}
+
 cmd_package_test() {
   ensure_node
 
@@ -321,6 +330,7 @@ Commands:
   benchmark-mandatory Run the non-skippable deterministic PDF regression
   test         Run deterministic unit tests
   reasoning-test Run reasoning validation fixtures
+  validation-test Run Validation Report 1.0 and cross-artifact gate tests
   package-test Run package quality fixtures
   benchmark-all  Run mandatory PDF, optional parser, reasoning, and package benchmarks
   migrate      Migrate a v1 package to v2 evidence/reasoning draft files
@@ -369,6 +379,9 @@ case "$command_name" in
     ;;
   reasoning-test)
     cmd_reasoning_test
+    ;;
+  validation-test)
+    cmd_validation_test
     ;;
   package-test)
     cmd_package_test

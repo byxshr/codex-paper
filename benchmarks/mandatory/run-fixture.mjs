@@ -3,7 +3,12 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { writeAuthoringBoundary } from './authoring-boundary.mjs';
-import { compareFindingContract, detectExpectedFindings, parseProjectedResultValue, sha256File, validateReservedTargets } from './contract.mjs';
+import {
+  parseProjectedResultValue,
+  sha256File,
+  validateReservedTargets,
+  validateValidationReportTarget
+} from './contract.mjs';
 import { PAPER_EVIDENCE_ID_PATTERN } from '../../plugins/codex-paper/src/shared/package-compatibility.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -82,7 +87,7 @@ function resultClaimChecks(result, required) {
   };
 }
 
-function requiredChecks({ result, gold, license, pdfPath, validators, reservedErrors }) {
+function requiredChecks({ result, gold, license, pdfPath, validators, targetErrors }) {
   const required = gold.requiredAssertions;
   const evidenceText = (result.ledger.evidence || []).map((item) => item.text).join('\n');
   const checks = {
@@ -100,9 +105,10 @@ function requiredChecks({ result, gold, license, pdfPath, validators, reservedEr
       .every((name) => fs.existsSync(path.join(result.paperDir, name))),
     authoringFiles: ['reasoning-analysis.json', 'README.md', 'visual-assets.md', 'summary.md', 'insights.md', 'method.md', 'mental-model.md', 'reflection.md', 'qa.md', 'index.html', 'code/deterministic-contract-probe.py']
       .every((name) => fs.existsSync(path.join(result.paperDir, name))),
-    studyValidator: validators.study.exitCode === 0,
-    reasoningValidatorStrict: validators.reasoningStrict.exitCode === 0,
-    reservedTargets: reservedErrors.length === 0,
+    reasoningDraft: validators.reasoningDraft.exitCode === 0,
+    studyValidatorStandard: validators.studyStandard.exitCode === 0,
+    studyValidatorStrictBlocks: validators.studyStrict.exitCode === 1,
+    validationReport1_0: targetErrors.length === 0,
     ...resultClaimChecks(result, required)
   };
   return checks;
@@ -119,30 +125,22 @@ async function main() {
     const result = await preparePaper(pdfPath, { contextMode: 'paper-only', profile: 'empirical' });
     writeAuthoringBoundary({ paperDir: result.paperDir, fixtureId, gold, ledger: result.ledger });
 
-    const reasoningNonStrict = runValidator('validate-reasoning.js', result.paperDir, ['--json']);
-    const study = runValidator('validate-study-package.js', result.paperDir, ['--lang', 'en']);
-    const reasoningStrict = runValidator('validate-reasoning.js', result.paperDir, ['--json', '--strict']);
-    let reasoningReport = null;
-    try { reasoningReport = JSON.parse(reasoningNonStrict.stdout); } catch {}
+    const reasoningDraft = runValidator('validate-reasoning.js', result.paperDir, ['--json']);
+    const studyStrict = runValidator('validate-study-package.js', result.paperDir, ['--lang', 'en', '--json', '--strict']);
+    const studyStandard = runValidator('validate-study-package.js', result.paperDir, ['--lang', 'en', '--json']);
+    let strictReport = null;
+    let standardReport = null;
+    try { strictReport = JSON.parse(studyStrict.stdout); } catch {}
+    try { standardReport = JSON.parse(studyStandard.stdout); } catch {}
     const evidenceText = (result.ledger.evidence || []).map((item) => item.text).join('\n');
-    const reservedErrors = validateReservedTargets(gold, evidenceText);
-    const validators = { reasoningNonStrict, study, reasoningStrict };
-    const validatorsPassed = study.exitCode === 0 && reasoningStrict.exitCode === 0;
-    const observedFindings = detectExpectedFindings({
-      fixtureId,
-      paperData: result.paperData,
-      facts: result.facts,
-      analysis: result.analysis,
-      reasoningReport,
-      reservedTargets: gold.reservedTargets,
-      validatorsPassed
-    });
-    const findingContract = compareFindingContract(gold.expectedFindings, observedFindings);
-    const checks = requiredChecks({ result, gold, license, pdfPath, validators, reservedErrors });
+    const targetErrors = [
+      ...validateReservedTargets(gold, evidenceText),
+      ...validateValidationReportTarget(standardReport, gold.requiredAssertions.validationReport1_0, { strictReport })
+    ];
+    const validators = { reasoningDraft, studyStrict, studyStandard };
+    const checks = requiredChecks({ result, gold, license, pdfPath, validators, targetErrors });
     const failedChecks = Object.entries(checks).filter(([, pass]) => !pass).map(([name]) => name);
-    const pass = failedChecks.length === 0
-      && findingContract.missingExpected.length === 0
-      && findingContract.unexpected.length === 0;
+    const pass = failedChecks.length === 0;
 
     process.stdout.write(`${JSON.stringify({
       fixtureId,
@@ -151,24 +149,23 @@ async function main() {
       pass,
       checks,
       failedChecks,
-      expectedFindings: gold.expectedFindings,
-      observedFindings,
-      missingExpectedFindings: findingContract.missingExpected,
-      unexpectedFindings: findingContract.unexpected,
-      activeContractIds: ['resultClaims2_1'],
-      reservedTargetIds: ['validationReport1_0'],
+      expectedFindingCodes: gold.requiredAssertions.validationReport1_0.expectedFindingCodes,
+      observedFindingCodes: (standardReport?.findings || []).map((finding) => finding.code),
+      activeContractIds: ['resultClaims2_1', 'validationReport1_0'],
+      reservedTargetIds: [],
       packageVersion: result.meta?.packageVersion,
       factsSchemaVersion: result.facts?.schemaVersion,
       resultClaimCount: result.facts?.resultClaims?.length || 0,
       validators: {
-        reasoningNonStrict: reasoningNonStrict.exitCode,
-        study: study.exitCode,
-        reasoningStrict: reasoningStrict.exitCode
+        reasoningDraft: reasoningDraft.exitCode,
+        studyStrict: studyStrict.exitCode,
+        studyStandard: studyStandard.exitCode
       },
       diagnostics: pass ? [] : [
-        ...reservedErrors,
-        ...(study.exitCode === 0 ? [] : [study.stdout || study.stderr]),
-        ...(reasoningStrict.exitCode === 0 ? [] : [reasoningStrict.stdout || reasoningStrict.stderr])
+        ...targetErrors,
+        ...(reasoningDraft.exitCode === 0 ? [] : [reasoningDraft.stdout || reasoningDraft.stderr]),
+        ...(studyStrict.exitCode === 1 ? [] : [studyStrict.stdout || studyStrict.stderr]),
+        ...(studyStandard.exitCode === 0 ? [] : [studyStandard.stdout || studyStandard.stderr])
       ].filter(Boolean)
     })}\n`);
   } catch (error) {

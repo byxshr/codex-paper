@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "fixtureId": "front-matter-noise",
   "requiredAssertions": {
     "title": "Synthetic Front Matter Noise",
@@ -22,12 +22,12 @@
       "requiresKeyResultsProjection": true,
       "forbiddenCorePhrases": ["Equal contribution", "Conference 2017", "Copyright 2026"],
       "forbiddenAnalysisPhrases": ["Equal contribution", "2017", "2026"]
+    },
+    "validationReport1_0": {
+      "expectedStatus": "pass_with_warnings",
+      "expectedFindingCodes": ["PARSER_FRONT_MATTER_CONTAMINATION"]
     }
   },
-  "expectedFindings": [
-    "FRONT_MATTER_FOOTNOTE_IN_ABSTRACT",
-    "FRONT_MATTER_COPYRIGHT_IN_ABSTRACT"
-  ],
   "authoring": {
     "summary": "The synthetic paper reports 28.4 BLEU on EN-DE under controlled conditions.",
     "primaryResult": "28.4 BLEU",
@@ -35,11 +35,5 @@
     "supportingEvidenceSelectors": ["The method achieves 28.4 BLEU on the EN-DE benchmark."],
     "conflictEvidenceSelector": null,
     "visibleConflict": null
-  },
-  "reservedTargets": {
-    "validationReport1_0": {
-      "expectedStatus": "pass_with_warnings",
-      "expectedFindingCodes": ["PARSER_FRONT_MATTER_CONTAMINATION"]
-    }
   }
 }

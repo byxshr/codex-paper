@@ -216,6 +216,50 @@
                 <span class="validation-pill">{{ reasoning.validationStatus || 'not validated' }}</span>
               </header>
 
+              <section v-if="validation" class="validation-summary" :data-status="validation.status || 'missing'">
+                <div class="validation-summary__top">
+                  <div>
+                    <p class="validation-summary__eyebrow">Validation Report {{ validation.schemaVersion || '' }}</p>
+                    <h3>{{ validation.available ? validation.status : 'not validated' }}</h3>
+                  </div>
+                  <div class="validation-summary__meta">
+                    <span>{{ validation.phase || 'unknown phase' }}</span>
+                    <span>{{ validation.publishable ? 'publishable' : 'not publishable' }}</span>
+                    <span>{{ validation.gate?.outcome || 'no gate' }}</span>
+                  </div>
+                </div>
+                <p v-if="validation.referenceCoverage">
+                  引用覆盖：{{ validation.referenceCoverage.valid }}/{{ validation.referenceCoverage.total }}
+                  （{{ Math.round((validation.referenceCoverage.ratio || 0) * 100) }}%）
+                </p>
+                <div v-if="validation.findings?.length" class="validation-findings">
+                  <article v-for="finding in validation.findings" :key="finding.id" class="validation-finding" :data-severity="finding.severity">
+                    <div>
+                      <strong>{{ finding.code }}</strong>
+                      <span>{{ finding.artifact }} · {{ finding.path }}</span>
+                    </div>
+                    <p>{{ finding.message }}</p>
+                    <button
+                      v-if="finding.evidenceRefs?.[0]"
+                      type="button"
+                      @click="openEvidence(finding.evidenceRefs[0])"
+                    >
+                      查看证据位置
+                    </button>
+                  </article>
+                  <p v-if="validation.truncated">仅显示前 100 条 findings（共 {{ validation.findingCount }} 条）。</p>
+                </div>
+                <p v-else-if="validation.diagnostics?.length">{{ validation.diagnostics[0].message }}</p>
+                <details v-if="validation.scope?.excluded?.length">
+                  <summary>验证范围与排除项</summary>
+                  <ul>
+                    <li v-for="item in validation.scope.excluded" :key="item.artifact">
+                      <strong>{{ item.artifact }}:</strong> {{ item.reason }}
+                    </li>
+                  </ul>
+                </details>
+              </section>
+
               <div class="audit-grid">
                 <article v-for="claim in reasoning.centralClaims || []" :key="claim.id" class="audit-card">
                   <div class="audit-card__top">
@@ -383,7 +427,7 @@ const askEntryId = ref('')
 const activeReaderTab = ref<'materials' | 'audit' | 'reasoning' | 'reviewer'>('materials')
 const evidenceDrawerOpen = ref(false)
 const selectedEvidence = ref<any | null>(null)
-const { reasoning, loadReasoning, loadEvidence } = usePaperEvidence(slug)
+const { reasoning, validation, loadReasoning, loadValidation, loadEvidence } = usePaperEvidence(slug)
 
 const readerTabs = [
   { key: 'materials', label: '学习材料' },
@@ -414,7 +458,7 @@ onMounted(async () => {
 
     // Load file tree
     await loadFileTree()
-    await loadReasoning()
+    await Promise.all([loadReasoning(), loadValidation()])
 
     await loadFile(pickDefaultFile(fileTree.value))
 
@@ -1198,6 +1242,104 @@ useHead({
   color: #374151;
   background: #ffffff;
   font-size: 0.8rem;
+}
+
+.validation-summary {
+  border: 1px solid #d1d5db;
+  border-left: 4px solid #64748b;
+  border-radius: 10px;
+  padding: 1rem;
+  background: #f8fafc;
+}
+
+.validation-summary[data-status="pass"] {
+  border-left-color: #16a34a;
+}
+
+.validation-summary[data-status="pass_with_warnings"] {
+  border-left-color: #d97706;
+}
+
+.validation-summary[data-status="fail"] {
+  border-left-color: #dc2626;
+}
+
+.validation-summary__top,
+.validation-finding > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.validation-summary__eyebrow {
+  margin: 0 0 0.25rem;
+  color: #64748b;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.validation-summary h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.1rem;
+}
+
+.validation-summary__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.validation-summary__meta span {
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 0.75rem;
+}
+
+.validation-findings {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.validation-finding {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #ffffff;
+}
+
+.validation-finding[data-severity="error"] {
+  border-color: #fecaca;
+}
+
+.validation-finding strong {
+  color: #111827;
+  font-size: 0.85rem;
+}
+
+.validation-finding span {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.validation-finding p {
+  margin: 0.55rem 0;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.validation-finding button {
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  color: #1d4ed8;
+  background: #eff6ff;
+  cursor: pointer;
 }
 
 .audit-grid {

@@ -335,7 +335,7 @@ async function runCli() {
     evidenceCount: result.ledger.evidence.length,
     analysisVersion: result.analysis.analysisVersion,
     externalEvidencePath: result.externalEvidencePath || null,
-    next: 'Run scaffold-reasoning-analysis.js, fill reasoning-analysis.json from the evidence ledger, then run validate-reasoning.js --strict before authoring visible materials.'
+    next: 'Run scaffold-reasoning-analysis.js, fill reasoning-analysis.json from the evidence ledger, then run validate-reasoning.js before authoring visible materials. Use --strict only as an explicit warning-blocking policy.'
   }, null, 2)}\n`);
 }
 

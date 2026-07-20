@@ -102,8 +102,45 @@ function reasoning() {
 
 function createV2Package() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-package-bench-'));
-  writeJson(path.join(dir, 'meta.json'), { slug: 'package-fixture', packageVersion: '2.0.0', learningArtifacts: [{ type: 'code', path: 'code/core-concept-demo.py', runCommand: 'python3 core-concept-demo.py', purpose: 'minimal behavior' }] });
-  writeJson(path.join(dir, 'evidence-ledger.json'), { evidence: [{ id: EVIDENCE_ID, text: 'The method reports a 3% improvement on the benchmark.', quote: 'The method reports a 3% improvement on the benchmark.' }], quality: { parser: 'pymupdf', readingOrder: 'high', sectionCoverage: 'high', tableExtraction: 'text-only', warnings: [] } });
+  const evidenceText = 'The method reports a 3% improvement on the benchmark.';
+  writeJson(path.join(dir, 'meta.json'), { slug: 'package-fixture', packageVersion: '2.1.0', learningArtifacts: [{ type: 'code', path: 'code/core-concept-demo.py', runCommand: 'python3 core-concept-demo.py', purpose: 'minimal behavior' }] });
+  writeJson(path.join(dir, 'paper-data.json'), { paperSlug: 'package-fixture', parserVersion: 'benchmark', abstract: evidenceText });
+  writeJson(path.join(dir, 'facts.json'), {
+    schemaVersion: '2.1.0',
+    paperSlug: 'package-fixture',
+    parserVersion: 'benchmark',
+    coreClaims: [],
+    resultClaims: [],
+    keyResults: [],
+    limitations: []
+  });
+  writeJson(path.join(dir, 'analysis.json'), {
+    paperSlug: 'package-fixture',
+    parserVersion: 'benchmark',
+    analysisVersion: '1.0.0',
+    resultsTable: []
+  });
+  writeJson(path.join(dir, 'evidence-ledger.json'), {
+    schemaVersion: '2.0.0',
+    paperSlug: 'package-fixture',
+    parserVersion: 'benchmark',
+    generatedAt: '2026-07-20T00:00:00.000Z',
+    document: { title: 'Package fixture', authors: [], pageCount: 1, language: 'en', sourceUrl: null, sha256: 'a'.repeat(64) },
+    sections: [],
+    pages: [],
+    evidence: [{
+      id: EVIDENCE_ID,
+      kind: 'paragraph',
+      roles: ['claim_candidate', 'result'],
+      text: evidenceText,
+      quote: evidenceText,
+      location: { page: 1, sectionId: null, charStart: 0, charEnd: evidenceText.length, blockIndex: 0, bbox: null },
+      labels: { figureNumber: null, tableNumber: null, equationNumber: null },
+      source: 'paper',
+      confidence: 'high'
+    }],
+    quality: { parser: 'pymupdf', readingOrder: 'high', sectionCoverage: 'high', tableExtraction: 'text-only', warnings: [] }
+  });
   writeJson(path.join(dir, 'reasoning-analysis.json'), reasoning());
   write(path.join(dir, 'paper.pdf'), 'pdf fixture');
   write(path.join(dir, 'README.md'), '# Package Fixture\n\nEmpirical paper, advanced difficulty, complete enough evidence. Read summary first. The main conclusion is scoped to the reported benchmark. Minimal reproduction starts in `code/core-concept-demo.py`.\n');
