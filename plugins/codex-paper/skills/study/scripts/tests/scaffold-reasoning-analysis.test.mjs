@@ -13,7 +13,8 @@ function makePaperDir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-scaffold-test-'));
   writeJson(path.join(dir, 'meta.json'), {
     slug: 'scaffold-paper',
-    title: 'Scaffold Paper'
+    title: 'Scaffold Paper',
+    packageVersion: '2.1.0'
   });
   writeJson(path.join(dir, 'paper-data.json'), {
     paperSlug: 'scaffold-paper',
@@ -22,6 +23,7 @@ function makePaperDir() {
     rawText: 'Theorem. Proof. Convergence bound.'
   });
   writeJson(path.join(dir, 'evidence-ledger.json'), {
+    schemaVersion: '2.0.0',
     paperSlug: 'scaffold-paper',
     quality: {
       readingOrder: 'high',

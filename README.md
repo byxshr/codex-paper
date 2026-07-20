@@ -36,11 +36,12 @@ Codex Paper is a Codex plugin that turns research papers into local study worksp
 - **Long-paper handling** - Parses large papers with quality flags and graceful fallbacks when extraction is incomplete
 - **Code repository detection** - Automatically finds GitHub, arXiv, CodeOcean links
 - **Evidence-first paper prep** - Generates internal evidence files such as `paper-data.json`, `facts.json`, and `analysis.json`
+- **Typed quantitative results** - Package 2.1 binds metric values to task/dataset/location context and direct paper evidence while retaining a `keyResults` compatibility projection
 - **Evidence ledger** - Writes `evidence-ledger.json` with stable evidence IDs, page text, section trees, evidence units, natural locations, and parser quality degradations
 - **Research reasoning analysis** - Adds `reasoning-analysis.json` for central claims, research question, author reasoning path, validations, weakest assumption, minimal reproduction, strongest counterexample, follow-up idea, and uncertainty zones
 - **Semantic validation** - Checks schema, evidence references, source types, numeric grounding, reasoning graph cycles, critical-analysis coverage, and template residue
 - **Context modes** - Defaults to offline `paper-only`; `canonical` and `literature` keep external evidence in `.codex-paper/external-evidence.json` instead of mixing it into the paper ledger
-- **Parser benchmark suite** - Regressions are checked against a fixed 5-paper gold set
+- **Deterministic parser gates** - Two redistributable synthetic PDFs are mandatory on every PR; the separate 5-paper external corpus remains optional in CI
 - **Reasoning and package benchmarks** - Adds deterministic fixtures for reasoning quality and visible study-package regressions
 - **Codex-authored study package** - Produces `README.md`, `summary.md`, `insights.md`, `method.md`, `mental-model.md`, `reflection.md`, and `qa.md` from the paper and evidence
 - **Curated visual learning path** - Adds `visual-assets.md` and embeds only high-value, source-labeled figures, tables, and deterministic diagrams where they support the prose

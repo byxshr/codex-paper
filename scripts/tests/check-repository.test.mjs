@@ -22,6 +22,13 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
   'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json',
   'plugins/codex-paper/skills/study/scripts/prepare-paper.js',
+  'plugins/codex-paper/skills/study/scripts/extract-facts.js',
+  'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
+  'plugins/codex-paper/skills/study/scripts/migrate-package.js',
+  'plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json',
+  'plugins/codex-paper/src/shared/package-compatibility.mjs',
+  'plugins/codex-paper/src/web/server/utils/packageCompatibility.mjs',
+  'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs',
   'plugins/codex-paper/sandbox/Dockerfile',
   'plugins/codex-paper/sandbox/policy.json',
   'plugins/codex-paper/src/web/package.json',
@@ -310,6 +317,66 @@ test('mandatory regression fails for missing gold, changed PDF hash, and wrong g
 test('tracked mandatory manifest cannot reference an untracked fixture file', () => withFixture((fixture) => {
   fixture.trackedFiles = fixture.trackedFiles.filter((path) => path !== 'benchmarks/mandatory/gold/front-matter-noise.json')
   assert.match(errorsFor(fixture), /fixture front-matter-noise gold must be tracked/)
+}))
+
+test('facts 2.1 schema and writer version boundaries cannot drift', () => withFixture((fixture) => {
+  const schemaPath = join(fixture.root, 'plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json')
+  const schema = JSON.parse(readFileSync(schemaPath, 'utf8'))
+  delete schema.properties.resultClaims
+  writeFileSync(schemaPath, JSON.stringify(schema))
+  const preparePath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
+  writeFileSync(preparePath, readFileSync(preparePath, 'utf8')
+    .replace("const PACKAGE_VERSION = '2.1.0'", "const PACKAGE_VERSION = '2.0.0'")
+    .replace('validateFactsSchema(facts)', 'true')
+    .replace('evidenceSchemaVersion: EVIDENCE_SCHEMA_VERSION', 'evidenceSchemaVersion: PACKAGE_VERSION'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must define facts schema 2\.1 with resultClaims/)
+  assert.match(errors, /must preserve package 2\.1 writer boundary/)
+  assert.match(errors, /validateFactsSchema\(facts\)/)
+  assert.match(errors, /must not couple frozen evidence schema/)
+}))
+
+test('package reader compatibility modes cannot be removed', () => withFixture((fixture) => {
+  const compatibilityPath = join(fixture.root, 'plugins/codex-paper/src/shared/package-compatibility.mjs')
+  writeFileSync(compatibilityPath, readFileSync(compatibilityPath, 'utf8')
+    .replaceAll('unknown_read_only', 'unknown')
+    .replaceAll('assertWritablePackage', 'removedWritableGuard')
+    .replaceAll('unsupportedVersions', 'firstArtifactVersion'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must preserve reader compatibility mode unknown_read_only/)
+  assert.match(errors, /must preserve reader compatibility mode assertWritablePackage/)
+  assert.match(errors, /must preserve reader compatibility mode unsupportedVersions/)
+}))
+
+test('round-two and round-three compatibility, legacy, and migration guards cannot be removed', () => withFixture((fixture) => {
+  const extractorPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/extract-facts.js')
+  const validatorPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/validate-study-package.js')
+  const migrationPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/migrate-package.js')
+  const viewerPath = join(fixture.root, 'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs')
+  writeFileSync(extractorPath, readFileSync(extractorPath, 'utf8').replaceAll('compareCandidatesForMerge', 'removedMergeOrder'))
+  writeFileSync(validatorPath, readFileSync(validatorPath, 'utf8')
+    .replaceAll('LEGACY_PACKAGE_REQUIRES_LEGACY_OK', 'legacy-soft-pass')
+    .replaceAll('classifyInvalidPackageArtifacts', 'ignoreInvalidArtifacts'))
+  writeFileSync(migrationPath, readFileSync(migrationPath, 'utf8')
+    .replaceAll('MIGRATION_SOURCE_VERSION_UNSUPPORTED', 'migration-soft-pass')
+    .replaceAll('isLegacyMigrationSourceVersion', 'declared-v1-unsupported')
+    .replaceAll('classifyPackageCompatibility({ reasoning: existingReasoning, ledger: existingLedger })', 'classifyPackageCompatibility({ meta })')
+    .replaceAll('classifyInvalidPackageArtifacts', 'rawJsonParse'))
+  writeFileSync(viewerPath, readFileSync(viewerPath, 'utf8')
+    .replaceAll('classifyStoredPackageCompatibility', 'classifyEndpointLocally')
+    .replaceAll('classifyInvalidPackageArtifacts', 'ignoreInvalidArtifacts')
+    .replaceAll("readCompatibilityArtifact(slug, 'meta.json'", "readOptionalInternalJson(slug, 'meta.json'"))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /compareCandidatesForMerge/)
+  assert.match(errors, /explicit read-only legacy validation/)
+  assert.match(errors, /diagnose corrupt compatibility artifacts/)
+  assert.match(errors, /reject unsupported versions before migration writes/)
+  assert.match(errors, /explicit 1\.x migration without partial writes/)
+  assert.match(errors, /preflight ancillary artifact versions/)
+  assert.match(errors, /diagnose corrupt migration inputs/)
+  assert.match(errors, /cross-endpoint compatibility classification/)
+  assert.match(errors, /corrupt-artifact compatibility diagnostics/)
+  assert.match(errors, /corrupt-meta compatibility fallback/)
 }))
 
 test('mandatory worker cannot bypass prepare or honor the optional skip flag', () => withFixture((fixture) => {

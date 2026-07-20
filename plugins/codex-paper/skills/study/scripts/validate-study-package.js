@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { validateReasoningPackage } from './validate-reasoning.js';
 import { REQUIRED_REFLECTION_HEADINGS } from '../profiles/profile-rules.js';
+import { classifyInvalidPackageArtifacts, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
 
 const REQUIRED_FILES = [
   'README.md',
@@ -128,13 +129,14 @@ function readText(filePath) {
   return fs.readFileSync(filePath, 'utf8');
 }
 
-function readJsonIfExists(filePath) {
+function readJsonIfExists(filePath, label, invalidArtifacts) {
   if (!fs.existsSync(filePath)) {
     return null;
   }
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
+    invalidArtifacts.push(label);
     return null;
   }
 }
@@ -370,19 +372,27 @@ function addFinding(findings, level, message) {
   findings[level].push(message);
 }
 
-function isV2Package(paperDir) {
-  const meta = readJsonIfExists(path.join(paperDir, 'meta.json'));
-  return meta?.packageVersion === '2.0.0'
-    || fs.existsSync(path.join(paperDir, 'reasoning-analysis.json'))
-    || fs.existsSync(path.join(paperDir, 'evidence-ledger.json'));
+function compatibilityForPackage(paperDir) {
+  const invalidArtifacts = [];
+  const meta = readJsonIfExists(path.join(paperDir, 'meta.json'), 'meta.json', invalidArtifacts);
+  const reasoning = readJsonIfExists(path.join(paperDir, 'reasoning-analysis.json'), 'reasoning-analysis.json', invalidArtifacts);
+  const ledger = readJsonIfExists(path.join(paperDir, 'evidence-ledger.json'), 'evidence-ledger.json', invalidArtifacts);
+  if (invalidArtifacts.length > 0) return classifyInvalidPackageArtifacts(invalidArtifacts);
+  return classifyPackageCompatibility({ meta, reasoning, ledger });
 }
 
-function checkReasoningLayer(paperDir, args, findings) {
-  if (!isV2Package(paperDir)) {
-    const message = args.legacyOk
-      ? 'Legacy v1 package: v2 reasoning validation was skipped because --legacy-ok was provided.'
-      : 'Legacy v1 package: v2 reasoning files are absent; existing package checks continue.';
-    addFinding(findings, 'warnings', message);
+function checkReasoningLayer(paperDir, args, findings, compatibility) {
+  if (compatibility.mode === 'unknown_read_only') {
+    const primaryDiagnostic = compatibility.diagnostics[0] || { code: 'PACKAGE_VERSION_UNSUPPORTED', message: 'Package compatibility could not be established.' };
+    addFinding(findings, 'errors', `${primaryDiagnostic.code}: ${primaryDiagnostic.message}`);
+    return;
+  }
+  if (compatibility.mode === 'legacy_v1') {
+    if (!args.legacyOk) {
+      addFinding(findings, 'errors', 'LEGACY_PACKAGE_REQUIRES_LEGACY_OK: Legacy v1 packages require --legacy-ok for limited read-only validation; this flag does not authorize artifact writes.');
+      return;
+    }
+    addFinding(findings, 'warnings', 'Legacy v1 package: limited read-only validation is enabled by --legacy-ok; v2 reasoning validation is skipped and artifact writers remain disabled.');
     return;
   }
 
@@ -913,8 +923,9 @@ function validate(args) {
     return { paperDir, findings };
   }
 
-  const v2Package = isV2Package(paperDir);
-  checkReasoningLayer(paperDir, args, findings);
+  const compatibility = compatibilityForPackage(paperDir);
+  const v2Package = ['native_2_1', 'compatible_2_0'].includes(compatibility.mode);
+  checkReasoningLayer(paperDir, args, findings, compatibility);
 
   checkRequiredFiles(paperDir, findings);
   checkForbiddenResidues(paperDir, findings);

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "fixtureId": "result-conflict",
   "requiredAssertions": {
     "title": "Synthetic Translation Result Conflict",
@@ -12,13 +12,21 @@
       "conclusion": ["41.0 BLEU", "conflicting with Table 2"]
     },
     "evidencePhrases": ["28.4 BLEU", "WMT 2014", "41.8 BLEU", "41.0 BLEU"],
-    "parserBackend": "pymupdf"
+    "parserBackend": "pymupdf",
+    "resultClaims2_1": {
+      "required": [
+        { "metric": "BLEU", "value": 28.4, "languagePair": "EN-DE" },
+        { "metric": "BLEU", "value": 41.8, "languagePair": "EN-FR", "dataset": "WMT 2014", "table": 2 },
+        { "metric": "BLEU", "value": 41.0, "languagePair": "EN-FR" }
+      ],
+      "forbiddenValues": [2014],
+      "requiresDirectEvidenceRefs": true,
+      "requiresKeyResultsProjection": true,
+      "forbiddenCorePhrases": [],
+      "forbiddenAnalysisPhrases": []
+    }
   },
   "expectedFindings": [
-    "DATASET_YEAR_AS_KEY_RESULT",
-    "EXPECTED_RESULT_41_8_NOT_SELECTED",
-    "CONFLICTING_RESULT_41_0_SELECTED",
-    "CROSS_ARTIFACT_RESULT_MISMATCH_UNGATED",
     "RESULT_CONFLICT_HAS_NO_VALIDATION_WARNING"
   ],
   "authoring": {
@@ -34,11 +42,6 @@
     "visibleConflict": "The prose reports 41.0 BLEU while the abstract and Table 2 report 41.8 BLEU; the discrepancy remains unresolved."
   },
   "reservedTargets": {
-    "resultClaims2_1": {
-      "requiredValues": [28.4, 41.8],
-      "forbiddenValues": [2014],
-      "requiresDirectEvidenceRefs": true
-    },
     "validationReport1_0": {
       "expectedStatus": "pass_with_warnings",
       "expectedFindingCodes": ["RESULT_VALUE_CONFLICT"]

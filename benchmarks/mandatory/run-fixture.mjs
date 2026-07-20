@@ -3,7 +3,8 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { writeAuthoringBoundary } from './authoring-boundary.mjs';
-import { compareFindingContract, detectExpectedFindings, sha256File, validateReservedTargets } from './contract.mjs';
+import { compareFindingContract, detectExpectedFindings, parseProjectedResultValue, sha256File, validateReservedTargets } from './contract.mjs';
+import { PAPER_EVIDENCE_ID_PATTERN } from '../../plugins/codex-paper/src/shared/package-compatibility.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +28,60 @@ function runValidator(script, paperDir, args = []) {
   };
 }
 
+function claimMatches(actual, expected) {
+  return actual.metric === expected.metric
+    && Number(actual.value) === Number(expected.value)
+    && (!('languagePair' in expected) || actual.languagePair === expected.languagePair)
+    && (!('dataset' in expected) || actual.dataset === expected.dataset)
+    && (!('table' in expected) || actual.location?.table === expected.table);
+}
+
+function collectEvidenceRefs(node, output = []) {
+  if (!node || typeof node !== 'object') return output;
+  if (Array.isArray(node.evidenceRefs)) output.push(...node.evidenceRefs);
+  for (const value of Object.values(node)) collectEvidenceRefs(value, output);
+  return output;
+}
+
+function resultClaimChecks(result, required) {
+  const target = required.resultClaims2_1 || {};
+  const claims = result.facts.resultClaims || [];
+  const ledgerIds = new Set((result.ledger.evidence || []).map((item) => item.id));
+  const projection = result.facts.keyResults || [];
+  const analysisRefs = collectEvidenceRefs(result.analysis);
+  const coreText = JSON.stringify(result.facts.coreClaims || []);
+  const analysisText = JSON.stringify({
+    oneSentence: result.analysis?.oneSentence,
+    problem: result.analysis?.problem,
+    coreIdea: result.analysis?.coreIdea,
+    contributions: result.analysis?.contributions,
+    resultsTable: result.analysis?.resultsTable,
+    limitations: result.analysis?.limitations,
+    openQuestions: result.analysis?.openQuestions
+  });
+  return {
+    packageVersion2_1: result.meta?.packageVersion === '2.1.0',
+    factsVersion2_1: result.facts?.schemaVersion === '2.1.0',
+    requiredResultClaims: (target.required || []).every((expected) => claims.some((claim) => claimMatches(claim, expected))),
+    forbiddenResultValues: (target.forbiddenValues || []).every((value) => !claims.some((claim) => Number(claim.value) === Number(value))),
+    directResultEvidenceRefs: target.requiresDirectEvidenceRefs !== true || claims.every((claim) =>
+      Array.isArray(claim.evidenceRefs) && claim.evidenceRefs.length > 0
+      && claim.evidenceRefs.every((ref) => PAPER_EVIDENCE_ID_PATTERN.test(ref) && ledgerIds.has(ref))),
+    directAnalysisEvidenceRefs: target.requiresDirectEvidenceRefs !== true || (
+      analysisRefs.length > 0
+      && analysisRefs.every((ref) => PAPER_EVIDENCE_ID_PATTERN.test(ref) && ledgerIds.has(ref))
+    ),
+    keyResultsProjection: target.requiresKeyResultsProjection !== true || (
+      projection.length === claims.length
+      && claims.every((claim, index) => parseProjectedResultValue(projection[index]?.value) === Number(claim.value)
+        && projection[index]?.label === claim.metric
+        && JSON.stringify(projection[index]?.evidenceRefs) === JSON.stringify(claim.evidenceRefs))
+    ),
+    coreNoiseFiltered: (target.forbiddenCorePhrases || []).every((phrase) => !includesNormalized(coreText, phrase)),
+    analysisNoiseFiltered: (target.forbiddenAnalysisPhrases || []).every((phrase) => !includesNormalized(analysisText, phrase))
+  };
+}
+
 function requiredChecks({ result, gold, license, pdfPath, validators, reservedErrors }) {
   const required = gold.requiredAssertions;
   const evidenceText = (result.ledger.evidence || []).map((item) => item.text).join('\n');
@@ -47,7 +102,8 @@ function requiredChecks({ result, gold, license, pdfPath, validators, reservedEr
       .every((name) => fs.existsSync(path.join(result.paperDir, name))),
     studyValidator: validators.study.exitCode === 0,
     reasoningValidatorStrict: validators.reasoningStrict.exitCode === 0,
-    reservedTargets: reservedErrors.length === 0
+    reservedTargets: reservedErrors.length === 0,
+    ...resultClaimChecks(result, required)
   };
   return checks;
 }
@@ -99,7 +155,11 @@ async function main() {
       observedFindings,
       missingExpectedFindings: findingContract.missingExpected,
       unexpectedFindings: findingContract.unexpected,
-      reservedTargetIds: ['resultClaims2_1', 'validationReport1_0'],
+      activeContractIds: ['resultClaims2_1'],
+      reservedTargetIds: ['validationReport1_0'],
+      packageVersion: result.meta?.packageVersion,
+      factsSchemaVersion: result.facts?.schemaVersion,
+      resultClaimCount: result.facts?.resultClaims?.length || 0,
       validators: {
         reasoningNonStrict: reasoningNonStrict.exitCode,
         study: study.exitCode,

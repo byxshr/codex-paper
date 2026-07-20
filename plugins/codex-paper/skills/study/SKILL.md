@@ -62,7 +62,7 @@ New packages are v2 packages. They must include:
 ```text
 evidence-ledger.json
 reasoning-analysis.json
-meta.json with packageVersion = "2.0.0"
+meta.json with packageVersion = "2.1.0"
 .codex-paper/reasoning-review.md
 .codex-paper/validation-report.json
 ```
@@ -103,6 +103,8 @@ The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes `~/codex
 ```
 
 Treat these JSON files as evidence preparation only. They are not final study material.
+
+For new packages, `facts.json` contains typed `resultClaims` plus a compatibility `keyResults` projection. Use the ResultClaim metric/value/location and its direct `ev-*` references when checking quantitative statements. Years, page/table labels, citations, versions, hardware counts, and training duration are not primary result values. Existing 2.0 packages may still contain `claim:n`, `result:n`, or `limitation:n`; readers resolve those in memory and must never rewrite a package merely because it was read.
 
 PDF ingestion is fail-closed. Never replace the preparation entrypoint with `curl`, `wget`, a browser download, or direct in-process parser calls. Remote inputs must be HTTPS; the downloader revalidates every redirect, pins DNS to a public address, verifies the connected peer, enforces a 128 MiB stream budget, and requires `%PDF-` magic. Local inputs are copied through a private no-follow staging snapshot. The parser runs only through its bounded supervisor with wall/CPU/RSS/output and 2000-page limits. Encrypted, malformed, oversized, over-page, or resource-exhausting inputs fail and may be retained only in the private bounded `~/codex-papers/.quarantine/`; do not open or reuse quarantined files as trusted evidence.
 

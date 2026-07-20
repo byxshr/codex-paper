@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { parsePdfDetailed } from './parse-pdf.js';
 import { buildEvidenceLedger } from './build-evidence-ledger.js';
 import { scaffoldReasoningAnalysis } from './scaffold-reasoning-analysis.js';
+import { classifyInvalidPackageArtifacts, classifyPackageCompatibility, isLegacyMigrationSourceVersion } from '../../../src/shared/package-compatibility.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,11 +83,16 @@ function resolvePaperDir(input, options = {}) {
   return libraryPath;
 }
 
-function readJson(filePath, fallback = {}) {
+function readJson(filePath, fallback = {}, label = path.basename(filePath)) {
   if (!fs.existsSync(filePath)) {
     return fallback;
   }
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    const compatibility = classifyInvalidPackageArtifacts([label]);
+    throw new Error(`${compatibility.diagnostics[0].code}: ${compatibility.diagnostics[0].message}`);
+  }
 }
 
 function writeJsonAtomic(filePath, value) {
@@ -236,8 +242,18 @@ export async function migratePackage(input, options = {}) {
   const paperDataPath = path.join(paperDir, 'paper-data.json');
   const ledgerPath = path.join(paperDir, 'evidence-ledger.json');
   const reasoningPath = path.join(paperDir, 'reasoning-analysis.json');
-  const meta = readJson(metaPath);
-  const paperData = readJson(paperDataPath, {});
+  const meta = readJson(metaPath, {}, 'meta.json');
+  const existingLedger = readJson(ledgerPath, null, 'evidence-ledger.json');
+  const existingReasoning = readJson(reasoningPath, null, 'reasoning-analysis.json');
+  const declaredVersion = typeof meta.packageVersion === 'string' ? meta.packageVersion.trim() : '';
+  if (declaredVersion && declaredVersion !== PACKAGE_VERSION && !isLegacyMigrationSourceVersion(declaredVersion)) {
+    throw new Error(`MIGRATION_SOURCE_VERSION_UNSUPPORTED: Package version ${declaredVersion} cannot be migrated by the v1-to-v2 tool.`);
+  }
+  const artifactCompatibility = classifyPackageCompatibility({ reasoning: existingReasoning, ledger: existingLedger });
+  if (artifactCompatibility.mode === 'unknown_read_only') {
+    throw new Error(`MIGRATION_SOURCE_VERSION_UNSUPPORTED: ${artifactCompatibility.diagnostics[0].message}`);
+  }
+  const paperData = readJson(paperDataPath, {}, 'paper-data.json');
   const paperSlug = meta.slug || paperData.paperSlug || path.basename(paperDir);
   const contextMode = options.contextMode ?? meta.contextMode ?? 'paper-only';
   const profile = options.profile ?? meta.requestedPaperProfile ?? 'auto';
@@ -277,7 +293,8 @@ export async function migratePackage(input, options = {}) {
     scaffoldReasoningAnalysis(paperDir, {
       force: Boolean(options.force),
       contextMode,
-      profile
+      profile,
+      explicitV2Migration: true
     });
     scaffoldedReasoning = true;
     wrote.push('reasoning-analysis.json', '.codex-paper/reasoning-review.md');

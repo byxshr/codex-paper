@@ -37,6 +37,8 @@ Every analysis node uses one `sourceType`:
 - `inference`: Codex analysis grounded in available evidence.
 - `speculation`: research guess or forward-looking idea; never high confidence.
 
+New 2.1 facts and low-level analysis use direct `ev-*` references. Readers continue to understand historical `claim:n`, `result:n`, and `limitation:n` references from 2.0 packages by resolving them in memory; reading never upgrades or rewrites the package.
+
 ## Validator
 
 `validate-reasoning.js` checks:

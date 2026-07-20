@@ -1,4 +1,5 @@
 import { readJsonPath, readOptionalInternalJson, resolveInternalFile, truncateText, validateSlug } from '../../../utils/librarySecurity.mjs'
+import { classifyStoredPackageCompatibility } from '../../../utils/storedPackageCompatibility.mjs'
 
 function trimNode(node: any) {
   if (!node || typeof node !== 'object') return node
@@ -49,7 +50,8 @@ export default defineEventHandler((event) => {
     return {
       available: false,
       reason: 'v2 reasoning is not available for this package',
-      packageVersion: meta.packageVersion || 'legacy'
+      packageVersion: meta.packageVersion || 'legacy',
+      compatibility: classifyStoredPackageCompatibility(slug!, { meta, reasoning: null })
     }
   }
 
@@ -59,6 +61,7 @@ export default defineEventHandler((event) => {
   return {
     available: true,
     packageVersion: meta.packageVersion || reasoning.schemaVersion || '2.0.0',
+    compatibility: classifyStoredPackageCompatibility(slug!, { meta, reasoning }),
     contextMode: reasoning.contextMode,
     paperType: reasoning.paperType,
     difficulty: reasoning.difficulty,

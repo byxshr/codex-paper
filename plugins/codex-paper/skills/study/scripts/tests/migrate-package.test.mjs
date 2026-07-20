@@ -134,3 +134,88 @@ test('migratePackage refuses out-of-library paths unless explicitly allowed', as
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('migratePackage rejects unsupported source versions before writing any artifact', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-migrate-unsupported-test-'));
+  try {
+    const metaPath = path.join(dir, 'meta.json');
+    writeJson(metaPath, { slug: 'future-paper', title: 'Future Paper', packageVersion: '9.0.0' });
+    const before = new Map(fs.readdirSync(dir).map((name) => [name, fs.readFileSync(path.join(dir, name), 'utf8')]));
+    await assert.rejects(
+      () => migratePackage(dir, { externalPath: true }),
+      /MIGRATION_SOURCE_VERSION_UNSUPPORTED/
+    );
+    assert.deepEqual(new Set(fs.readdirSync(dir)), new Set(before.keys()));
+    for (const [name, content] of before) assert.equal(fs.readFileSync(path.join(dir, name), 'utf8'), content);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migratePackage completes an explicitly versioned 1.x package without partial writes', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-migrate-declared-v1-test-'));
+  try {
+    writeJson(path.join(dir, 'meta.json'), {
+      slug: 'declared-v1-paper',
+      title: 'Declared V1 Paper',
+      packageVersion: '1.0.0'
+    });
+    writeJson(path.join(dir, 'paper-data.json'), {
+      paperSlug: 'declared-v1-paper',
+      title: 'Declared V1 Paper',
+      abstract: 'A legacy package with an explicit version.',
+      rawText: 'A legacy package with an explicit version.',
+      sections: {}
+    });
+
+    const result = await migratePackage(dir, { externalPath: true });
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
+    assert.equal(result.wrote.includes('reasoning-analysis.json'), true);
+    assert.equal(meta.packageVersion, '2.0.0');
+    assert.equal(fs.existsSync(path.join(dir, 'evidence-ledger.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, 'reasoning-analysis.json')), true);
+    assert.equal(fs.existsSync(path.join(dir, '.codex-paper', 'reasoning-review.md')), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migratePackage rejects unsupported ancillary versions before writes with or without force', async () => {
+  for (const force of [false, true]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `codex-paper-migrate-unsupported-ledger-${force}-`));
+    try {
+      writeJson(path.join(dir, 'meta.json'), {
+        slug: 'unsupported-ledger',
+        title: 'Unsupported Ledger',
+        contextMode: 'literature'
+      });
+      writeJson(path.join(dir, 'evidence-ledger.json'), { schemaVersion: '3.0.0', evidence: [] });
+      const before = new Map(fs.readdirSync(dir).map((name) => [name, fs.readFileSync(path.join(dir, name), 'utf8')]));
+
+      await assert.rejects(
+        () => migratePackage(dir, { externalPath: true, force }),
+        /MIGRATION_SOURCE_VERSION_UNSUPPORTED.*3\.0\.0/
+      );
+      assert.deepEqual(new Set(fs.readdirSync(dir)), new Set(before.keys()));
+      for (const [name, content] of before) assert.equal(fs.readFileSync(path.join(dir, name), 'utf8'), content);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('migratePackage reports corrupt metadata before writing any artifact', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-migrate-corrupt-meta-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'meta.json'), '{not-json');
+    const before = fs.readFileSync(path.join(dir, 'meta.json'), 'utf8');
+    await assert.rejects(
+      () => migratePackage(dir, { externalPath: true }),
+      /PACKAGE_ARTIFACT_INVALID.*meta\.json/
+    );
+    assert.deepEqual(fs.readdirSync(dir), ['meta.json']);
+    assert.equal(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'), before);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

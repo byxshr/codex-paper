@@ -16,7 +16,7 @@ Two original MIT-licensed PDFs under `fixtures/pdf/` exercise front-matter noise
 python3 benchmarks/fixtures/generate-pdf-fixtures.py --check
 ```
 
-The suite uses the production bounded prepare pipeline, a fixed model-free authoring boundary, and both package validators. It has no skip mode: zero or partial execution is a failure. Current audited defects are required expected findings until P0-B2/B3 deliberately migrate them to positive assertions.
+The suite uses the production bounded prepare pipeline, a fixed model-free authoring boundary, and both package validators. It has no skip mode: zero or partial execution is a failure. P0-B2 result/noise defects are now positive typed ResultClaim assertions; parser contamination and the missing conflict warning remain expected findings until P0-B3 supplies Validation Report 1.0.
 
 ## Optional external PDF source
 
@@ -35,7 +35,7 @@ CI can set `CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS=1` to mark missing external
 - `manifest.json`: the fixed benchmark set
 - `gold/*.json`: paper-level expectations for titles, authors, page counts, abstract phrases, links, and forbidden title patterns
 - `mandatory/manifest.json`: the non-skippable synthetic fixture set
-- `mandatory/gold/*.json`: required assertions, expected findings, and reserved B2/B3 targets
+- `mandatory/gold/*.json`: required 2.1 ResultClaim assertions, remaining expected findings, and reserved B3 targets
 - `fixtures/pdf/`: redistributable PDFs and adjacent provenance manifests
 - `fixtures/generate-pdf-fixtures.py`: deterministic standard-library fixture generator
 - `run-mandatory-benchmark.mjs`: bounded PDF-to-validator regression executor

@@ -139,6 +139,7 @@ function runValidator(dir, args = []) {
 
 const fixtures = [
   { name: 'valid-v2-package', make: createV2Package, expectPass: true },
+  { name: 'legacy-v1-requires-legacy-ok', make: createV1Package, expectText: 'LEGACY_PACKAGE_REQUIRES_LEGACY_OK' },
   { name: 'legacy-v1-ok', make: createV1Package, args: ['--legacy-ok'], expectPass: true },
   {
     name: 'legacy-run-code-rejected-without-execution',

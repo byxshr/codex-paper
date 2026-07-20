@@ -32,9 +32,40 @@ fs.writeFileSync(path.join(paperDir, 'unsafe.ipynb'), JSON.stringify({
     ] }
   ]
 }))
-fs.writeFileSync(path.join(paperDir, 'meta.json'), JSON.stringify({ title: 'Fixture', slug: 'sample-paper', tags: [] }))
+fs.writeFileSync(path.join(paperDir, 'meta.json'), JSON.stringify({ title: 'Fixture', slug: 'sample-paper', tags: [], packageVersion: '2.1.0' }))
+fs.writeFileSync(path.join(paperDir, 'facts.json'), JSON.stringify({ schemaVersion: '2.1.0', coreClaims: [], resultClaims: [], keyResults: [], limitations: [] }))
+fs.writeFileSync(path.join(paperDir, 'analysis.json'), JSON.stringify({ analysisVersion: '1.0.0', resultsTable: [] }))
+fs.writeFileSync(path.join(paperDir, 'evidence-ledger.json'), JSON.stringify({ schemaVersion: '2.0.0', evidence: [] }))
+fs.writeFileSync(path.join(paperDir, 'reasoning-analysis.json'), JSON.stringify({ schemaVersion: '2.0.0', centralClaims: [], researchQuestion: {}, authorReasoningPath: [], validations: [] }))
+const unknownDir = path.join(libraryRoot, 'papers', 'unknown-paper')
+fs.mkdirSync(unknownDir, { recursive: true })
+fs.writeFileSync(path.join(unknownDir, 'meta.json'), JSON.stringify({ title: 'Unknown', slug: 'unknown-paper', packageVersion: '9.0.0' }))
+fs.writeFileSync(path.join(unknownDir, 'facts.json'), JSON.stringify({ keyResults: [] }))
+fs.writeFileSync(path.join(unknownDir, 'analysis.json'), JSON.stringify({ resultsTable: [] }))
+const mismatchDir = path.join(libraryRoot, 'papers', 'mismatch-paper')
+fs.mkdirSync(mismatchDir, { recursive: true })
+fs.writeFileSync(path.join(mismatchDir, 'facts.json'), JSON.stringify({ keyResults: [] }))
+fs.writeFileSync(path.join(mismatchDir, 'analysis.json'), JSON.stringify({ resultsTable: [] }))
+fs.writeFileSync(path.join(mismatchDir, 'reasoning-analysis.json'), JSON.stringify({ schemaVersion: '2.0.0', centralClaims: [], researchQuestion: {}, authorReasoningPath: [], validations: [] }))
+fs.writeFileSync(path.join(mismatchDir, 'evidence-ledger.json'), JSON.stringify({ schemaVersion: '3.0.0', evidence: [] }))
+const corruptLedgerDir = path.join(libraryRoot, 'papers', 'corrupt-ledger-paper')
+fs.mkdirSync(corruptLedgerDir, { recursive: true })
+fs.writeFileSync(path.join(corruptLedgerDir, 'facts.json'), JSON.stringify({ keyResults: [] }))
+fs.writeFileSync(path.join(corruptLedgerDir, 'analysis.json'), JSON.stringify({ resultsTable: [] }))
+fs.writeFileSync(path.join(corruptLedgerDir, 'evidence-ledger.json'), '{not-json')
+const corruptMetaDir = path.join(libraryRoot, 'papers', 'corrupt-meta-paper')
+fs.mkdirSync(corruptMetaDir, { recursive: true })
+fs.writeFileSync(path.join(corruptMetaDir, 'facts.json'), JSON.stringify({ keyResults: [] }))
+fs.writeFileSync(path.join(corruptMetaDir, 'analysis.json'), JSON.stringify({ resultsTable: [] }))
+fs.writeFileSync(path.join(corruptMetaDir, 'meta.json'), '{not-json')
 fs.writeFileSync(path.join(paperDir, '.secret'), 'hidden')
-fs.writeFileSync(path.join(libraryRoot, 'index.json'), JSON.stringify([{ title: 'Fixture', slug: 'sample-paper', authors: [], abstract: '', tags: [], url: 'javascript:alert(1)', githubLinks: ['https://github.com/example/repo', 'file:///tmp/secret'], codeLinks: ['vbscript:bad'] }]))
+fs.writeFileSync(path.join(libraryRoot, 'index.json'), JSON.stringify([
+  { title: 'Fixture', slug: 'sample-paper', authors: [], abstract: '', tags: [], url: 'javascript:alert(1)', githubLinks: ['https://github.com/example/repo', 'file:///tmp/secret'], codeLinks: ['vbscript:bad'] },
+  { title: 'Unknown', slug: 'unknown-paper', authors: [], abstract: '', tags: [] },
+  { title: 'Mismatch', slug: 'mismatch-paper', authors: [], abstract: '', tags: [] },
+  { title: 'Corrupt Ledger', slug: 'corrupt-ledger-paper', authors: [], abstract: '', tags: [] },
+  { title: 'Corrupt Meta', slug: 'corrupt-meta-paper', authors: [], abstract: '', tags: [] }
+]))
 try { fs.symlinkSync('/etc/passwd', path.join(paperDir, 'escape.txt')) } catch {}
 
 const child = spawn(process.execPath, [serverEntry], {
@@ -133,6 +164,52 @@ try {
   assert.match(detail.json.renderedHtml, /&lt;script&gt;/)
   assert.doesNotMatch(detail.json.renderedHtml, /<script|javascript:/i)
 
+  const ledgerPath = path.join(paperDir, 'evidence-ledger.json')
+  const ledgerContent = fs.readFileSync(ledgerPath, 'utf8')
+  fs.writeFileSync(ledgerPath, '{not-json')
+  try {
+    for (const endpoint of ['facts', 'analysis', 'reasoning']) {
+      const response = await request('GET', `/api/papers/sample-paper/${endpoint}`, { headers: auth })
+      assert.equal(response.status, 200)
+      assert.equal(response.json.compatibility.mode, 'native_2_1')
+      assert.equal(response.json.compatibility.readOnly, false)
+    }
+  } finally {
+    fs.writeFileSync(ledgerPath, ledgerContent)
+  }
+  const unknownBefore = new Map(['meta.json', 'facts.json', 'analysis.json'].map((name) => [name, fs.statSync(path.join(unknownDir, name)).mtimeMs]))
+  for (const endpoint of ['facts', 'analysis', 'reasoning']) {
+    const response = await request('GET', `/api/papers/unknown-paper/${endpoint}`, { headers: auth })
+    assert.equal(response.status, 200)
+    assert.equal(response.json.compatibility.mode, 'unknown_read_only')
+    assert.equal(response.json.compatibility.diagnostics[0].code, 'PACKAGE_VERSION_UNSUPPORTED')
+  }
+  for (const [name, mtime] of unknownBefore) assert.equal(fs.statSync(path.join(unknownDir, name)).mtimeMs, mtime)
+
+  for (const endpoint of ['facts', 'analysis', 'reasoning']) {
+    const response = await request('GET', `/api/papers/mismatch-paper/${endpoint}`, { headers: auth })
+    assert.equal(response.status, 200)
+    assert.equal(response.json.compatibility.mode, 'unknown_read_only')
+    assert.equal(response.json.compatibility.diagnostics[0].code, 'PACKAGE_VERSION_UNSUPPORTED')
+  }
+
+  for (const endpoint of ['facts', 'analysis', 'reasoning']) {
+    const response = await request('GET', `/api/papers/corrupt-ledger-paper/${endpoint}`, { headers: auth })
+    assert.equal(response.status, 200)
+    assert.equal(response.json.compatibility.mode, 'unknown_read_only')
+    assert.equal(response.json.compatibility.readOnly, true)
+    assert.equal(response.json.compatibility.diagnostics[0].code, 'PACKAGE_ARTIFACT_INVALID')
+  }
+
+  for (const endpoint of ['facts', 'analysis']) {
+    const response = await request('GET', `/api/papers/corrupt-meta-paper/${endpoint}`, { headers: auth })
+    assert.equal(response.status, 200)
+    assert.equal(response.json.compatibility.mode, 'unknown_read_only')
+    assert.equal(response.json.compatibility.readOnly, true)
+    assert.equal(response.json.compatibility.diagnostics[0].code, 'PACKAGE_ARTIFACT_INVALID')
+    assert.match(response.json.compatibility.diagnostics[0].message, /meta\.json/)
+  }
+
   const markdownFile = await request('GET', '/api/papers/sample-paper/file?path=notes%2Fpublic.md', { headers: auth })
   assert.equal(markdownFile.status, 200)
   assert.match(markdownFile.json.content, /onerror=/)
@@ -189,7 +266,8 @@ try {
   assert.equal((await request('POST', `/api/trash/${trash.json[0].trashId}/restore`, { headers: mutation })).status, 200)
   assert.equal(fs.existsSync(paperDir), true)
   assert.equal((await request('POST', `/api/trash/${trash.json[0].trashId}/restore`, { headers: mutation })).status, 404)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(libraryRoot, 'index.json')))[0].tags[0], 'x')
+  const restoredIndex = JSON.parse(fs.readFileSync(path.join(libraryRoot, 'index.json'), 'utf8'))
+  assert.equal(restoredIndex.find((entry) => entry.slug === 'sample-paper').tags[0], 'x')
   process.stdout.write('Viewer HTTP security integration passed.\n')
 } finally {
   child.kill('SIGTERM')

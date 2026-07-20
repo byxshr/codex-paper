@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { assertWritablePackage, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -127,7 +128,10 @@ function factCatalog(facts) {
     values.forEach((item, index) => {
       const body = kind === 'result' ? item.context || item.label : item.text;
       items.push({
-        ref: `${kind}:${index}`,
+        legacyRef: `${kind}:${index}`,
+        refs: Array.isArray(item.evidenceRefs) && item.evidenceRefs.length > 0
+          ? item.evidenceRefs
+          : [`${kind}:${index}`],
         kind,
         text: normalizeWhitespace(body),
         quote: normalizeWhitespace(item.evidence?.quote || '')
@@ -148,7 +152,7 @@ function findEvidenceRefs(text, facts, preferredKinds = [], limit = 2) {
       );
       const kindBoost = preferredKinds.includes(item.kind) ? 0.05 : 0;
       return {
-        ref: item.ref,
+        refs: item.refs,
         score: overlap + kindBoost
       };
     })
@@ -166,23 +170,23 @@ function findEvidenceRefs(text, facts, preferredKinds = [], limit = 2) {
   }
 
   if (scores.length > 0) {
-    return scores.map((item) => item.ref);
+    return Array.from(new Set(scores.flatMap((item) => item.refs))).slice(0, limit);
   }
 
   const fallback = [];
   for (const kind of preferredKinds) {
     const match = catalog.find((item) => item.kind === kind);
     if (match) {
-      fallback.push(match.ref);
+      fallback.push(...match.refs);
       break;
     }
   }
 
   if (fallback.length > 0) {
-    return fallback;
+    return fallback.slice(0, limit);
   }
 
-  return catalog.length > 0 ? [catalog[0].ref] : [];
+  return catalog.length > 0 ? [...catalog[0].refs].slice(0, limit) : [];
 }
 
 function isGenericResultLabel(label) {
@@ -310,7 +314,9 @@ function buildResultsTable(paperData, facts) {
       metric: deriveMetric(result),
       value: deriveValue(result),
       benchmark: deriveBenchmark(result, paperData),
-      evidenceRefs: [`result:${index}`]
+      evidenceRefs: Array.isArray(result.evidenceRefs) && result.evidenceRefs.length > 0
+        ? result.evidenceRefs
+        : [`result:${index}`]
     });
   });
 
@@ -351,7 +357,9 @@ function chooseOneSentence(paperData, facts) {
       if (/introduce|present|propose/i.test(text)) score += 1;
       return {
         text,
-        evidenceRefs: [`claim:${index}`],
+        evidenceRefs: Array.isArray(claim.evidenceRefs) && claim.evidenceRefs.length > 0
+          ? claim.evidenceRefs
+          : [`claim:${index}`],
         score
       };
     })
@@ -399,7 +407,9 @@ function chooseProblem(paperData, facts) {
   if (limitation?.text) {
     return {
       text: cleanAnalysisText(limitation.text),
-      evidenceRefs: ['limitation:0']
+      evidenceRefs: Array.isArray(limitation.evidenceRefs) && limitation.evidenceRefs.length > 0
+        ? limitation.evidenceRefs
+        : ['limitation:0']
     };
   }
 
@@ -410,7 +420,9 @@ function chooseCoreIdea(paperData, facts, oneSentenceText) {
   const claims = Array.isArray(facts.coreClaims) ? facts.coreClaims : [];
   const cleanedClaims = claims.map((claim, index) => ({
     text: cleanAnalysisText(claim.text),
-    evidenceRefs: [`claim:${index}`]
+    evidenceRefs: Array.isArray(claim.evidenceRefs) && claim.evidenceRefs.length > 0
+      ? claim.evidenceRefs
+      : [`claim:${index}`]
   }));
 
   const methodFirst = cleanedClaims.find((item) =>
@@ -469,7 +481,9 @@ function buildContributions(facts, resultsTable, oneSentenceText, coreIdeaText) 
   const claimItems = claims
     .map((claim, index) => ({
       text: cleanAnalysisText(claim.text),
-      evidenceRefs: [`claim:${index}`]
+      evidenceRefs: Array.isArray(claim.evidenceRefs) && claim.evidenceRefs.length > 0
+        ? claim.evidenceRefs
+        : [`claim:${index}`]
     }))
     .filter((item) => item.text)
     .filter((item) => scoreTokenOverlap(item.text, oneSentenceText) < 0.95)
@@ -488,7 +502,9 @@ function buildLimitations(facts) {
   return limitations
     .map((item, index) => ({
       text: cleanAnalysisText(item.text),
-      evidenceRefs: [`limitation:${index}`]
+      evidenceRefs: Array.isArray(item.evidenceRefs) && item.evidenceRefs.length > 0
+        ? item.evidenceRefs
+        : [`limitation:${index}`]
     }))
     .filter((item) => item.text)
     .filter((item) => /\b(?:however|limitation|remain|challenge|risk|unsolved|future work|trade-off)\b/i.test(item.text))
@@ -506,7 +522,8 @@ function buildOpenQuestions(limitations) {
 }
 
 export function validateAnalysisWithFacts(analysis, facts) {
-  const validRefs = new Set(factCatalog(facts).map((item) => item.ref));
+  const catalog = factCatalog(facts);
+  const validRefs = new Set(catalog.flatMap((item) => [item.legacyRef, ...item.refs]));
   const errors = [];
 
   function checkRefs(refs, label) {
@@ -581,6 +598,8 @@ function resolvePaperDir(input) {
 
 export function buildAnalysisForPaperDir(input) {
   const paperDir = resolvePaperDir(input);
+  const metaPath = path.join(paperDir, 'meta.json');
+  const ledgerPath = path.join(paperDir, 'evidence-ledger.json');
   const paperDataPath = path.join(paperDir, 'paper-data.json');
   const factsPath = path.join(paperDir, 'facts.json');
   const analysisPath = path.join(paperDir, 'analysis.json');
@@ -595,6 +614,11 @@ export function buildAnalysisForPaperDir(input) {
 
   const paperData = readJsonFile(paperDataPath);
   const facts = readJsonFile(factsPath);
+  const compatibility = classifyPackageCompatibility({
+    meta: fs.existsSync(metaPath) ? readJsonFile(metaPath) : null,
+    ledger: fs.existsSync(ledgerPath) ? readJsonFile(ledgerPath) : null
+  });
+  assertWritablePackage(compatibility);
   const analysis = buildAnalysisFromArtifacts(paperData, facts);
 
   fs.writeFileSync(analysisPath, JSON.stringify(analysis, null, 2));

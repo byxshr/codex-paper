@@ -10,6 +10,7 @@ import {
   compareFindingContract,
   detectExpectedFindings,
   mandatoryTotalsPass,
+  parseProjectedResultValue,
   validateMandatoryManifest,
   validateReservedTargets
 } from '../../benchmarks/mandatory/contract.mjs';
@@ -43,42 +44,24 @@ test('missing mandatory PDF remains fatal even when optional corpus skipping is 
 
 test('expected finding disappearance is an XPASS contract failure', () => {
   const result = compareFindingContract(
-    ['DATASET_YEAR_AS_KEY_RESULT', 'EXPECTED_RESULT_41_8_NOT_SELECTED'],
-    ['DATASET_YEAR_AS_KEY_RESULT']
+    ['FRONT_MATTER_FOOTNOTE_IN_ABSTRACT', 'FRONT_MATTER_COPYRIGHT_IN_ABSTRACT'],
+    ['FRONT_MATTER_FOOTNOTE_IN_ABSTRACT']
   );
-  assert.deepEqual(result.missingExpected, ['EXPECTED_RESULT_41_8_NOT_SELECTED']);
+  assert.deepEqual(result.missingExpected, ['FRONT_MATTER_COPYRIGHT_IN_ABSTRACT']);
   assert.deepEqual(result.unexpected, []);
 });
 
-test('front-matter analysis finding ignores parser and timestamp metadata', () => {
-  const metadataOnly = detectExpectedFindings({
+test('front-matter expected findings now cover parser contamination only', () => {
+  const detected = detectExpectedFindings({
     fixtureId: 'front-matter-noise',
-    paperData: {},
-    facts: { keyResults: [] },
-    analysis: {
-      parserVersion: '2.0.0+codex.20260713121349',
-      generatedAt: '2026-07-14T00:00:00.000Z',
-      oneSentence: { text: 'A clean analysis statement.' },
-      contributions: [],
-      resultsTable: []
-    }
+    paperData: { abstract: '*Equal contribution. Copyright 2026.' },
+    facts: { resultClaims: [{ value: 28.4 }] },
+    analysis: { resultsTable: [{ value: '28.4' }] }
   });
-  assert.equal(metadataOnly.includes('FRONT_MATTER_NOISE_IN_ANALYSIS'), false);
-
-  const contaminatedContent = detectExpectedFindings({
-    fixtureId: 'front-matter-noise',
-    paperData: {},
-    facts: { keyResults: [] },
-    analysis: {
-      parserVersion: '2.0.0',
-      generatedAt: '2030-01-01T00:00:00.000Z',
-      resultsTable: [{ metric: 'Benchmark performance', value: 'Copyright 2026' }]
-    }
-  });
-  assert.equal(contaminatedContent.includes('FRONT_MATTER_NOISE_IN_ANALYSIS'), true);
+  assert.deepEqual(detected, ['FRONT_MATTER_FOOTNOTE_IN_ABSTRACT', 'FRONT_MATTER_COPYRIGHT_IN_ABSTRACT']);
 });
 
-test('reserved targets require evidence-backed future values and warning semantics', () => {
+test('active ResultClaim targets require evidence-backed values and B3 warning semantics', () => {
   const gold = JSON.parse(fs.readFileSync(path.join(repoRoot, 'benchmarks/mandatory/gold/result-conflict.json'), 'utf8'));
   assert.deepEqual(validateReservedTargets(gold, '28.4 BLEU and 41.8 BLEU'), []);
   assert.match(validateReservedTargets(gold, '28.4 BLEU').join('\n'), /41\.8/);
@@ -89,6 +72,12 @@ test('mandatory totals reject all zero, partial execution, and any failed fixtur
   assert.equal(mandatoryTotalsPass({ declared: 2, executed: 1, completed: 1, passed: 1, failed: 1 }), false);
   assert.equal(mandatoryTotalsPass({ declared: 2, executed: 2, completed: 2, passed: 1, failed: 1 }), false);
   assert.equal(mandatoryTotalsPass({ declared: 2, executed: 2, completed: 2, passed: 2, failed: 0 }), true);
+});
+
+test('keyResults projection comparison accepts percent values without accepting junk suffixes', () => {
+  assert.equal(parseProjectedResultValue('95.2%'), 95.2);
+  assert.equal(parseProjectedResultValue('41.0'), 41);
+  assert.equal(Number.isNaN(parseProjectedResultValue('41.0 BLEU')), true);
 });
 
 test('mandatory CLI returns exit 2 and a report for an empty manifest', () => {

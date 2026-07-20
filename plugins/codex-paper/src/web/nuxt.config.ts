@@ -11,6 +11,12 @@ export default defineNuxtConfig({
 
   modules: ['@nuxt/content'],
 
+  nitro: {
+    externals: {
+      inline: [/package-compatibility\.mjs$/]
+    }
+  },
+
   app: {
     head: {
       title: 'Codex Paper Library',

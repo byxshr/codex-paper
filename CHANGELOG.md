@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added package contract 2.1 with typed `resultClaims`, deterministic metric/value binding, and a backward-compatible `keyResults` projection.
+- Switched newly generated facts and analysis to direct `ev-*` references while preserving read-only 2.0 legacy-reference compatibility across scripts and Viewer APIs.
+- Migrated mandatory B2 defect signatures to positive ResultClaim assertions; only P0-B3 parser-contamination and conflict-warning findings remain expected.
+- Hardened P0-B2 after independent review: reject metric-name digits and invalid table/evidence IDs, preserve evidence confidence, merge only corroborated contexts, schema-validate writer output, enforce 2.0 read-only writers, and avoid unnecessary Viewer ledger parsing.
+- Hardened P0-B2 after the second review: make candidate merging order-independent, require explicit read-only legacy validation, unify cross-endpoint compatibility verdicts, reject unsupported migrations before writes, and tighten reference limits, membership, and error handling.
+- Hardened P0-B2 after the third review: complete explicitly versioned 1.x migrations without partial writes, preserve readable core Viewer responses when ancillary compatibility JSON is corrupt, and surface fail-closed `PACKAGE_ARTIFACT_INVALID` diagnostics in readers and validators.
+- Hardened P0-B2 after the fourth review: preflight every existing migration artifact before writes, normalize corrupt migration diagnostics, preserve facts/analysis across corrupt meta sidecars, and accurately identify mixed unsupported artifact versions.
 - Added two byte-reproducible, MIT-licensed synthetic PDFs for front-matter contamination and conflicting translation-result regressions.
 - Added a non-skippable mandatory PDF-to-prepare-to-validator benchmark that freezes current audited defects as explicit expected findings and reserves P0-B2/B3 target contracts.
 - Split CI reporting between the mandatory synthetic gate and the optional allow-missing external paper corpus, with Repository Guard mutation coverage against zero execution and bypasses.

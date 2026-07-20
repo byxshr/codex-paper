@@ -20,6 +20,12 @@ const MANDATORY_WORKER = 'benchmarks/mandatory/run-fixture.mjs'
 const FIXTURE_GENERATOR = 'benchmarks/fixtures/generate-pdf-fixtures.py'
 const CI_WORKFLOW = '.github/workflows/ci.yml'
 const ROOT_SCRIPT = 'scripts/codex-paper.sh'
+const FACTS_SCHEMA = 'plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json'
+const FACTS_EXTRACTOR = 'plugins/codex-paper/skills/study/scripts/extract-facts.js'
+const PACKAGE_COMPATIBILITY = 'plugins/codex-paper/src/shared/package-compatibility.mjs'
+const STUDY_VALIDATOR = 'plugins/codex-paper/skills/study/scripts/validate-study-package.js'
+const MIGRATION_SCRIPT = 'plugins/codex-paper/skills/study/scripts/migrate-package.js'
+const VIEWER_COMPATIBILITY = 'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs'
 const MANDATORY_SENTINELS = [
   MANDATORY_MANIFEST,
   MANDATORY_RUNNER,
@@ -62,6 +68,12 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
   'plugins/codex-paper/skills/study/scripts/download-pdf.cjs',
   'plugins/codex-paper/skills/study/scripts/parse-pdf.js',
+  FACTS_EXTRACTOR,
+  FACTS_SCHEMA,
+  PACKAGE_COMPATIBILITY,
+  STUDY_VALIDATOR,
+  MIGRATION_SCRIPT,
+  VIEWER_COMPATIBILITY,
   'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
   'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json',
@@ -349,10 +361,10 @@ export function checkRepository({
         const expectedGenerator = `python3 ${FIXTURE_GENERATOR} --fixture ${fixtureId}`
         if (license?.generator !== expectedGenerator) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} generator mismatch`)
         if (license?.sha256 !== sha256(join(root, fixture.pdf))) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} sha256 mismatch`)
-        if (gold?.schemaVersion !== '1.0.0' || gold?.fixtureId !== fixtureId) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold identity mismatch`)
+        if (gold?.schemaVersion !== '1.1.0' || gold?.fixtureId !== fixtureId) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold identity mismatch`)
         if (!gold?.requiredAssertions || !gold?.authoring) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold must define requiredAssertions and authoring`)
         if (!Array.isArray(gold?.expectedFindings) || gold.expectedFindings.length === 0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} expectedFindings must be non-empty`)
-        if (!gold?.reservedTargets?.resultClaims2_1 || !gold?.reservedTargets?.validationReport1_0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must reserve B2 and B3 targets`)
+        if (!gold?.requiredAssertions?.resultClaims2_1 || !gold?.reservedTargets?.validationReport1_0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must require B2 and reserve B3 targets`)
       }
     }
   }
@@ -506,6 +518,47 @@ export function checkRepository({
     if (!source.includes('stagePdfInput') || !source.includes('resolvedInput.cleanup()') || /execFileSync/.test(source)) {
       errors.push(`${prepareRelative} must use and clean secure PDF staging without a downloader subprocess`)
     }
+    for (const required of ["const PACKAGE_VERSION = '2.1.0'", "const EVIDENCE_SCHEMA_VERSION = '2.0.0'", 'buildFactsFromLedger', 'validateFactsSchema(facts)']) {
+      if (!source.includes(required)) errors.push(`${prepareRelative} must preserve package 2.1 writer boundary ${required}`)
+    }
+    if (/evidenceSchemaVersion:\s*PACKAGE_VERSION/.test(source)) errors.push(`${prepareRelative} must not couple frozen evidence schema to package contract version`)
+  }
+
+  if (existsSync(join(root, FACTS_SCHEMA))) {
+    const factsSchema = readJson(join(root, FACTS_SCHEMA), errors, FACTS_SCHEMA)
+    if (factsSchema?.properties?.schemaVersion?.const !== '2.1.0' || !factsSchema?.properties?.resultClaims) {
+      errors.push(`${FACTS_SCHEMA} must define facts schema 2.1 with resultClaims`)
+    }
+  }
+  if (existsSync(join(root, FACTS_EXTRACTOR))) {
+    const source = readFileSync(join(root, FACTS_EXTRACTOR), 'utf8')
+    for (const required of ['extractResultClaims', 'projectKeyResults', 'validateFactsEvidenceRefs', 'PAPER_EVIDENCE_ID_PATTERN', 'compareCandidatesForMerge']) {
+      if (!source.includes(required)) errors.push(`${FACTS_EXTRACTOR} must preserve ResultClaim writer boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, PACKAGE_COMPATIBILITY))) {
+    const source = readFileSync(join(root, PACKAGE_COMPATIBILITY), 'utf8')
+    for (const required of ['native_2_1', 'compatible_2_0', 'legacy_v1', 'unknown_read_only', 'PACKAGE_VERSION_UNSUPPORTED', 'PACKAGE_ARTIFACT_INVALID', 'assertWritablePackage', 'evidenceRefExists', 'isLegacyMigrationSourceVersion', 'classifyInvalidPackageArtifacts', 'unsupportedVersions']) {
+      if (!source.includes(required)) errors.push(`${PACKAGE_COMPATIBILITY} must preserve reader compatibility mode ${required}`)
+    }
+  }
+  if (existsSync(join(root, STUDY_VALIDATOR))) {
+    const source = readFileSync(join(root, STUDY_VALIDATOR), 'utf8')
+    if (!source.includes('LEGACY_PACKAGE_REQUIRES_LEGACY_OK')) errors.push(`${STUDY_VALIDATOR} must preserve explicit read-only legacy validation`)
+    if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${STUDY_VALIDATOR} must diagnose corrupt compatibility artifacts`)
+  }
+  if (existsSync(join(root, MIGRATION_SCRIPT))) {
+    const source = readFileSync(join(root, MIGRATION_SCRIPT), 'utf8')
+    if (!source.includes('MIGRATION_SOURCE_VERSION_UNSUPPORTED')) errors.push(`${MIGRATION_SCRIPT} must reject unsupported versions before migration writes`)
+    if (!source.includes('isLegacyMigrationSourceVersion')) errors.push(`${MIGRATION_SCRIPT} must preserve explicit 1.x migration without partial writes`)
+    if (!source.includes('classifyPackageCompatibility({ reasoning: existingReasoning, ledger: existingLedger })')) errors.push(`${MIGRATION_SCRIPT} must preflight ancillary artifact versions before migration writes`)
+    if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${MIGRATION_SCRIPT} must diagnose corrupt migration inputs before writes`)
+  }
+  if (existsSync(join(root, VIEWER_COMPATIBILITY))) {
+    const source = readFileSync(join(root, VIEWER_COMPATIBILITY), 'utf8')
+    if (!source.includes('classifyStoredPackageCompatibility')) errors.push(`${VIEWER_COMPATIBILITY} must preserve cross-endpoint compatibility classification`)
+    if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${VIEWER_COMPATIBILITY} must preserve corrupt-artifact compatibility diagnostics`)
+    if (!source.includes("readCompatibilityArtifact(slug, 'meta.json'")) errors.push(`${VIEWER_COMPATIBILITY} must preserve corrupt-meta compatibility fallback`)
   }
 
   if (Array.isArray(baseline?.schemas)) {

@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { assertWritablePackage, classifyPackageCompatibility, isLegacyMigrationSourceVersion } from '../../../src/shared/package-compatibility.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -174,6 +175,13 @@ export function scaffoldReasoningAnalysis(input, options = {}) {
       throw new Error(`Missing required file: ${filename}`);
     }
   }
+
+  const meta = readJson(path.join(paperDir, 'meta.json'));
+  const ledger = readJson(path.join(paperDir, 'evidence-ledger.json'));
+  const compatibility = classifyPackageCompatibility({ meta, ledger });
+  const explicitV2Migration = options.explicitV2Migration === true
+    && (compatibility.mode === 'compatible_2_0' || isLegacyMigrationSourceVersion(meta.packageVersion));
+  if (!explicitV2Migration) assertWritablePackage(compatibility);
 
   const outputPath = path.join(paperDir, 'reasoning-analysis.json');
   if (fs.existsSync(outputPath) && !options.force) {

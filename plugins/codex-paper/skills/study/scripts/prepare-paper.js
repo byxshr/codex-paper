@@ -3,9 +3,11 @@ import path from 'path';
 import crypto from 'crypto';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
+import Ajv2020 from 'ajv/dist/2020.js';
 import { parsePdfDetailed } from './parse-pdf.js';
 import { buildAnalysisFromArtifacts } from './build-analysis.js';
 import { buildEvidenceLedger } from './build-evidence-ledger.js';
+import { buildFactsFromLedger, validateFactsEvidenceRefs } from './extract-facts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,9 +16,15 @@ const { stagePdfInput } = require('./download-pdf.cjs');
 const LIBRARY_ROOT = path.resolve(process.env.PAPERS_DIR || path.join(process.env.HOME || '', 'codex-papers'));
 const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const INDEX_PATH = path.join(LIBRARY_ROOT, 'index.json');
-const PACKAGE_VERSION = '2.0.0';
+const PACKAGE_VERSION = '2.1.0';
+const PLUGIN_BASE_VERSION = '2.0.0';
+const EVIDENCE_SCHEMA_VERSION = '2.0.0';
+const REASONING_SCHEMA_VERSION = '2.0.0';
 const CONTEXT_MODES = new Set(['paper-only', 'canonical', 'literature']);
 const PAPER_PROFILES = new Set(['auto', 'empirical', 'theoretical', 'architecture', 'system', 'benchmark', 'survey', 'post-training', 'position', 'other']);
+const FACTS_SCHEMA_PATH = path.resolve(__dirname, '../schemas/facts-2.1.schema.json');
+const validateFactsSchema = new Ajv2020({ allErrors: true, strict: true })
+  .compile(JSON.parse(fs.readFileSync(FACTS_SCHEMA_PATH, 'utf8')));
 
 function slugify(value) {
   return value
@@ -70,160 +78,10 @@ function parsePrepareArgs(argv) {
   return args;
 }
 
-function splitSentences(text) {
-  return text
-    .replace(/\s+/g, ' ')
-    .split(/(?<=[.?!])\s+(?=[A-Z0-9])/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 20);
-}
-
-function buildEvidenceItem(section, text) {
-  return {
-    section,
-    quote: text
-  };
-}
-
-function normalizeForEvidenceMatch(value) {
-  return String(value || '')
-    .replace(/\u0000/g, ' ')
-    .normalize('NFC')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
 function sha256File(filePath) {
   const hash = crypto.createHash('sha256');
   hash.update(fs.readFileSync(filePath));
   return hash.digest('hex');
-}
-
-function findEvidenceRefForQuote(ledger, quote) {
-  const normalizedQuote = normalizeForEvidenceMatch(quote);
-  if (!normalizedQuote || normalizedQuote.length < 24) {
-    return [];
-  }
-
-  const exact = ledger.evidence.find((item) => {
-    const normalizedText = normalizeForEvidenceMatch(item.text);
-    return normalizedText === normalizedQuote || normalizedText.includes(normalizedQuote) || normalizedQuote.includes(normalizedText);
-  });
-
-  return exact ? [exact.id] : [];
-}
-
-function attachLedgerEvidenceRefs(facts, ledger) {
-  const withRefs = structuredClone(facts);
-
-  for (const key of ['coreClaims', 'keyResults', 'limitations']) {
-    const items = Array.isArray(withRefs[key]) ? withRefs[key] : [];
-    for (const item of items) {
-      const quote = item.evidence?.quote || item.text || item.context || '';
-      const evidenceRefs = findEvidenceRefForQuote(ledger, quote);
-      if (evidenceRefs.length > 0) {
-        item.evidenceRefs = evidenceRefs;
-      }
-    }
-  }
-
-  return withRefs;
-}
-
-function extractCoreClaims(parsed) {
-  const candidates = [];
-  const claimSections = [
-    ['abstract', parsed.sections.abstract],
-    ['introduction', parsed.sections.introduction],
-    ['conclusion', parsed.sections.conclusion]
-  ];
-
-  for (const [section, content] of claimSections) {
-    const sentences = splitSentences(content).filter((sentence) => /\b(?:introduce|propose|present|show|demonstrate|develop|our approach|this paper)\b/i.test(sentence));
-    for (const sentence of sentences) {
-      candidates.push({
-        text: sentence,
-        evidence: buildEvidenceItem(section, sentence)
-      });
-      if (candidates.length >= 3) {
-        return candidates;
-      }
-    }
-  }
-
-  if (candidates.length === 0 && parsed.sections.abstract) {
-    const firstSentence = splitSentences(parsed.sections.abstract)[0];
-    if (firstSentence) {
-      candidates.push({
-        text: firstSentence,
-        evidence: buildEvidenceItem('abstract', firstSentence)
-      });
-    }
-  }
-
-  return candidates;
-}
-
-function extractKeyResults(parsed) {
-  const candidates = [];
-  const resultSections = [
-    ['abstract', parsed.sections.abstract],
-    ['conclusion', parsed.sections.conclusion]
-  ];
-
-  for (const [section, content] of resultSections) {
-    const sentences = splitSentences(content).filter((sentence) => /\b\d+(?:\.\d+)?\b/.test(sentence) || /\b(?:outperform|improve|benchmark|state-of-the-art|languages|billion|million)\b/i.test(sentence));
-    for (const sentence of sentences) {
-      const valueMatch = sentence.match(/\b\d+(?:\.\d+)?(?:\s?(?:%|percent|points?|languages?|billion|million|hours?|x))?\b/i);
-      const labelMatch = sentence.match(/\b(?:accuracy|score|benchmark|languages|parameters|performance|efficiency|improvement)\b/i);
-      candidates.push({
-        label: labelMatch ? labelMatch[0] : `Result ${candidates.length + 1}`,
-        value: valueMatch ? valueMatch[0] : 'See evidence',
-        context: sentence,
-        evidence: buildEvidenceItem(section, sentence)
-      });
-      if (candidates.length >= 3) {
-        return candidates;
-      }
-    }
-  }
-
-  return candidates;
-}
-
-function extractLimitations(parsed) {
-  const candidates = [];
-  const limitationSections = [
-    ['conclusion', parsed.sections.conclusion],
-    ['abstract', parsed.sections.abstract],
-    ['introduction', parsed.sections.introduction]
-  ];
-
-  for (const [section, content] of limitationSections) {
-    const sentences = splitSentences(content).filter((sentence) => /\b(?:however|limitation|future work|remain|challenge|unstable|risk)\b/i.test(sentence));
-    for (const sentence of sentences) {
-      candidates.push({
-        text: sentence,
-        evidence: buildEvidenceItem(section, sentence)
-      });
-      if (candidates.length >= 3) {
-        return candidates;
-      }
-    }
-  }
-
-  return candidates;
-}
-
-function buildFacts(paperSlug, parsed) {
-  return {
-    paperSlug,
-    parserVersion: parsed.parserVersion,
-    coreClaims: extractCoreClaims(parsed),
-    keyResults: extractKeyResults(parsed),
-    limitations: extractLimitations(parsed)
-  };
 }
 
 async function resolveInput(input) {
@@ -274,7 +132,7 @@ function writeIndexPreserveShape(indexState) {
 
 function buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl }) {
   return {
-    schemaVersion: '2.0.0',
+    schemaVersion: EVIDENCE_SCHEMA_VERSION,
     paperSlug,
     contextMode,
     generatedAt: new Date().toISOString(),
@@ -367,7 +225,17 @@ export async function preparePaper(userInput, options = {}) {
     },
     paperSlug
   });
-  const facts = attachLedgerEvidenceRefs(buildFacts(paperSlug, parsed), ledger);
+  const facts = buildFactsFromLedger(paperSlug, parsed.parserVersion, ledger);
+  if (!validateFactsSchema(facts)) {
+    const schemaErrors = (validateFactsSchema.errors || [])
+      .map((error) => `${error.instancePath || '/'} ${error.message}`)
+      .join('; ');
+    throw new Error(`Generated facts.json does not satisfy facts 2.1 schema: ${schemaErrors}`);
+  }
+  const factsValidation = validateFactsEvidenceRefs(facts, ledger);
+  if (!factsValidation.valid) {
+    throw new Error(`Invalid facts evidence references: ${factsValidation.errors.join('; ')}`);
+  }
   const analysis = buildAnalysisFromArtifacts(paperData, facts);
   const meta = {
     title: parsed.title,
@@ -382,12 +250,13 @@ export async function preparePaper(userInput, options = {}) {
     sourceFilename,
     parserVersion: parsed.parserVersion,
     packageVersion: PACKAGE_VERSION,
-    evidenceSchemaVersion: PACKAGE_VERSION,
-    reasoningSchemaVersion: PACKAGE_VERSION,
+    factsSchemaVersion: '2.1.0',
+    evidenceSchemaVersion: EVIDENCE_SCHEMA_VERSION,
+    reasoningSchemaVersion: REASONING_SCHEMA_VERSION,
     contextMode,
     requestedPaperProfile: profile,
     generatedWith: {
-      pluginVersion: PACKAGE_VERSION,
+      pluginVersion: PLUGIN_BASE_VERSION,
       parserVersion: parsed.parserVersion
     },
     qualityFlags: parsed.qualityFlags,
@@ -442,6 +311,7 @@ export async function preparePaper(userInput, options = {}) {
     ledger,
     facts,
     analysis,
+    meta,
     contextMode,
     profile,
     externalEvidencePath

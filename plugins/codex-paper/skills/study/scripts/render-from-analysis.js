@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { assertWritablePackage, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,10 +135,14 @@ function evidenceMap(facts) {
 
   mapping.forEach(([kind, items]) => {
     items.forEach((item, index) => {
-      output.set(`${kind}:${index}`, {
+      const entry = {
         section: item.evidence?.section || 'unknown',
         quote: normalizeWhitespace(item.evidence?.quote || item.text || item.context || '')
-      });
+      };
+      output.set(`${kind}:${index}`, entry);
+      for (const ref of item.evidenceRefs || []) {
+        output.set(ref, entry);
+      }
     });
   });
 
@@ -524,6 +529,13 @@ function writeFile(filePath, content) {
 export function renderMaterialsForPaper(input, profile = 'all', lang = 'en') {
   const paperDir = resolvePaperDir(input);
   const language = pickLanguage(lang);
+  const metaPath = path.join(paperDir, 'meta.json');
+  const ledgerPath = path.join(paperDir, 'evidence-ledger.json');
+  const compatibility = classifyPackageCompatibility({
+    meta: fs.existsSync(metaPath) ? readJson(metaPath) : null,
+    ledger: fs.existsSync(ledgerPath) ? readJson(ledgerPath) : null
+  });
+  assertWritablePackage(compatibility);
   const paperData = readJson(path.join(paperDir, 'paper-data.json'));
   const facts = readJson(path.join(paperDir, 'facts.json'));
   const analysis = readJson(path.join(paperDir, 'analysis.json'));
@@ -550,6 +562,7 @@ export function renderMaterialsForPaper(input, profile = 'all', lang = 'en') {
     paperDir,
     language,
     profile,
+    compatibility,
     writtenFiles
   };
 }

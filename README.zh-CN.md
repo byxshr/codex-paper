@@ -36,11 +36,12 @@ Codex Paper 是一个 Codex 插件，可以把研究论文转化为可复用的�
 - **长论文处理** - 解析大型论文时记录质量标记，并在抽取不完整时保守降级
 - **代码仓库检测** - 自动发现 GitHub、arXiv、CodeOcean 链接
 - **Evidence-first 论文准备** - 先生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`
+- **类型化定量结果** - Package 2.1 将指标数值绑定到任务、数据集、位置和直接论文证据，同时保留 `keyResults` 兼容投影
 - **证据账本** - 写出 `evidence-ledger.json`，包含稳定 evidence ID、逐页文本、章节树、证据单元、自然位置和解析质量降级标记
 - **研究推理分析** - 新增 `reasoning-analysis.json`，记录中心主张、研究问题、作者推理路径、验证、最弱假设、最小复现、最强反例、后续研究和不确定区域
 - **语义验证** - 检查 schema、证据引用、source type、数字 grounding、推理图环路、批判性分析覆盖和模板残留
 - **Context modes** - 默认离线 `paper-only`；`canonical` 和 `literature` 将外部证据单独写入 `.codex-paper/external-evidence.json`，不混入论文证据账本
-- **解析 benchmark 套件** - 基于固定的 5 篇论文 gold 集做回归检查
+- **确定性解析门禁** - 每个 PR 必跑两个可再分发 synthetic PDF；独立的 5 篇外部论文语料在 CI 中保持可选
 - **Reasoning/package benchmark** - 新增确定性 fixtures，回归检查研究推理质量和可见学习包质量
 - **Codex 写作学习包** - 基于论文正文和证据生成 `README.md`、`summary.md`、`insights.md`、`method.md`、`mental-model.md`、`reflection.md`、`qa.md`
 - **克制的图表学习路径** - 生成 `visual-assets.md`，只在合适位置插入有来源、有解释、能帮助理解的高价值图表和确定性图解

@@ -31,8 +31,9 @@ The runner cannot call the parser worker or in-process parser directly. Each fix
 Each golden file has three independent sections:
 
 - `requiredAssertions` are stable invariants that must pass now and after future extraction changes.
-- `expectedFindings` are known current defects. Every listed code must be observed; disappearance is an XPASS that requires P0-B2/B3 to update the contract deliberately.
-- `reservedTargets` define the evidence-supported 2.1 ResultClaim and Validation Report 1.0 destination without pretending those interfaces exist in P0-B1.
+- `expectedFindings` are known current defects. Every listed code must be observed; disappearance is an XPASS that requires the owning phase to update the contract deliberately.
+- `requiredAssertions.resultClaims2_1` is the active P0-B2 contract for typed results, excluded values, projections, and direct evidence.
+- `reservedTargets.validationReport1_0` defines the evidence-supported P0-B3 destination without pretending that report exists yet.
 
 Expected findings are named codes implemented by the benchmark. Gold files cannot inject scripts, expressions, or JSONPath.
 
@@ -50,6 +51,6 @@ The report at `/tmp/codex-paper-mandatory-benchmark.json` contains stable check 
 
 The optional external corpus retains its separate allow-missing behavior and report. Its result cannot substitute for or override the mandatory suite.
 
-## Migration to P0-B2 and P0-B3
+## Migration State
 
-P0-B2 must migrate the year/noise/value-selection findings to positive typed ResultClaim assertions one at a time. P0-B3 must migrate the silent conflict and cross-artifact findings to Validation Report 1.0 assertions. Removing an expected finding without adding its replacement assertion is a contract regression.
+P0-B2 migrated the year/noise/value-selection findings to positive typed ResultClaim assertions. The only remaining expected findings are parser-level front-matter contamination and the missing result-conflict warning. P0-B3 must replace those with Validation Report 1.0 assertions; removing them without the replacement report assertion is a contract regression.

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { collectEvidenceRefs } from './evidence-utils.js';
 import { profileForType } from '../profiles/profile-rules.js';
+import { PAPER_EVIDENCE_ID_PATTERN } from '../../../src/shared/package-compatibility.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,7 +15,6 @@ const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const SCHEMA_PATH = path.join(__dirname, '../schemas/reasoning-analysis.schema.json');
 const EXTERNAL_SCHEMA_PATH = path.join(__dirname, '../schemas/external-evidence.schema.json');
 
-const PAPER_EVIDENCE_ID_PATTERN = /^ev-p\d{3,}-[a-z]+-[a-f0-9]{10}$/;
 const EXTERNAL_EVIDENCE_ID_PATTERN = /^ext-[a-z0-9][a-z0-9-]*-[a-f0-9]{10}$/;
 const TEMPLATE_RESIDUE = /\b(?:TODO|TBD|placeholder|fill me|lorem ipsum|待填写|占位|这里填写)\b/i;
 const INCREMENTAL_FOLLOWUP = /\b(?:more data|larger model|bigger model|more parameters|scale up|tune hyperparameters|更多数据|更大模型|更多参数|调参)\b/i;

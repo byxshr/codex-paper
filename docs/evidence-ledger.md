@@ -16,10 +16,13 @@
 - `sections` contains a best-effort section tree with canonical roles such as `abstract`, `method`, `results`, `limitations`, and `references`.
 - `evidence` contains paragraph, heading, figure/table/caption, equation, footnote, abstract, and reference units.
 - `quality` records parser, reading-order, section-coverage, table-extraction, and warning degradations.
+- Package 2.1 facts and analysis cite ledger entries directly with `ev-*`; no new writer emits `claim:n`, `result:n`, or `limitation:n` as final references.
 
 ## Boundaries
 
 The ledger is only for evidence found inside the paper PDF or retained paper text. Context modes `canonical` and `literature` write external facts to `.codex-paper/external-evidence.json`; those external items use `ext-*` IDs and are validated separately.
+
+The ledger schema remains `2.0.0` when the surrounding package contract is `2.1.0`. Do not infer a ledger schema version from `meta.packageVersion`.
 
 ## Validation
 
