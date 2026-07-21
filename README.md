@@ -238,6 +238,7 @@ Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
 │           ├── answering-pack.md         # Evidence navigation pack for $paper-chat
 │           ├── external-evidence.json    # Optional external evidence for canonical/literature modes
 │           ├── reasoning-review.md       # Fixed self-review checklist
+│           ├── paper-identity.json       # Paper/source/generation identity authority
 │           └── validation-report.json    # Latest validation report
 │
 ├── index.json                           # Global search index
@@ -251,6 +252,7 @@ Run the full deterministic suite:
 ```bash
 bash scripts/codex-paper.sh install
 bash scripts/codex-paper.sh test
+bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
@@ -397,7 +399,10 @@ node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 bash scripts/codex-paper.sh pdf-security-test
 
 # Prepare a paper into paper-data.json, facts.json, and evidence-ledger.json
-node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
+node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf --workflow study --language en
+
+# Test identity, fingerprint, reuse, and flat-layout collision protection
+bash scripts/codex-paper.sh identity-test
 
 # Validate research reasoning
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug

@@ -238,6 +238,7 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 │           ├── answering-pack.md         # $paper-chat 使用的证据导航包
 │           ├── external-evidence.json    # canonical/literature 模式下的可选外部证据
 │           ├── reasoning-review.md       # 固定自审清单
+│           ├── paper-identity.json       # 论文/来源/生成身份权威记录
 │           └── validation-report.json    # 最新验证报告
 │
 ├── index.json                           # 全局搜索索引
@@ -251,6 +252,7 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 ```bash
 bash scripts/codex-paper.sh install
 bash scripts/codex-paper.sh test
+bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
@@ -397,7 +399,10 @@ node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 bash scripts/codex-paper.sh pdf-security-test
 
 # 先准备论文数据、facts.json 和 evidence-ledger.json
-node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf
+node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf --workflow study --language zh
+
+# 测试 identity、fingerprint、只读复用和 flat-layout 碰撞保护
+bash scripts/codex-paper.sh identity-test
 
 # 校验研究推理
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug

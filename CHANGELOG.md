@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added Paper Identity 1.0 with separate canonical paper, exact source revision, and deterministic generation identifiers.
+- Added a versioned content-contract fingerprint that changes with workflow semantics while excluding cachebusters, timestamps, paths, and provenance-only runtime data.
+- Made flat-layout preparation fail closed on every ambiguous collision and reuse only complete identical generations without modifying files or mutable user state.
+- Added identity projection validation, study/summary explicit workflow inputs, deterministic identity tests, Repository Guard mutations, and a pre-validation CI gate.
 - Upgraded the single package validation report in place to Validation Report 1.0 with structured findings, explicit scope, reference coverage, three-state intrinsic health, publishability, and a stable intrinsic SHA-256.
 - Unified reasoning and complete-package validation around one engine; standard and strict policies now differ only in gate outcome and CLI exit.
 - Added deterministic cross-artifact checks for evidence references, ResultClaim projections, numeric divergence, result conflicts/disclosure, visible result claims, and parser front-matter contamination.

@@ -89,8 +89,11 @@ Inputs supported:
 Run the preparation entrypoint from the study skill directory:
 
 ```bash
-node ./scripts/prepare-paper.js "<user-input>" --context paper-only --profile auto
+OUTPUT_LANG="zh"   # use en for an English request
+node ./scripts/prepare-paper.js "<user-input>" --workflow study --language "$OUTPUT_LANG" --context paper-only --profile auto
 ```
+
+Preparation is identity-aware. A byte-identical source with the same workflow/language/context/profile and generation contract is reused without writing. Until the C1b multi-generation layout is available, a changed source or generation fingerprint that collides with an existing flat-layout package fails closed instead of overwriting it.
 
 The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes `~/codex-papers/index.json`, and writes:
 
@@ -100,6 +103,7 @@ The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes `~/codex
 ~/codex-papers/papers/{paper-slug}/facts.json
 ~/codex-papers/papers/{paper-slug}/analysis.json
 ~/codex-papers/papers/{paper-slug}/meta.json
+~/codex-papers/papers/{paper-slug}/.codex-paper/paper-identity.json
 ```
 
 Treat these JSON files as evidence preparation only. They are not final study material.

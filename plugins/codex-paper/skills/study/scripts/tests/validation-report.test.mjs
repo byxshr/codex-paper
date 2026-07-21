@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,7 @@ import {
   validateReport,
   writeValidationReportAtomic
 } from '../validation-report.js';
+import { buildPaperIdentity, canonicalStringify, identityProjection } from '../paper-identity.js';
 
 const EVIDENCE_A = 'ev-p001-par-aaaaaaaaaa';
 const EVIDENCE_B = 'ev-p001-par-bbbbbbbbbb';
@@ -349,6 +351,50 @@ test('unknown package versions stay report-free and read-only', () => {
     assert.ok(inspection.findings.some((finding) => finding.code === 'PACKAGE_VERSION_UNSUPPORTED'));
     assert.equal(fs.existsSync(path.join(dir, '.codex-paper', 'validation-report.json')), false);
     for (const [name, mtime] of before) assert.equal(fs.statSync(path.join(dir, name)).mtimeMs, mtime);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('identity validation is conditional, fail-closed, and does not affect legacy packages', () => {
+  const dir = makePackage();
+  try {
+    const legacy = inspectPackageArtifacts(dir, { phase: 'complete' });
+    assert.equal(legacy.findings.some((finding) => finding.category === 'identity'), false);
+
+    const pdf = Buffer.from('%PDF-1.4\nidentity fixture\n');
+    fs.writeFileSync(path.join(dir, 'paper.pdf'), pdf);
+    const sourceSha256 = crypto.createHash('sha256').update(pdf).digest('hex');
+    const contractFiles = [{ path: 'fixture', sha256: 'c'.repeat(64) }];
+    const identity = buildPaperIdentity({
+      slug: 'validation-fixture', sourceSha256, workflow: 'study', language: 'en',
+      contextMode: 'paper-only', requestedPaperProfile: 'auto', parserBackend: 'fixture', parserBackendVersion: '1',
+      contentContract: {
+        version: '1.0.0',
+        sha256: crypto.createHash('sha256').update(canonicalStringify({ version: '1.0.0', files: contractFiles })).digest('hex'),
+        files: contractFiles
+      },
+      pluginBuildVersion: '2.0.0+codex.test', platform: 'test', createdAt: '2026-07-21T00:00:00.000Z'
+    });
+    fs.mkdirSync(path.join(dir, '.codex-paper'));
+    writeJson(path.join(dir, '.codex-paper'), 'paper-identity.json', identity);
+    for (const name of ['meta.json', 'paper-data.json']) {
+      const value = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
+      writeJson(dir, name, { ...value, ...identityProjection(identity) });
+    }
+    const valid = inspectPackageArtifacts(dir, { phase: 'complete' });
+    assert.equal(valid.findings.some((finding) => finding.category === 'identity'), false);
+
+    const corrupt = structuredClone(identity);
+    corrupt.generation.fingerprint.value = 'd'.repeat(64);
+    writeJson(path.join(dir, '.codex-paper'), 'paper-identity.json', corrupt);
+    const invalid = inspectPackageArtifacts(dir, { phase: 'complete' });
+    assert.ok(invalid.findings.some((finding) => finding.code === 'IDENTITY_SCHEMA_INVALID'));
+
+    writeJson(path.join(dir, '.codex-paper'), 'paper-identity.json', identity);
+    fs.appendFileSync(path.join(dir, 'paper.pdf'), 'changed');
+    const changed = inspectPackageArtifacts(dir, { phase: 'complete' });
+    assert.ok(changed.findings.some((finding) => finding.code === 'SOURCE_HASH_MISMATCH'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -43,6 +43,9 @@ jobs:
           bash scripts/codex-paper.sh sandbox-test
           bash scripts/codex-paper.sh sandbox-status
 
+      - name: Paper Identity 1.0
+        run: bash scripts/codex-paper.sh identity-test
+
       - name: Validation Report 1.0
         run: bash scripts/codex-paper.sh validation-test
 

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -9,6 +10,12 @@ import {
   resolveEvidenceRefs
 } from '../../../src/shared/package-compatibility.mjs';
 import { isFrontMatterNoise } from './extract-facts.js';
+import {
+  IDENTITY_RELATIVE_PATH,
+  assertIdentityProjection,
+  readPaperIdentity,
+  sha256File
+} from './paper-identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPORT_SCHEMA_PATH = path.resolve(__dirname, '../schemas/validation-report-1.0.schema.json');
@@ -454,6 +461,63 @@ function projectionFindings(facts, evidenceIndex) {
   return findings;
 }
 
+function paperIdentityFindings(paperDir, meta, paperData) {
+  const findings = [];
+  const identityPath = path.join(paperDir, IDENTITY_RELATIVE_PATH);
+  const declaresIdentity = Boolean(meta?.identitySchemaVersion || meta?.paperId || meta?.generationId);
+  if (!fs.existsSync(identityPath)) {
+    if (declaresIdentity) {
+      findings.push(makeFinding({
+        severity: 'error', code: 'IDENTITY_MISSING', category: 'identity',
+        artifact: IDENTITY_RELATIVE_PATH, path: '/',
+        message: 'The package declares Paper Identity 1.0 but its identity record is missing.'
+      }));
+    }
+    return findings;
+  }
+  let identity;
+  try { identity = readPaperIdentity(identityPath); } catch {
+    findings.push(makeFinding({
+      severity: 'error', code: 'IDENTITY_SCHEMA_INVALID', category: 'identity',
+      artifact: IDENTITY_RELATIVE_PATH, path: '/', message: 'The Paper Identity 1.0 record is invalid.'
+    }));
+    return findings;
+  }
+  for (const [artifact, value] of [['meta.json', meta], ['paper-data.json', paperData]]) {
+    try { assertIdentityProjection(value, identity, artifact); } catch {
+      findings.push(makeFinding({
+        severity: 'error', code: 'IDENTITY_PROJECTION_MISMATCH', category: 'identity',
+        artifact, path: 'identity', message: `${artifact} does not match the Paper Identity 1.0 record.`
+      }));
+    }
+  }
+  try {
+    if (sha256File(path.join(paperDir, 'paper.pdf')) !== identity.source.sha256) throw new Error('hash mismatch');
+  } catch {
+    findings.push(makeFinding({
+      severity: 'error', code: 'SOURCE_HASH_MISMATCH', category: 'identity',
+      artifact: 'paper.pdf', path: '/', message: 'The stored PDF does not match the source revision in Paper Identity 1.0.'
+    }));
+  }
+  const libraryRoot = path.resolve(process.env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers'));
+  if (path.resolve(paperDir) === path.join(libraryRoot, 'papers', identity.slug)) {
+    try {
+      const rawIndex = JSON.parse(fs.readFileSync(path.join(libraryRoot, 'index.json'), 'utf8'));
+      const entries = Array.isArray(rawIndex) ? rawIndex : rawIndex.papers;
+      const matches = Array.isArray(entries) ? entries.filter((entry) => entry?.slug === identity.slug) : [];
+      if (matches.length !== 1) throw new Error('identity entry count mismatch');
+      assertIdentityProjection(matches[0], identity, 'index.json');
+    } catch {
+      findings.push(makeFinding({
+        severity: 'error', code: 'IDENTITY_PROJECTION_MISMATCH', category: 'identity',
+        artifact: 'index.json', path: identity.slug,
+        message: 'The library index does not contain exactly one matching Paper Identity projection.'
+      }));
+    }
+  }
+  return findings;
+}
+
 export function inspectPackageArtifacts(paperDir, { reasoning = null, ledger = null, externalEvidence = null, phase = 'draft' } = {}) {
   const findings = [];
   const invalidArtifacts = [];
@@ -461,6 +525,7 @@ export function inspectPackageArtifacts(paperDir, { reasoning = null, ledger = n
   const paperData = readJsonArtifact(paperDir, 'paper-data.json', findings, invalidArtifacts);
   const facts = readJsonArtifact(paperDir, 'facts.json', findings, invalidArtifacts);
   const analysis = readJsonArtifact(paperDir, 'analysis.json', findings, invalidArtifacts);
+  findings.push(...paperIdentityFindings(paperDir, meta, paperData));
   const resolvedLedger = ledger || readJsonArtifact(paperDir, 'evidence-ledger.json', findings, invalidArtifacts);
   const resolvedReasoning = reasoning || readJsonArtifact(paperDir, 'reasoning-analysis.json', findings, invalidArtifacts);
   const compatibility = invalidArtifacts.includes('meta.json')

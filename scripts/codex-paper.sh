@@ -152,6 +152,17 @@ cmd_validation_test() {
     "$PLUGIN_ROOT/skills/study/scripts/tests/validate-reasoning.test.mjs"
 }
 
+cmd_identity_test() {
+  ensure_node
+  ensure_python
+  ensure_pymupdf
+
+  print_section "Paper Identity 1.0"
+  "$NODE_BIN" --test \
+    "$PLUGIN_ROOT/skills/study/scripts/tests/paper-identity.test.mjs" \
+    "$PLUGIN_ROOT/skills/study/scripts/tests/prepare-paper-identity.test.mjs"
+}
+
 cmd_package_test() {
   ensure_node
 
@@ -331,6 +342,7 @@ Commands:
   test         Run deterministic unit tests
   reasoning-test Run reasoning validation fixtures
   validation-test Run Validation Report 1.0 and cross-artifact gate tests
+  identity-test Run Paper Identity 1.0, fingerprint, reuse, and collision tests
   package-test Run package quality fixtures
   benchmark-all  Run mandatory PDF, optional parser, reasoning, and package benchmarks
   migrate      Migrate a v1 package to v2 evidence/reasoning draft files
@@ -382,6 +394,9 @@ case "$command_name" in
     ;;
   validation-test)
     cmd_validation_test
+    ;;
+  identity-test)
+    cmd_identity_test
     ;;
   package-test)
     cmd_package_test

@@ -101,7 +101,7 @@ function requiredChecks({ result, gold, license, pdfPath, validators, targetErro
       phrases.every((phrase) => includesNormalized(result.paperData.sections?.[section], phrase))),
     evidencePhrases: (required.evidencePhrases || []).every((phrase) => includesNormalized(evidenceText, phrase)),
     parserBackend: result.ledger.quality?.parser === required.parserBackend,
-    preparedFiles: ['paper-data.json', 'evidence-ledger.json', 'facts.json', 'analysis.json', 'meta.json', 'paper.pdf']
+    preparedFiles: ['paper-data.json', 'evidence-ledger.json', 'facts.json', 'analysis.json', 'meta.json', 'paper.pdf', '.codex-paper/paper-identity.json']
       .every((name) => fs.existsSync(path.join(result.paperDir, name))),
     authoringFiles: ['reasoning-analysis.json', 'README.md', 'visual-assets.md', 'summary.md', 'insights.md', 'method.md', 'mental-model.md', 'reflection.md', 'qa.md', 'index.html', 'code/deterministic-contract-probe.py']
       .every((name) => fs.existsSync(path.join(result.paperDir, name))),
@@ -122,7 +122,7 @@ async function main() {
   try {
     const { preparePaper } = await import('../../plugins/codex-paper/skills/study/scripts/prepare-paper.js');
     executed = true;
-    const result = await preparePaper(pdfPath, { contextMode: 'paper-only', profile: 'empirical' });
+    const result = await preparePaper(pdfPath, { contextMode: 'paper-only', profile: 'empirical', workflow: 'study', language: 'en' });
     writeAuthoringBoundary({ paperDir: result.paperDir, fixtureId, gold, ledger: result.ledger });
 
     const reasoningDraft = runValidator('validate-reasoning.js', result.paperDir, ['--json']);
@@ -151,7 +151,7 @@ async function main() {
       failedChecks,
       expectedFindingCodes: gold.requiredAssertions.validationReport1_0.expectedFindingCodes,
       observedFindingCodes: (standardReport?.findings || []).map((finding) => finding.code),
-      activeContractIds: ['resultClaims2_1', 'validationReport1_0'],
+      activeContractIds: ['paperIdentity1_0', 'resultClaims2_1', 'validationReport1_0'],
       reservedTargetIds: [],
       packageVersion: result.meta?.packageVersion,
       factsSchemaVersion: result.facts?.schemaVersion,

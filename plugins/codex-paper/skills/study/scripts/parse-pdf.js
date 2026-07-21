@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import pdf from 'pdf-parse';
 import { buildSectionTree } from './build-evidence-ledger.js';
@@ -9,18 +10,25 @@ import { PDF_SECURITY_POLICY, PdfSecurityError, copyPdfSnapshot, preflightPdfFil
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
 const PLUGIN_ROOT = path.resolve(__dirname, '../../..');
 const PLUGIN_MANIFEST_PATH = path.join(PLUGIN_ROOT, '.codex-plugin', 'plugin.json');
 const PARSER_LAUNCHER_PATH = path.join(__dirname, 'pdf-parser-launcher.py');
 const PARSER_WORKER_PATH = path.join(__dirname, 'pdf-parser-worker.js');
-const PARSER_VERSION = readParserVersion();
+const PARSER_VERSIONS = readParserVersions();
+const PARSER_VERSION = PARSER_VERSIONS.contractVersion;
+const PARSER_BUILD_VERSION = PARSER_VERSIONS.buildVersion;
+const PDF_PARSE_VERSION = (() => {
+  try { return require('pdf-parse/package.json').version || 'unknown'; } catch { return 'unknown'; }
+})();
 
-function readParserVersion() {
+function readParserVersions() {
   try {
     const manifest = JSON.parse(fs.readFileSync(PLUGIN_MANIFEST_PATH, 'utf8'));
-    return manifest.version || '0.0.0';
+    const buildVersion = String(manifest.version || '0.0.0');
+    return { contractVersion: buildVersion.split('+')[0], buildVersion };
   } catch {
-    return '0.0.0';
+    return { contractVersion: '0.0.0', buildVersion: '0.0.0' };
   }
 }
 
@@ -371,6 +379,7 @@ if len(doc) > ${PDF_SECURITY_POLICY.maxPages}:
     raise SystemExit(43)
 payload = {
     "metadata": doc.metadata or {},
+    "backendVersion": str(getattr(fitz, "VersionBind", "unknown")),
     "pageCount": len(doc),
     "firstPageBlocks": [],
     "pages": []
@@ -537,7 +546,9 @@ async function extractRawPdfData(pdfPath) {
       warnings: warnings || parserWarnings,
       parserMetadata: {
         parser: 'pymupdf',
+        backendVersion: String(raw.backendVersion || 'unknown'),
         parserVersion: PARSER_VERSION,
+        parserBuildVersion: PARSER_BUILD_VERSION,
         hasLayout: true,
         warnings: warnings || parserWarnings
       }
@@ -571,7 +582,9 @@ async function extractRawPdfData(pdfPath) {
     warnings,
     parserMetadata: {
       parser: 'pdf-parse',
+      backendVersion: PDF_PARSE_VERSION,
       parserVersion: PARSER_VERSION,
+      parserBuildVersion: PARSER_BUILD_VERSION,
       hasLayout: false,
       warnings: warnings.concat('pdf-parse fallback has no page layout blocks or bounding boxes')
     }
@@ -646,7 +659,8 @@ export async function parsePdfDetailedWorkerInternal(pdfPath, { sourceFilename }
     sections,
     warnings: uniq(source.warnings),
     qualityFlags,
-    parserVersion: PARSER_VERSION
+    parserVersion: PARSER_VERSION,
+    parserBuildVersion: PARSER_BUILD_VERSION
   };
 
   const sectionTree = buildSectionTree({
@@ -662,7 +676,9 @@ export async function parsePdfDetailedWorkerInternal(pdfPath, { sourceFilename }
     sectionTree,
     parserMetadata: source.parserMetadata || {
       parser: 'unknown',
+      backendVersion: 'unknown',
       parserVersion: PARSER_VERSION,
+      parserBuildVersion: PARSER_BUILD_VERSION,
       hasLayout: false,
       warnings: source.warnings || []
     }

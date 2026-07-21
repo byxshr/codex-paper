@@ -14,6 +14,7 @@ analysis.json
 .codex-paper/answering-pack.md
 .codex-paper/reasoning-review.md
 .codex-paper/validation-report.json
+.codex-paper/paper-identity.json       # present on P0-C1a-aware packages
 .codex-paper/external-evidence.json  # only for canonical/literature mode
 ```
 
@@ -28,6 +29,8 @@ Readers accept package `2.0.0` without rewriting it and resolve historical `clai
 Viewer compatibility metadata is a lightweight version/read-mode view, not an integrity or publication-health report. With a valid authoritative `meta.packageVersion`, Viewer GET endpoints do not parse the full evidence ledger solely to revalidate package integrity. The CLI validator reads all managed artifacts and can therefore fail a package that the Viewer still classifies by its declared version. Consumers must not treat Viewer `compatibility.readOnly` as `publishable`; the independent Validation API and [Validation Report 1.0](validation-report-1.0.md) own that decision.
 
 Validation Report 1.0 is written in place at `.codex-paper/validation-report.json`. It covers the evidence ledger, facts, analysis, reasoning, and—in complete phase—the visible files. Structured `findings` are authoritative; `errors` and `warnings` are compatibility projections. Standard and strict policies share intrinsic status, findings, publishability, and report hash, while strict may block a warning-only package for that invocation.
+
+P0-C1a-aware packages add a Paper Identity 1.0 authority at `.codex-paper/paper-identity.json` and exact projections in `meta.json`, `paper-data.json`, and the library index. `paperId`, `sourceRevisionId`, and `generationId` separately represent canonical grouping, exact PDF bytes, and content-affecting generation inputs. The current flat writer reuses only a complete identical generation without writes; every other collision fails closed. See [Paper Identity 1.0](paper-identity-1.0.md).
 
 The prepare writer validates the complete generated `facts.json` against the 2.1 JSON Schema before publishing it. Ordinary analysis, rendering, and reasoning-scaffold writers reject every read-only compatibility mode. The existing explicit v1-to-v2 migration workflow retains its narrowly scoped internal scaffold write, including packages that explicitly declare a `1.x` version; before writing, it validates all existing compatibility JSON and ancillary schema versions, even under `--force`. This is not a general 2.0 write or an implicit 2.0-to-2.1 migration.
 

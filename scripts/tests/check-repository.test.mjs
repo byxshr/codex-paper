@@ -25,9 +25,15 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/scripts/extract-facts.js',
   'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
   'plugins/codex-paper/skills/study/scripts/validation-report.js',
+  'plugins/codex-paper/skills/study/scripts/paper-identity.js',
+  'plugins/codex-paper/skills/study/scripts/tests/prepare-paper-identity.test.mjs',
+  'plugins/codex-paper/skills/study/scripts/tests/paper-identity.test.mjs',
   'plugins/codex-paper/skills/study/scripts/migrate-package.js',
   'plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json',
   'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json',
+  'plugins/codex-paper/skills/study/generation-contract-1.0.json',
+  'plugins/codex-paper/skills/summary/SKILL.md',
   'plugins/codex-paper/src/shared/package-compatibility.mjs',
   'plugins/codex-paper/src/web/server/utils/packageCompatibility.mjs',
   'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs',
@@ -63,7 +69,11 @@ function write(root, path, content = '') {
 
 function makeFixture() {
   const root = mkdtempSync('/tmp/codex-paper-repo-check-')
-  for (const path of SENTINELS) {
+  const generationContract = JSON.parse(readFileSync(join(REPO_ROOT, 'plugins/codex-paper/skills/study/generation-contract-1.0.json'), 'utf8'))
+  const contractFiles = [...generationContract.common, ...generationContract.workflows.study, ...generationContract.workflows.summary]
+    .map((path) => `plugins/codex-paper/${path}`)
+  const fixtureFiles = [...new Set([...SENTINELS, ...contractFiles])]
+  for (const path of fixtureFiles) {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     cpSync(join(REPO_ROOT, path), join(root, path), { recursive: true })
   }
@@ -71,7 +81,7 @@ function makeFixture() {
     mkdirSync(dirname(join(root, schema.path)), { recursive: true })
     cpSync(join(REPO_ROOT, schema.path), join(root, schema.path), { recursive: true })
   }
-  const trackedFiles = [...SENTINELS, ...BASELINE.schemas.map((schema) => schema.path)]
+  const trackedFiles = [...fixtureFiles, ...BASELINE.schemas.map((schema) => schema.path)]
   return {
     root,
     trackedFiles,
@@ -330,7 +340,7 @@ test('facts 2.1 schema and writer version boundaries cannot drift', () => withFi
   const preparePath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
   writeFileSync(preparePath, readFileSync(preparePath, 'utf8')
     .replace("const PACKAGE_VERSION = '2.1.0'", "const PACKAGE_VERSION = '2.0.0'")
-    .replace('validateFactsSchema(facts)', 'true')
+    .replaceAll('validateFactsSchema(facts)', 'true')
     .replace('evidenceSchemaVersion: EVIDENCE_SCHEMA_VERSION', 'evidenceSchemaVersion: PACKAGE_VERSION'))
   const errors = errorsFor(fixture)
   assert.match(errors, /must define facts schema 2\.1 with resultClaims/)
@@ -402,6 +412,38 @@ test('CI cannot remove the Validation Report 1.0 gate', () => withFixture((fixtu
   const workflow = readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh validation-test', 'true')
   writeFileSync(workflowPath, workflow)
   assert.match(errorsFor(fixture), /must run validation-test before benchmark-mandatory/)
+}))
+
+test('CI cannot remove or reorder the Paper Identity 1.0 gate', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  const workflow = readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh identity-test', 'true')
+  writeFileSync(workflowPath, workflow)
+  assert.match(errorsFor(fixture), /must run identity-test before validation-test and benchmark-mandatory/)
+}))
+
+test('Paper Identity 1.0 schema and generation contract are required', () => withFixture((fixture) => {
+  const schema = 'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json'
+  rmSync(join(fixture.root, schema))
+  const contractPath = join(fixture.root, 'plugins/codex-paper/skills/study/generation-contract-1.0.json')
+  const contract = JSON.parse(readFileSync(contractPath, 'utf8'))
+  contract.common.push('.codex-plugin/plugin.json')
+  writeFileSync(contractPath, JSON.stringify(contract))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /active plugin sentinel is missing: .*paper-identity-1\.0\.schema\.json/)
+  assert.match(errors, /must exclude provenance-only file from fingerprint/)
+}))
+
+test('prepare and skills cannot restore overwrite or implicit identity inputs', () => withFixture((fixture) => {
+  const preparePath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
+  writeFileSync(preparePath, `${readFileSync(preparePath, 'utf8')}\nconst force = { force: true }; // mutation\n`)
+  const studyPath = join(fixture.root, 'plugins/codex-paper/skills/study/SKILL.md')
+  writeFileSync(studyPath, readFileSync(studyPath, 'utf8').replace('--workflow study', '--workflow auto'))
+  const summaryPath = join(fixture.root, 'plugins/codex-paper/skills/summary/SKILL.md')
+  writeFileSync(summaryPath, readFileSync(summaryPath, 'utf8').replace('--language "$OUTPUT_LANG"', '--lang "$OUTPUT_LANG"'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must not restore overwrite or force preparation/)
+  assert.match(errors, /must pass explicit --workflow study/)
+  assert.match(errors, /must pass explicit --workflow summary and --language/)
 }))
 
 test('Validation Report 1.0 schema is a required repository sentinel', () => withFixture((fixture) => {

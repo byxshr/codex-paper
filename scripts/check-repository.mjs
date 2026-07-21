@@ -29,6 +29,12 @@ const VIEWER_COMPATIBILITY = 'plugins/codex-paper/src/web/server/utils/storedPac
 const VALIDATION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json'
 const VALIDATION_ENGINE = 'plugins/codex-paper/skills/study/scripts/validation-report.js'
 const VALIDATION_API = 'plugins/codex-paper/src/web/server/api/papers/[slug]/validation.get.ts'
+const IDENTITY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json'
+const IDENTITY_ENGINE = 'plugins/codex-paper/skills/study/scripts/paper-identity.js'
+const GENERATION_CONTRACT = 'plugins/codex-paper/skills/study/generation-contract-1.0.json'
+const PREPARE_SCRIPT = 'plugins/codex-paper/skills/study/scripts/prepare-paper.js'
+const STUDY_SKILL = 'plugins/codex-paper/skills/study/SKILL.md'
+const SUMMARY_SKILL = 'plugins/codex-paper/skills/summary/SKILL.md'
 const MANDATORY_SENTINELS = [
   MANDATORY_MANIFEST,
   MANDATORY_RUNNER,
@@ -80,6 +86,11 @@ const SENTINELS = [
   VALIDATION_SCHEMA,
   VALIDATION_ENGINE,
   VALIDATION_API,
+  IDENTITY_SCHEMA,
+  IDENTITY_ENGINE,
+  GENERATION_CONTRACT,
+  PREPARE_SCRIPT,
+  SUMMARY_SKILL,
   'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
   'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json',
@@ -394,6 +405,9 @@ export function checkRepository({
       errors.push(`${ROOT_SCRIPT} must expose benchmark-mandatory`)
     }
     if (!rootScript.includes('validation-test') || !rootScript.includes('validation-report.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose validation-test`)
+    if (!rootScript.includes('identity-test') || !rootScript.includes('paper-identity.test.mjs') || !rootScript.includes('prepare-paper-identity.test.mjs')) {
+      errors.push(`${ROOT_SCRIPT} must expose identity-test`)
+    }
   }
   if (existsSync(join(root, CI_WORKFLOW))) {
     const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
@@ -404,6 +418,85 @@ export function checkRepository({
     }
     const validationIndex = workflow.indexOf('validation-test')
     if (validationIndex < 0 || validationIndex > mandatoryIndex) errors.push(`${CI_WORKFLOW} must run validation-test before benchmark-mandatory`)
+    const identityIndex = workflow.indexOf('identity-test')
+    if (identityIndex < 0 || identityIndex > validationIndex || identityIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run identity-test before validation-test and benchmark-mandatory`)
+    }
+  }
+
+  if (existsSync(join(root, GENERATION_CONTRACT))) {
+    const contract = readJson(join(root, GENERATION_CONTRACT), errors, GENERATION_CONTRACT)
+    if (contract?.version !== '1.0.0') {
+      errors.push(`${GENERATION_CONTRACT} must declare version 1.0.0`)
+    }
+    for (const [group, paths] of [
+      ['common', contract?.common],
+      ['study', contract?.workflows?.study],
+      ['summary', contract?.workflows?.summary],
+    ]) {
+      if (!Array.isArray(paths) || paths.length === 0) {
+        errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} must be non-empty`)
+        continue
+      }
+      const seen = new Set()
+      for (const contractPath of paths) {
+        if (!isSafeRepositoryRelativePath(contractPath)) {
+          errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} contains unsafe path: ${JSON.stringify(contractPath)}`)
+          continue
+        }
+        if (seen.has(contractPath)) errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} contains duplicate path: ${contractPath}`)
+        seen.add(contractPath)
+        const absolutePath = join(root, EXPECTED_ACTIVE_PLUGIN.sourcePath, contractPath)
+        if (!existsSync(absolutePath)) errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} path is missing: ${contractPath}`)
+        else if (isSymlink(absolutePath)) errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} path must not be a symlink: ${contractPath}`)
+      }
+    }
+    const allTrustedPaths = [
+      ...(contract?.common || []),
+      ...(contract?.workflows?.study || []),
+      ...(contract?.workflows?.summary || []),
+    ]
+    for (const forbidden of ['.codex-plugin/plugin.json', 'package-lock.json']) {
+      if (allTrustedPaths.includes(forbidden)) errors.push(`${GENERATION_CONTRACT} must exclude provenance-only file from fingerprint: ${forbidden}`)
+    }
+    if (!allTrustedPaths.includes('skills/study/scripts/paper-identity.js') || !allTrustedPaths.includes('skills/study/schemas/paper-identity-1.0.schema.json')) {
+      errors.push(`${GENERATION_CONTRACT} must trust the Paper Identity engine and schema`)
+    }
+  }
+
+  if (existsSync(join(root, IDENTITY_SCHEMA))) {
+    const schema = readJson(join(root, IDENTITY_SCHEMA), errors, IDENTITY_SCHEMA)
+    if (schema?.$id !== 'https://github.com/byxshr/codex-paper/schemas/paper-identity-1.0.schema.json'
+      || schema?.properties?.schemaVersion?.const !== '1.0.0'
+      || !schema?.required?.includes('paperId')
+      || !schema?.required?.includes('generationId')) {
+      errors.push(`${IDENTITY_SCHEMA} must preserve the strict Paper Identity 1.0 contract`)
+    }
+  }
+  if (existsSync(join(root, IDENTITY_ENGINE))) {
+    const source = readFileSync(join(root, IDENTITY_ENGINE), 'utf8')
+    for (const required of ['CANONICAL_ID_CONFLICT', 'canonicalStringify', 'buildContentContract', "gen:sha256:", 'pluginBuildVersion']) {
+      if (!source.includes(required)) errors.push(`${IDENTITY_ENGINE} must preserve identity boundary ${required}`)
+    }
+    if (!source.includes('sha256(canonicalStringify(generationInputs))')) {
+      errors.push(`${IDENTITY_ENGINE} generation fingerprint must hash canonical inputs without provenance`)
+    }
+  }
+  if (existsSync(join(root, PREPARE_SCRIPT))) {
+    const source = readFileSync(join(root, PREPARE_SCRIPT), 'utf8')
+    for (const required of ['resolvePreparationAction', 'GENERATION_CONFLICT', 'LEGACY_IDENTITY_COLLISION', 'COPYFILE_EXCL', 'IDENTITY_RELATIVE_PATH']) {
+      if (!source.includes(required)) errors.push(`${PREPARE_SCRIPT} must preserve fail-closed identity boundary ${required}`)
+    }
+    if (/--force\b|force\s*:\s*true|copyFileSync\([^\n]*COPYFILE_FICLONE_FORCE/.test(source)) {
+      errors.push(`${PREPARE_SCRIPT} must not restore overwrite or force preparation`)
+    }
+  }
+  for (const [skillPath, workflow] of [[STUDY_SKILL, 'study'], [SUMMARY_SKILL, 'summary']]) {
+    if (!existsSync(join(root, skillPath))) continue
+    const source = readFileSync(join(root, skillPath), 'utf8')
+    if (!source.includes(`--workflow ${workflow}`) || !source.includes('--language')) {
+      errors.push(`${skillPath} must pass explicit --workflow ${workflow} and --language to prepare-paper.js`)
+    }
   }
 
   const legacyReference = new RegExp(`(^|[^A-Za-z0-9_-])${LEGACY_TREE}/`)

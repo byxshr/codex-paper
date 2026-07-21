@@ -1,13 +1,22 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { parsePdfDetailed } from './parse-pdf.js';
-import { buildAnalysisFromArtifacts } from './build-analysis.js';
+import { buildAnalysisFromArtifacts, validateAnalysisWithFacts } from './build-analysis.js';
 import { buildEvidenceLedger } from './build-evidence-ledger.js';
 import { buildFactsFromLedger, validateFactsEvidenceRefs } from './extract-facts.js';
+import {
+  IDENTITY_RELATIVE_PATH,
+  PaperIdentityError,
+  assertIdentityProjection,
+  buildPaperIdentity,
+  identityProjection,
+  platformProvenance,
+  readPaperIdentity,
+  sha256File
+} from './paper-identity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,12 +31,19 @@ const EVIDENCE_SCHEMA_VERSION = '2.0.0';
 const REASONING_SCHEMA_VERSION = '2.0.0';
 const CONTEXT_MODES = new Set(['paper-only', 'canonical', 'literature']);
 const PAPER_PROFILES = new Set(['auto', 'empirical', 'theoretical', 'architecture', 'system', 'benchmark', 'survey', 'post-training', 'position', 'other']);
+const WORKFLOWS = new Set(['study', 'summary']);
+const LANGUAGES = new Set(['zh', 'en']);
+const PREPARED_FILES = ['paper.pdf', 'paper-data.json', 'evidence-ledger.json', 'facts.json', 'analysis.json', 'meta.json'];
 const FACTS_SCHEMA_PATH = path.resolve(__dirname, '../schemas/facts-2.1.schema.json');
-const validateFactsSchema = new Ajv2020({ allErrors: true, strict: true })
-  .compile(JSON.parse(fs.readFileSync(FACTS_SCHEMA_PATH, 'utf8')));
+const EVIDENCE_SCHEMA_PATH = path.resolve(__dirname, '../schemas/evidence-ledger.schema.json');
+const EXTERNAL_EVIDENCE_SCHEMA_PATH = path.resolve(__dirname, '../schemas/external-evidence.schema.json');
+const schemaCompiler = new Ajv2020({ allErrors: true, strict: true });
+const validateFactsSchema = schemaCompiler.compile(JSON.parse(fs.readFileSync(FACTS_SCHEMA_PATH, 'utf8')));
+const validateEvidenceSchema = schemaCompiler.compile(JSON.parse(fs.readFileSync(EVIDENCE_SCHEMA_PATH, 'utf8')));
+const validateExternalEvidenceSchema = schemaCompiler.compile(JSON.parse(fs.readFileSync(EXTERNAL_EVIDENCE_SCHEMA_PATH, 'utf8')));
 
-function slugify(value) {
-  return value
+export function slugify(value) {
+  const normalized = value
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[^a-z0-9\s-]/g, '')
@@ -35,6 +51,7 @@ function slugify(value) {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+  return normalized.length <= 160 ? normalized : normalized.slice(0, 160).replace(/-+$/g, '');
 }
 
 function ensureDir(dirPath) {
@@ -45,7 +62,9 @@ function parsePrepareArgs(argv) {
   const args = {
     input: null,
     contextMode: 'paper-only',
-    profile: 'auto'
+    profile: 'auto',
+    workflow: 'study',
+    language: 'en'
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -56,32 +75,37 @@ function parsePrepareArgs(argv) {
     } else if (arg === '--profile') {
       args.profile = argv[index + 1];
       index += 1;
+    } else if (arg === '--workflow') {
+      args.workflow = argv[index + 1];
+      index += 1;
+    } else if (arg === '--language') {
+      args.language = argv[index + 1];
+      index += 1;
+    } else if (arg.startsWith('--')) {
+      throw new PaperIdentityError('ARGUMENT_INVALID', `Unknown option: ${arg}`);
     } else if (!args.input) {
       args.input = arg;
     } else {
-      throw new Error(`Unknown argument: ${arg}`);
+      throw new PaperIdentityError('ARGUMENT_INVALID', `Unexpected argument: ${arg}`);
     }
   }
 
   if (!args.input) {
-    throw new Error('Paper input is required');
+    throw new PaperIdentityError('ARGUMENT_INVALID', 'Paper input is required.');
   }
 
   if (!CONTEXT_MODES.has(args.contextMode)) {
-    throw new Error('--context must be paper-only, canonical, or literature');
+    throw new PaperIdentityError('ARGUMENT_INVALID', '--context must be paper-only, canonical, or literature.');
   }
 
   if (!PAPER_PROFILES.has(args.profile)) {
-    throw new Error('--profile is not recognized');
+    throw new PaperIdentityError('ARGUMENT_INVALID', '--profile is not recognized.');
   }
 
-  return args;
-}
+  if (!WORKFLOWS.has(args.workflow)) throw new PaperIdentityError('ARGUMENT_INVALID', '--workflow must be study or summary.');
+  if (!LANGUAGES.has(args.language)) throw new PaperIdentityError('ARGUMENT_INVALID', '--language must be zh or en.');
 
-function sha256File(filePath) {
-  const hash = crypto.createHash('sha256');
-  hash.update(fs.readFileSync(filePath));
-  return hash.digest('hex');
+  return args;
 }
 
 async function resolveInput(input) {
@@ -96,15 +120,21 @@ async function resolveInput(input) {
 }
 
 function readIndexPreserveShape() {
-  if (!fs.existsSync(INDEX_PATH)) {
-    return {
-      raw: [],
-      papers: [],
-      isArray: true
-    };
+  let stats;
+  try {
+    stats = fs.lstatSync(INDEX_PATH);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    return { raw: [], papers: [], isArray: true };
   }
-
-  const raw = JSON.parse(fs.readFileSync(INDEX_PATH, 'utf8'));
+  if (stats.isSymbolicLink() || !stats.isFile()) throw new PaperIdentityError('INDEX_PATH_UNSAFE', 'Library index path is unsafe.');
+  const descriptor = fs.openSync(INDEX_PATH, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(descriptor, 'utf8'));
+  } finally {
+    fs.closeSync(descriptor);
+  }
   if (Array.isArray(raw)) {
     return {
       raw,
@@ -121,13 +151,19 @@ function readIndexPreserveShape() {
 }
 
 function writeIndexPreserveShape(indexState) {
-  if (indexState.isArray) {
-    fs.writeFileSync(INDEX_PATH, JSON.stringify(indexState.papers, null, 2));
-    return;
+  const content = indexState.isArray
+    ? JSON.stringify(indexState.papers, null, 2)
+    : (() => {
+        indexState.raw.papers = indexState.papers;
+        return JSON.stringify(indexState.raw, null, 2);
+      })();
+  const descriptor = fs.openSync(INDEX_PATH, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0), 0o600);
+  try {
+    fs.writeFileSync(descriptor, content);
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
   }
-
-  indexState.raw.papers = indexState.papers;
-  fs.writeFileSync(INDEX_PATH, JSON.stringify(indexState.raw, null, 2));
 }
 
 function buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl }) {
@@ -154,32 +190,166 @@ function buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl }) {
   };
 }
 
+function writeFileExclusive(filePath, content, mode = 0o600) {
+  const parent = path.dirname(filePath);
+  const parentStats = fs.lstatSync(parent);
+  if (parentStats.isSymbolicLink() || !parentStats.isDirectory()) throw new PaperIdentityError('PAPER_PATH_UNSAFE', 'Paper output directory is unsafe.');
+  const descriptor = fs.openSync(filePath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), mode);
+  try {
+    fs.writeFileSync(descriptor, content);
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function writeJsonExclusive(filePath, value) {
+  writeFileExclusive(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function copyFileExclusive(source, destination) {
+  fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
+  fs.chmodSync(destination, 0o600);
+}
+
 function maybeWriteExternalEvidenceManifest({ paperDir, paperSlug, contextMode, sourceUrl }) {
   if (contextMode === 'paper-only') {
     return null;
   }
 
   const codexDir = path.join(paperDir, '.codex-paper');
-  ensureDir(codexDir);
+  if (!fs.existsSync(codexDir)) fs.mkdirSync(codexDir, { mode: 0o700 });
   const outputPath = path.join(codexDir, 'external-evidence.json');
   const manifest = buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl });
-  fs.writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  writeJsonExclusive(outputPath, manifest);
   return outputPath;
+}
+
+function readJsonFile(filePath, code = 'IDENTITY_STATE_INCOMPLETE') {
+  try {
+    const stats = fs.lstatSync(filePath);
+    if (stats.isSymbolicLink() || !stats.isFile()) throw new Error('not a regular file');
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    throw new PaperIdentityError(code, 'Existing paper generation is incomplete or invalid.');
+  }
+}
+
+function scanIdentityRegistry() {
+  if (!fs.existsSync(PAPERS_ROOT)) return [];
+  const records = [];
+  for (const entry of fs.readdirSync(PAPERS_ROOT, { withFileTypes: true })) {
+    const paperDir = path.join(PAPERS_ROOT, entry.name);
+    if (entry.isSymbolicLink()) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper identity registry contains an unsafe directory.');
+    if (!entry.isDirectory()) continue;
+    const identityPath = path.join(paperDir, IDENTITY_RELATIVE_PATH);
+    if (!fs.existsSync(identityPath)) continue;
+    let identity;
+    try { identity = readPaperIdentity(identityPath); } catch {
+      throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper identity registry contains an invalid record.');
+    }
+    if (identity.slug !== entry.name) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper identity slug does not match its directory.');
+    records.push({ paperDir, identity });
+  }
+  return records;
+}
+
+function validateReusableGeneration(record, indexState) {
+  const { paperDir, identity } = record;
+  for (const relativePath of PREPARED_FILES) {
+    const filePath = path.join(paperDir, relativePath);
+    let stats;
+    try { stats = fs.lstatSync(filePath); } catch { throw new PaperIdentityError('IDENTITY_STATE_INCOMPLETE', 'Existing paper generation is incomplete.'); }
+    if (stats.isSymbolicLink() || !stats.isFile()) throw new PaperIdentityError('IDENTITY_STATE_INCOMPLETE', 'Existing paper generation is incomplete.');
+  }
+  let externalEvidence = null;
+  if (identity.generation.inputs.contextMode !== 'paper-only') {
+    externalEvidence = readJsonFile(path.join(paperDir, '.codex-paper/external-evidence.json'));
+    if (!validateExternalEvidenceSchema(externalEvidence)) throw new PaperIdentityError('IDENTITY_STATE_INCOMPLETE', 'Existing external evidence is invalid.');
+  }
+  if (sha256File(path.join(paperDir, 'paper.pdf')) !== identity.source.sha256) {
+    throw new PaperIdentityError('SOURCE_HASH_MISMATCH', 'Stored PDF does not match the paper identity.');
+  }
+  const meta = readJsonFile(path.join(paperDir, 'meta.json'));
+  const paperData = readJsonFile(path.join(paperDir, 'paper-data.json'));
+  const ledger = readJsonFile(path.join(paperDir, 'evidence-ledger.json'));
+  const facts = readJsonFile(path.join(paperDir, 'facts.json'));
+  const analysis = readJsonFile(path.join(paperDir, 'analysis.json'));
+  assertIdentityProjection(meta, identity, 'meta.json');
+  assertIdentityProjection(paperData, identity, 'paper-data.json');
+  if (paperData.paperSlug !== identity.slug
+    || ledger.paperSlug !== identity.slug
+    || facts.paperSlug !== identity.slug
+    || analysis.paperSlug !== identity.slug
+    || ledger.document?.sha256 !== identity.source.sha256) {
+    throw new PaperIdentityError('IDENTITY_STATE_INCOMPLETE', 'Existing prepared artifacts do not match the identity record.');
+  }
+  if (!validateEvidenceSchema(ledger) || !validateFactsSchema(facts)) {
+    throw new PaperIdentityError('IDENTITY_STATE_INCOMPLETE', 'Existing prepared artifacts do not satisfy their schemas.');
+  }
+  const factsValidation = validateFactsEvidenceRefs(facts, ledger);
+  const analysisValidation = validateAnalysisWithFacts(analysis, facts);
+  if (!factsValidation.valid || !analysisValidation.valid) {
+    throw new PaperIdentityError('IDENTITY_STATE_INCOMPLETE', 'Existing prepared artifacts contain invalid evidence references.');
+  }
+  const matches = indexState.papers.filter((entry) => entry?.slug === identity.slug);
+  if (matches.length !== 1) throw new PaperIdentityError('INDEX_PROJECTION_CONFLICT', 'Library index does not contain exactly one matching identity projection.');
+  assertIdentityProjection(matches[0], identity, 'index.json');
+  return {
+    paperData,
+    ledger,
+    facts,
+    analysis,
+    meta,
+    externalEvidencePath: identity.generation.inputs.contextMode === 'paper-only' ? null : path.join(paperDir, '.codex-paper/external-evidence.json')
+  };
+}
+
+function resolvePreparationAction(identity, candidatePaperDir, indexState) {
+  const registry = scanIdentityRegistry();
+  const generationMatches = registry.filter((item) => item.identity.generationId === identity.generationId);
+  if (generationMatches.length > 1) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Multiple paper directories claim the same generation identity.');
+  if (generationMatches.length === 1) {
+    const match = generationMatches[0];
+    if (match.identity.sourceRevisionId !== identity.sourceRevisionId) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Generation identity maps to conflicting source revisions.');
+    if (match.identity.paperId !== identity.paperId) throw new PaperIdentityError('PAPER_IDENTITY_CONFLICT', 'The same generation maps to a different paper identity.');
+    const artifacts = validateReusableGeneration(match, indexState);
+    return { action: 'reused', paperDir: match.paperDir, identity: match.identity, artifacts };
+  }
+  if (registry.some((item) => item.identity.sourceRevisionId === identity.sourceRevisionId)) {
+    throw new PaperIdentityError('GENERATION_CONFLICT', 'This source revision already exists with a different generation fingerprint.');
+  }
+  if (fs.existsSync(candidatePaperDir)) {
+    const stats = fs.lstatSync(candidatePaperDir);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) throw new PaperIdentityError('PAPER_PATH_UNSAFE', 'Paper destination is unsafe.');
+    if (!fs.existsSync(path.join(candidatePaperDir, IDENTITY_RELATIVE_PATH))) {
+      throw new PaperIdentityError('LEGACY_IDENTITY_COLLISION', 'A legacy flat-layout package already uses this slug.');
+    }
+    throw new PaperIdentityError('SOURCE_REVISION_CONFLICT', 'This slug is already assigned to another source revision.');
+  }
+  if (indexState.papers.some((entry) => entry?.slug === identity.slug)) {
+    throw new PaperIdentityError('INDEX_PROJECTION_CONFLICT', 'Library index already contains this slug without a matching generation.');
+  }
+  return { action: 'created', paperDir: candidatePaperDir, identity };
 }
 
 export async function preparePaper(userInput, options = {}) {
   if (!userInput) {
-    throw new Error('Paper input is required');
+    throw new PaperIdentityError('ARGUMENT_INVALID', 'Paper input is required.');
   }
 
   const contextMode = options.contextMode || 'paper-only';
   const profile = options.profile || 'auto';
+  const workflow = options.workflow || 'study';
+  const language = options.language || 'en';
   if (!CONTEXT_MODES.has(contextMode)) {
-    throw new Error('contextMode must be paper-only, canonical, or literature');
+    throw new PaperIdentityError('ARGUMENT_INVALID', 'contextMode must be paper-only, canonical, or literature.');
   }
   if (!PAPER_PROFILES.has(profile)) {
-    throw new Error('profile is not recognized');
+    throw new PaperIdentityError('ARGUMENT_INVALID', 'profile is not recognized.');
   }
+  if (!WORKFLOWS.has(workflow)) throw new PaperIdentityError('ARGUMENT_INVALID', 'workflow must be study or summary.');
+  if (!LANGUAGES.has(language)) throw new PaperIdentityError('ARGUMENT_INVALID', 'language must be zh or en.');
 
   ensureDir(PAPERS_ROOT);
 
@@ -191,11 +361,46 @@ export async function preparePaper(userInput, options = {}) {
   parsed.warnings = Array.from(new Set([...(resolvedInput.inputWarnings || []), ...(parsed.warnings || [])]));
   const sourceFilename = resolvedInput.sourceFilename || path.basename(inputPath);
   const paperSlug = slugify(parsed.title || path.basename(inputPath, path.extname(inputPath)));
+  if (!paperSlug) throw new PaperIdentityError('PAPER_SLUG_INVALID', 'Parsed title cannot produce a safe paper slug.');
   const paperDir = path.join(PAPERS_ROOT, paperSlug);
   const today = new Date().toISOString().slice(0, 10);
   const sourceSha256 = sha256File(inputPath);
+  const identity = buildPaperIdentity({
+    slug: paperSlug,
+    sourceSha256,
+    sourceUrl,
+    pages: detailed.pages,
+    workflow,
+    language,
+    contextMode,
+    requestedPaperProfile: profile,
+    parserBackend: detailed.parserMetadata?.parser || 'unknown',
+    parserBackendVersion: detailed.parserMetadata?.backendVersion || 'unknown',
+    pluginBuildVersion: detailed.parserMetadata?.parserBuildVersion || parsed.parserBuildVersion || PLUGIN_BASE_VERSION,
+    platform: platformProvenance()
+  });
+  const indexState = readIndexPreserveShape();
+  const preparation = resolvePreparationAction(identity, paperDir, indexState);
+  if (preparation.action === 'reused') {
+    return {
+      action: 'reused',
+      paperSlug: preparation.identity.slug,
+      paperDir: preparation.paperDir,
+      inputPath,
+      sourceFilename,
+      ...preparation.artifacts,
+      identity: preparation.identity,
+      diagnostics: preparation.identity.canonical.diagnostics,
+      contextMode: preparation.identity.generation.inputs.contextMode,
+      profile: preparation.identity.generation.inputs.requestedPaperProfile,
+      workflow: preparation.identity.generation.inputs.workflow,
+      language: preparation.identity.generation.inputs.language
+    };
+  }
 
-  ensureDir(paperDir);
+  fs.mkdirSync(paperDir, { mode: 0o700 });
+  fs.mkdirSync(path.join(paperDir, '.codex-paper'), { mode: 0o700 });
+  const projection = identityProjection(identity);
 
   const paperData = {
     paperSlug,
@@ -213,6 +418,8 @@ export async function preparePaper(userInput, options = {}) {
     warnings: parsed.warnings,
     qualityFlags: parsed.qualityFlags,
     parserVersion: parsed.parserVersion,
+    parserBuildVersion: parsed.parserBuildVersion,
+    ...projection,
     rawText: detailed.rawText
   };
 
@@ -255,9 +462,18 @@ export async function preparePaper(userInput, options = {}) {
     reasoningSchemaVersion: REASONING_SCHEMA_VERSION,
     contextMode,
     requestedPaperProfile: profile,
+    workflow,
+    language,
+    identitySchemaVersion: identity.schemaVersion,
+    paperId: identity.paperId,
+    sourceRevisionId: identity.sourceRevisionId,
+    generationId: identity.generationId,
+    sourceSha256: identity.source.sha256,
     generatedWith: {
       pluginVersion: PLUGIN_BASE_VERSION,
-      parserVersion: parsed.parserVersion
+      pluginBuildVersion: identity.provenance.pluginBuildVersion,
+      parserVersion: parsed.parserVersion,
+      parserBuildVersion: parsed.parserBuildVersion
     },
     qualityFlags: parsed.qualityFlags,
     url: sourceUrl
@@ -278,31 +494,27 @@ export async function preparePaper(userInput, options = {}) {
     parserVersion: parsed.parserVersion,
     packageVersion: PACKAGE_VERSION,
     contextMode,
+    workflow,
+    language,
+    ...projection,
     qualityFlags: parsed.qualityFlags,
     url: sourceUrl
   };
 
-  fs.copyFileSync(inputPath, path.join(paperDir, 'paper.pdf'));
-  fs.writeFileSync(path.join(paperDir, 'paper-data.json'), JSON.stringify(paperData, null, 2));
-  fs.writeFileSync(path.join(paperDir, 'evidence-ledger.json'), JSON.stringify(ledger, null, 2));
-  fs.writeFileSync(path.join(paperDir, 'facts.json'), JSON.stringify(facts, null, 2));
-  fs.writeFileSync(path.join(paperDir, 'analysis.json'), JSON.stringify(analysis, null, 2));
-  fs.writeFileSync(path.join(paperDir, 'meta.json'), JSON.stringify(meta, null, 2));
+  copyFileExclusive(inputPath, path.join(paperDir, 'paper.pdf'));
+  writeJsonExclusive(path.join(paperDir, 'paper-data.json'), paperData);
+  writeJsonExclusive(path.join(paperDir, 'evidence-ledger.json'), ledger);
+  writeJsonExclusive(path.join(paperDir, 'facts.json'), facts);
+  writeJsonExclusive(path.join(paperDir, 'analysis.json'), analysis);
+  writeJsonExclusive(path.join(paperDir, 'meta.json'), meta);
   const externalEvidencePath = maybeWriteExternalEvidenceManifest({ paperDir, paperSlug, contextMode, sourceUrl });
+  writeJsonExclusive(path.join(paperDir, IDENTITY_RELATIVE_PATH), identity);
 
-  const indexState = readIndexPreserveShape();
-  const existingIndex = indexState.papers.findIndex((paper) => paper.slug === paperSlug);
-  if (existingIndex >= 0) {
-    indexState.papers[existingIndex] = {
-      ...indexState.papers[existingIndex],
-      ...indexEntry
-    };
-  } else {
-    indexState.papers.push(indexEntry);
-  }
+  indexState.papers.push(indexEntry);
   writeIndexPreserveShape(indexState);
 
   return {
+    action: 'created',
     paperSlug,
     paperDir,
     inputPath,
@@ -312,8 +524,12 @@ export async function preparePaper(userInput, options = {}) {
     facts,
     analysis,
     meta,
+    identity,
+    diagnostics: identity.canonical.diagnostics,
     contextMode,
     profile,
+    workflow,
+    language,
     externalEvidencePath
   };
   } finally {
@@ -325,6 +541,7 @@ async function runCli() {
   const args = parsePrepareArgs(process.argv.slice(2));
   const result = await preparePaper(args.input, args);
   process.stdout.write(`${JSON.stringify({
+    action: result.action,
     paperSlug: result.paperSlug,
     paperDir: result.paperDir,
     sourceFilename: result.sourceFilename,
@@ -332,6 +549,15 @@ async function runCli() {
     packageVersion: PACKAGE_VERSION,
     contextMode: result.contextMode,
     requestedPaperProfile: result.profile,
+    workflow: result.workflow,
+    language: result.language,
+    identity: {
+      schemaVersion: result.identity.schemaVersion,
+      paperId: result.identity.paperId,
+      sourceRevisionId: result.identity.sourceRevisionId,
+      generationId: result.identity.generationId
+    },
+    diagnostics: result.diagnostics,
     evidenceCount: result.ledger.evidence.length,
     analysisVersion: result.analysis.analysisVersion,
     externalEvidencePath: result.externalEvidencePath || null,
@@ -341,7 +567,8 @@ async function runCli() {
 
 if (process.argv[1] === __filename) {
   runCli().catch((error) => {
-    console.error(`Error preparing paper: ${error.message}`);
-    process.exit(1);
+    const code = error?.code || 'PREPARE_FAILED';
+    console.error(`Error [${code}]: ${String(error?.message || error).replace(/[\r\n]+/g, ' ').slice(0, 2048)}`);
+    process.exit(code === 'ARGUMENT_INVALID' ? 2 : 1);
   });
 }

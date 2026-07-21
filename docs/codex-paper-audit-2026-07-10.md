@@ -309,6 +309,7 @@ P0-C1 与 P0-C2 作为一个连续 epic 交付：C1 先冻结 identity、幂等�
 **P0-C1b：物理布局、统一 resolver 与 overlay**
 
 - 目标布局明确区分 paper identity、source revision、immutable generation、mutable overlay 和 authoritative `current` record；所有消费者通过共享 resolver 解析 slug/paperId/current generation，不自行拼接 `papers/<slug>`；
+- 为“本地路径首次生成 source-fallback，之后精确 DOI/arXiv URL 提供更强 canonical ID”及其反向顺序定义显式 alias/reconciliation 规则；不得静默改写既有 `paperId`、重分组或把来源顺序变成隐式迁移；
 - 兼容读取现有 flat-layout 2.0/2.1 包，但默认只读且不得隐式搬迁或写回；旧包迁移必须走 P1-2 显式、可回滚流程；
 - 禁止用目录 symlink 维持旧 slug 路径；Viewer、validator、sandbox、trash/restore、Ask 和根脚本必须使用同一个 no-follow resolver；
 - 数据分层为 immutable generated revision（PDF、机器数据、生成材料、validation、generation manifest）与 mutable paper overlay（tags、chat notes、学习进度、用户注释）；
@@ -318,7 +319,7 @@ P0-C1 与 P0-C2 作为一个连续 epic 交付：C1 先冻结 identity、幂等�
 - 默认保留 overlay、用户文件和未由 generation manifest 管理的文件；
 - `--resume`、`--new-revision`、`--replace` 必须有明确且不可静默的行为。
 
-**验收条件**：同标题不同 PDF 不覆盖；相同 source + generation fingerprint 重跑不产生随机重复包；同一 PDF 在生成版本变化后可以安全产生新 generation；旧 flat-layout 包可只读访问且 hash/mtime 不变；所有消费者经共享 resolver 工作；tags、Ask notes、用户 overlay 和手工文件不丢失。测试必须包含同标题不同 PDF、同 source 幂等、fingerprint 变化、canonical-ID 冲突、legacy 零写回和 overlay 保留 fixtures。
+**验收条件**：同标题不同 PDF 不覆盖；相同 source + generation fingerprint 重跑不产生随机重复包；同一 PDF 在生成版本变化后可以安全产生新 generation；旧 flat-layout 包可只读访问且 hash/mtime 不变；所有消费者经共享 resolver 工作；tags、Ask notes、用户 overlay 和手工文件不丢失。测试必须包含同标题不同 PDF、同 source 幂等、fingerprint 变化、canonical-ID 冲突、local-first→canonical-later 及 canonical-first→local-later reconciliation、legacy 零写回和 overlay 保留 fixtures。
 
 #### P0-C2：事务发布、共享锁、原子索引与最小 manifest
 
@@ -661,7 +662,7 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 
 - 跟踪基线：2026-07-10
 - 开发分支：`codex/audit-optimizations-2026-07-10`
-- 当前阶段：`M2`“完成 P0-C 数据生命周期”；M0 已由 P0-B1 阶段 commit `d36fb3b` 和 [CI run 29313834426](https://github.com/byxshr/codex-paper/actions/runs/29313834426) 正式关闭；M1 已由 P0-B3 阶段 commit `22253bc` 和 [CI run 29749079490](https://github.com/byxshr/codex-paper/actions/runs/29749079490) 正式关闭；下一开发子阶段为 `P0-C1a`。
+- 当前阶段：`M2`“完成 P0-C 数据生命周期”；M0 已由 P0-B1 阶段 commit `d36fb3b` 和 [CI run 29313834426](https://github.com/byxshr/codex-paper/actions/runs/29313834426) 正式关闭；M1 已由 P0-B3 阶段 commit `22253bc` 和 [CI run 29749079490](https://github.com/byxshr/codex-paper/actions/runs/29749079490) 正式关闭；`P0-C1a` 已完成独立 Review，下一开发子阶段为 `P0-C1b`。
 - 编号规则：与第 3 章优先级总表一致；一个工作包可拆成多个 Issue，但父项按最保守子项状态汇总。
 - 子项映射：`P0-C1` 对应 C1a identity/fingerprint 与 C1b layout/resolver/overlay，`P0-C2` 对应 C2a workspace/locks/writers 与 C2b publish/manifest/index/recovery；`P1-2` 对应 migration/alias 与 recovery，`P1-3` 对应 dependency/runtime governance 与 repository engineering，`P1-7` 对应 a11y 与 privacy/lifecycle controls；更新父项时必须在“工作位置”列出全部关联 Issue。
 - 初始化说明：下表的 `未开始` 表示“尚未在本台账登记本轮实现活动”，不表示仓库中完全没有相关基础能力。
@@ -676,7 +677,7 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 | `P0-B1` | P0 | 不可跳过的确定性回归与验收契约 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；commit `d36fb3b`；`docs/P0-B1_IMPLEMENTATION_PLAN.md`；`docs/P0-B1_CODE_REVIEW_SUMMARY.md`；`docs/P0-B1_CODE_REVIEW_RESULT.md`；`docs/P0-B1_CODE_REVIEW_RESULT_ROUND2.md`；`docs/deterministic-regression-contract.md`；`benchmarks/mandatory/`；`benchmarks/fixtures/pdf/` | 两轮独立 Review 最终无条件 Approve、无新增缺陷；首轮唯一合并前建议已通过内容限定 detector 和双向元数据回归关闭；两个 MIT synthetic PDF 可逐字节复现；mandatory `declared/executed/completed/passed=2/2/2/2`、10 条预期缺陷全部稳定观测；repository/security 104/104、study 23/23、PDF security 12/12、external parser 5/5、reasoning 12/12、package 11/11、build/HTTP security/smoke/官方 plugin validator 通过；[CI run 29313834426](https://github.com/byxshr/codex-paper/actions/runs/29313834426) 全部通过；2.0 schema 与 active plugin 版本未改；manifest 双重校验漂移风险转入 P1-3b | 开始 `P0-B2` Typed ResultClaim、噪声过滤与直接证据引用 | 2026-07-14 |
 | `P0-B2` | P0 | Typed ResultClaim、噪声过滤与直接证据引用 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-B2_IMPLEMENTATION_PLAN.md`；`docs/P0-B2_CODE_REVIEW_SUMMARY.md`；`docs/P0-B2_CODE_REVIEW_FINDINGS.md`；`docs/P0-B2_CODE_REVIEW_FINDINGS_ROUND2.md`；`docs/P0-B2_CODE_REVIEW_FINDINGS_ROUND3.md`；`docs/P0-B2_CODE_REVIEW_FINDINGS_ROUND4.md`；`plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json`；`plugins/codex-paper/skills/study/scripts/extract-facts.js`；`plugins/codex-paper/src/shared/package-compatibility.mjs`；`benchmarks/mandatory/gold/` | 新 writer 输出 package/facts `2.1.0`，evidence/reasoning 三份冻结 schema 仍为 `2.0.0`；typed ResultClaim、`keyResults` 投影、直接 `ev-*` refs、2.0/v1/unknown 只读兼容及 Viewer compatibility 已落地；四轮 Review findings 均已关闭，第四轮修订后的独立复核通过；migration 全 artifact/JSON 零写入预检、facts/analysis 损坏 meta 安全降级和准确混合版本诊断已确认；Viewer compatibility 是轻量版本视图，不替代 validator/P0-B3 完整性与发布门禁；mandatory `2/2` 通过并只保留 3 个 P0-B3 预期 finding；repository/security 108/108、study 44/44、PDF security 12/12、external parser 5/5、reasoning 12/12、package 12/12、production build、HTTP security、smoke 和官方 validator 通过；Attention 样本经临时库只读验收包含 28.4/41.8/41.0、无 2014/2017 年份结果，原目录 hash/mtime 不变；active 版本 `2.0.0+codex.20260716070151` | 实施 `P0-B3` 跨工件一致性门禁与三态健康状态；M1 在 B3 Review 和远端 CI 通过前不关闭 | 2026-07-20 |
 | `P0-B3` | P0 | 跨工件一致性门禁与三态健康状态 | `Review 完成` | `已推送` | `codex/audit-optimizations-2026-07-10`；commit `22253bc`；`docs/P0-B3_IMPLEMENTATION_PLAN.md`；`docs/P0-B3_CODE_REVIEW_SUMMARY.md`；`docs/P0-B3_CODE_REVIEW_RESULT.md`；`docs/P0-B3_CODE_REVIEW_RESULT_ROUND2.md`；`docs/validation-report-1.0.md`；`plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json`；`plugins/codex-paper/skills/study/scripts/validation-report.js`；Viewer Validation API/UI；`benchmarks/mandatory/` | Validation Report 1.0 引擎、统一 CLI、mandatory 正向契约、Viewer API/UI、Repository Guard 与 CI gate 已完成；首轮独立 Review 的 F1–F4 全部采纳：数值披露改为完整 token 精确比较，typed ResultClaim 规则仅用于 native 2.1，并新增合法 2.0 warning-only/publishable 回归；第二轮独立 Review 逐项复现修复有效、未发现新 soundness 缺陷并 Approve；千分位数值识别作为非阻塞已知限制记录，动态 metric 正则确认已安全转义；repository/security 114/114、study 58/58、Validation 20/20、PDF security 12/12、mandatory 2/2、external parser 5/5、reasoning 12/12、package 12/12、production build、HTTP security、smoke、Browser QA 和官方 validator 全部通过；[CI run 29749079490](https://github.com/byxshr/codex-paper/actions/runs/29749079490) 远端全绿，覆盖 Repository Contract、unit、PDF ingestion、Docker conformance、Validation、全部 benchmarks、build、Viewer security 与 smoke；Attention 样本原目录 hash/mtime 不变；active path `plugins/codex-paper/`，版本 `2.0.0+codex.20260720134033` | M1 已关闭；进入 `P0-C1a` identity/fingerprint 子阶段 | 2026-07-21 |
-| `P0-C1` | P0 | 防碰撞 identity、幂等与禁止静默覆盖 | `未开始` | `未推送` | — | — | 先执行 C1a identity/fingerprint，再执行 C1b resolver/overlay；父项按最保守子阶段汇总 | 2026-07-21 |
+| `P0-C1` | P0 | 防碰撞 identity、幂等与禁止静默覆盖 | `开发中` | `未推送` | `codex/audit-optimizations-2026-07-10`；`docs/P0-C1A_IMPLEMENTATION_PLAN.md`；`docs/P0-C1A_CODE_REVIEW_SUMMARY.md`；`docs/P0-C1A_CODE_REVIEW_RESULT.md`；`docs/P0-C1A_CODE_REVIEW_RESULT_ROUND2.md`；`docs/paper-identity-1.0.md`；`docs/adr/0002-paper-identity-and-generation-fingerprint.md`；Paper Identity schema/engine；generation contract；prepare/validator/skill/CI/Guard 集成 | `C1a=Review 完成`：首轮 Review 为 Approve with notes、无阻塞 finding，第二轮逐项复核后无条件 Approve 且无进一步 C1a action；Paper Identity 1.0、canonical/source/generation 三层身份、受信文件指纹、只读完全复用及 flat-layout fail-closed 碰撞保护已落地；在已安装 PyMuPDF 的验收环境 identity 15/15，Guard 54/54、repository/security 117/117、study/unit 74/74、PDF security 12/12、Validation 21/21、mandatory 2/2、external parser 5/5、reasoning/package 各 12/12、build/HTTP security/smoke/官方 validator 通过；已记录首次 canonical resolution 钉住与 C1b 显式 reconciliation 责任；Attention 样本得到 `arxiv:1706.03762` 且原目录 hash/mtime 不变；active 版本 `2.0.0+codex.20260721075804`。`C1b=未开始`，M2 未关闭 | 创建 C1a 阶段 commit、推送并通过远端 CI 后实施 `P0-C1b`；父项继续按最保守子阶段保持开发中 | 2026-07-21 |
 | `P0-C2` | P0 | 事务发布、共享锁、原子索引与最小 manifest | `未开始` | `未推送` | — | — | C1 两阶段冻结后，执行 C2a workspace/locks，再执行 C2b publish/index/recovery | 2026-07-21 |
 | `P1-1` | P1 | 深层版面解析与 benchmark 校准 | `未开始` | `未推送` | — | — | 复用 B1 fixture/golden 和 B3 finding 语义扩展双栏、header/footer、脚注和表格 grid benchmark | 2026-07-21 |
 | `P1-2` | P1 | 兼容实现、迁移与恢复工具 | `未开始` | `未推送` | — | — | 等 P1-4 稳定 manifest schema 后实施 identity/layout/manifest migration、doctor/reindex、backup/restore 和 rollback | 2026-07-21 |
@@ -696,10 +697,10 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 | 优先级 | 总数 | 未开始 | 开发中 | 开发完成 | Review 中 | Review 完成 | 阻塞/暂缓/取消 |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 前置 | 1 | 0 | 0 | 0 | 0 | 1 | 0 |
-| P0 | 9 | 2 | 0 | 0 | 0 | 7 | 0 |
+| P0 | 9 | 1 | 1 | 0 | 0 | 7 | 0 |
 | P1 | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | P2 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **22** | **14** | **0** | **0** | **0** | **8** | **0** |
+| **合计** | **22** | **13** | **1** | **0** | **0** | **8** | **0** |
 
 | 交付状态 | 未推送 | 已推送 | 已合并 | 合计 |
 |---|---:|---:|---:|---:|
@@ -761,3 +762,7 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 | 2026-07-20 | `P0-B3` | `开发完成 / 未推送` → `Review 完成 / 未推送` | 第二轮独立 Review 逐项验证首轮 F1–F4 修复，确认没有新 soundness 缺陷并 Approve；千分位数值识别记录为非阻塞契约限制，动态 metric 正则确认已正确转义且无需修改；P0-B3 Review gate 关闭，等待阶段提交、推送和远端 CI，M1 尚未关闭 | Codex |
 | 2026-07-20 | `P0-B3` / `M1` | `Review 完成 / 未推送` → `Review 完成 / 已推送`；M1 正式关闭 | 阶段 commit `22253bc` 已推送；[CI run 29749079490](https://github.com/byxshr/codex-paper/actions/runs/29749079490) 全绿，Repository Contract、unit、PDF ingestion、Docker sandbox conformance、Validation Report 1.0、mandatory/external/reasoning/package benchmarks、production build、Viewer security 和 smoke 全部通过；进入 M2/P0-C1 | Codex |
 | 2026-07-21 | 剩余计划 | 状态数量不变，M2/M3 实施边界重基线 | 将 P0-C1/C2 细分为 C1a identity/fingerprint、C1b resolver/overlay、C2a workspace/locks/writers、C2b publish/manifest/index/recovery；P1-3a 作为有界 M2 并行通道，M3 调整为先 P1-4 再 P1-2；Issue 建议扩展为 27 项，顶层工作包仍为 22 个 | Codex |
+| 2026-07-21 | `P0-C1` / `C1a` | `未开始 / 未推送` → `开发中 / 未推送` | 开始冻结 Paper Identity 1.0、generation fingerprint 与 flat-layout fail-closed 碰撞策略；父项在 C1b 完成前保持开发中，M2 不关闭 | Codex |
+| 2026-07-21 | `P0-C1` / `C1a` | 父项保持 `开发中 / 未推送`；`C1a=开发完成`、`C1b=未开始` | 完成 schema/engine、generation contract、prepare 只读复用与碰撞拒绝、validator/skill/Guard/CI 接入；identity 15/15、repository/security 117/117、study/unit 74/74、Validation 21/21、mandatory 2/2 及全量回归通过；Attention 样本只读验收得到 `arxiv:1706.03762`，active 重装版本 `2.0.0+codex.20260721075804`；下一项为 C1b | Codex |
+| 2026-07-21 | `P0-C1` / `C1a` | 父项保持 `开发中 / 未推送`；`C1a=开发完成` → `Review 完成` | 独立 Review 为 Approve with notes，确认无阻塞 correctness/security finding；无 PyMuPDF 的裸环境会在 5 个 parser-reaching case 进入 identity 断言前失败，配置完整的验收环境仍为 15/15；采纳 canonical identity 观察，在 ADR/契约/C1b 计划中明确首次成功解析钉住、后续不同 `paperId` fail closed，以及显式 alias/reconciliation 责任；本轮未修改产品代码 | Codex |
+| 2026-07-21 | `P0-C1` / `C1a` | 父项保持 `开发中 / 未推送`；`C1a=Review 完成` | 第二轮独立 Review 逐项确认首轮说明已正确闭环、实现 diff 未变化、工具会 fail-closed 保证 PyMuPDF 前提，并给出无条件 Approve；无新增 finding，无需进一步 C1a 代码修改；下一步为阶段提交、推送和远端 CI | Codex |

@@ -46,8 +46,11 @@ Use the shared preparation entrypoint:
 
 ```bash
 USER_INPUT="<user-input>"
-node ../study/scripts/prepare-paper.js "$USER_INPUT"
+OUTPUT_LANG="en"   # or zh, based on the user's request
+node ../study/scripts/prepare-paper.js "$USER_INPUT" --workflow summary --language "$OUTPUT_LANG" --context paper-only --profile auto
 ```
+
+The preparation identity includes the summary workflow and output language. An exact matching generation is reused without writes; a different source or generation fingerprint that collides with the current flat-layout package is rejected until the C1b multi-generation layout is implemented.
 
 Do not bypass this entrypoint with `curl`, `wget`, browser downloads, or in-process parsing. It enforces HTTPS redirect/SSRF checks, DNS pinning, bounded private staging, PDF magic, parser resource/page limits, and private quarantine for rejected inputs.
 
@@ -70,7 +73,7 @@ Use `paper-data.json` and `facts.json` only as fallback context or source-checki
 
 # Step 2: Generate Quick Summary
 
-Pick the render language:
+Reuse the preparation language for rendering:
 
 ```bash
 OUTPUT_LANG="en"   # or "zh"
