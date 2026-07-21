@@ -39,6 +39,6 @@ Physical multi-generation layout, authoritative current resolver, mutable overla
 
 The first independent review approved P0-C1a with notes and no blocking correctness or security finding. Its environment discrepancy was reproduced both with and without PyMuPDF, and the full configured acceptance command remains 15/15. The canonical-identity observation is now explicit in the ADR and Paper Identity contract: when identical bytes have no trusted identifier in the PDF but a later exact DOI/arXiv locator yields a different `paperId`, the C1a flat layout rejects reuse with `PAPER_IDENTITY_CONFLICT`; it never silently promotes or rewrites the first identity. P0-C1b must define any alias or reconciliation flow explicitly.
 
-Round 2 independently verified all round-1 dispositions, the fail-closed PyMuPDF prerequisite, and unchanged C1a/C1b/C2 scope. Its verdict is unconditional `Approve`, with no further C1a review action required. The remaining gate is remote CI after the stage commit is pushed, not another local implementation change.
+Round 2 independently verified all round-1 dispositions, the fail-closed PyMuPDF prerequisite, and unchanged C1a/C1b/C2 scope. Its verdict is unconditional `Approve`, with no further C1a review action required. Stage commit `f947502` was pushed and [CI run 29815722103](https://github.com/byxshr/codex-paper/actions/runs/29815722103) passed the complete remote workflow, closing the C1a delivery gate.
 
-No staging, commit, or push is part of this implementation handoff. The parent P0-C1 item remains `开发中 / 未推送` because C1b has not started.
+The parent P0-C1 item remains `开发中` because C1b has not started. C1a itself is reviewed, pushed, and remotely verified.
