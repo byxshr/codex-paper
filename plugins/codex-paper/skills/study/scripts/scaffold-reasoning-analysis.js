@@ -4,12 +4,10 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { assertWritablePackage, classifyPackageCompatibility, isLegacyMigrationSourceVersion } from '../../../src/shared/package-compatibility.mjs';
+import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LIBRARY_ROOT = path.join(process.env.HOME || '', 'codex-papers');
-const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
-
 const REVIEW_TEMPLATE = `# Reasoning Review
 
 - [ ] 核心主张与贡献、结果已区分
@@ -75,13 +73,11 @@ function parseArgs(argv) {
 }
 
 function resolvePaperDir(input) {
-  const expanded = input.replace(/^~(?=$|\/)/, os.homedir());
-  const direct = path.resolve(expanded);
-  if (fs.existsSync(direct)) {
-    return fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
-  }
-
-  return path.join(PAPERS_ROOT, input);
+  const descriptor = resolveExplicitPackage(input.replace(/^~(?=$|\/)/, os.homedir()), {
+    libraryRoot: process.env.PAPERS_DIR
+  });
+  if (descriptor.readOnly) throw new Error('LEGACY_LAYOUT_READ_ONLY: migrate the flat-layout package explicitly before scaffolding reasoning.');
+  return descriptor.packageDir;
 }
 
 function readJson(filePath) {

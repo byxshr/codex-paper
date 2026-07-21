@@ -2,6 +2,13 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomBytes } from 'node:crypto'
+import {
+  assertWritableDescriptor,
+  getLibraryLayout,
+  readOverlayState,
+  resolveLibraryPaper,
+  writeJsonAtomicNoFollow,
+} from '../../../shared/paper-library.mjs'
 
 export const LIMITS = Object.freeze({
   publicTextBytes: 16 * 1024 * 1024,
@@ -13,6 +20,7 @@ export const LIMITS = Object.freeze({
 
 export const HIDDEN_MACHINE_FILES = new Set([
   '.study-validation.json',
+  // Keep the pre-trash-envelope name hidden when browsing older packages.
   '.codex-paper-trash.json',
   'analysis.json',
   'evidence-ledger.json',
@@ -50,11 +58,14 @@ export function truncateText(value, maxLength = 600) {
 
 export function getLibraryPaths(libraryRoot = process.env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers')) {
   if (!path.isAbsolute(libraryRoot)) throw boundaryError(500, 'Library root must be absolute')
+  const managed = getLibraryLayout(libraryRoot)
   return {
     libraryRoot: path.resolve(libraryRoot),
     papersRoot: path.resolve(libraryRoot, 'papers'),
     trashRoot: path.resolve(libraryRoot, '.trash'),
     indexPath: path.resolve(libraryRoot, 'index.json'),
+    storeRoot: managed.storeRoot,
+    recordsRoot: managed.recordsRoot,
   }
 }
 
@@ -87,20 +98,24 @@ export function requirePapersRoot(options = {}) {
 }
 
 export function requirePaperDir(slug, options = {}) {
+  return requirePaperAccess(slug, options).packageDir
+}
+
+export function requirePaperAccess(slug, options = {}) {
   if (!validateSlug(slug)) throw boundaryError(400, 'Valid paper slug is required')
-  const papersRoot = requirePapersRoot(options)
-  const candidate = path.join(papersRoot, slug)
-  let stats
   try {
-    stats = fs.lstatSync(candidate)
-  } catch {
-    throw boundaryError(404, 'Paper directory not found')
+    return resolveLibraryPaper(slug, { libraryRoot: options.libraryRoot })
+  } catch (error) {
+    if (error?.statusCode) throw boundaryError(error.statusCode, error.message)
+    throw error
   }
-  if (stats.isSymbolicLink()) throw boundaryError(403, 'Paper directory symlinks are not allowed')
-  if (!stats.isDirectory()) throw boundaryError(404, 'Paper directory not found')
-  const canonical = fs.realpathSync(candidate)
-  if (!isContained(papersRoot, canonical)) throw boundaryError(403, 'Access denied')
-  return canonical
+}
+
+export function requireWritablePaperAccess(slug, options = {}) {
+  const descriptor = requirePaperAccess(slug, options)
+  try { return assertWritableDescriptor(descriptor) } catch (error) {
+    throw boundaryError(error?.statusCode || 409, error?.message || 'Paper is read-only')
+  }
 }
 
 export function normalizeRelativePath(input) {
@@ -154,15 +169,25 @@ function requireNoSymlinkPath(root, relativePath, expectedType = 'file') {
 }
 
 export function resolvePublicFile(slug, relativePath, options = {}) {
-  const paperDir = requirePaperDir(slug, options)
+  const descriptor = requirePaperAccess(slug, options)
+  const paperDir = descriptor.packageDir
   const normalized = normalizeRelativePath(relativePath)
   if (!isPublicRelativePath(normalized)) throw boundaryError(404, 'File not found')
-  return { paperDir, ...requireNoSymlinkPath(paperDir, normalized, 'file') }
+  if (descriptor.mode === 'managed_v1' && normalized === 'chat-notes.md') {
+    return { paperDir, descriptor, ...requireNoSymlinkPath(descriptor.overlayDir, normalized, 'file') }
+  }
+  if (descriptor.mode === 'managed_v1' && normalized.startsWith('user/')) {
+    const overlayRelative = `files/${normalized.slice('user/'.length)}`
+    const resolved = requireNoSymlinkPath(descriptor.overlayDir, overlayRelative, 'file')
+    return { paperDir, descriptor, ...resolved, relativePath: normalized }
+  }
+  return { paperDir, descriptor, ...requireNoSymlinkPath(paperDir, normalized, 'file') }
 }
 
 export function resolveInternalFile(slug, relativePath, options = {}) {
-  const paperDir = requirePaperDir(slug, options)
-  return { paperDir, ...requireNoSymlinkPath(paperDir, relativePath, 'file') }
+  const descriptor = requirePaperAccess(slug, options)
+  const paperDir = descriptor.packageDir
+  return { paperDir, descriptor, ...requireNoSymlinkPath(paperDir, relativePath, 'file') }
 }
 
 export function readFileNoFollow(filePath, maxBytes) {
@@ -251,22 +276,9 @@ export function writeLibraryIndex(indexState, papers, options = {}) {
   writeJsonAtomic(indexPath, next)
 }
 
-export function resolveWritablePaperFile(slug, filename, options = {}) {
-  const paperDir = requirePaperDir(slug, options)
-  const normalized = normalizeRelativePath(filename)
-  if (normalized.includes('/')) throw boundaryError(400, 'Writable file must be at the paper root')
-  const target = path.join(paperDir, normalized)
-  try {
-    if (fs.lstatSync(target).isSymbolicLink()) throw boundaryError(403, 'Symlinks are not allowed')
-  } catch (error) {
-    if (error?.statusCode) throw error
-    if (error?.code !== 'ENOENT') throw boundaryError(403, 'Writable target is not allowed')
-  }
-  return target
-}
-
 export function buildPublicFileTree(slug, options = {}) {
-  const paperDir = requirePaperDir(slug, options)
+  const descriptor = requirePaperAccess(slug, options)
+  const paperDir = descriptor.packageDir
   let nodeCount = 0
   function walk(directoryPath, relativeDirectory = '', depth = 0) {
     if (depth > LIMITS.treeDepth) throw boundaryError(413, 'File tree exceeds the allowed depth')
@@ -284,5 +296,28 @@ export function buildPublicFileTree(slug, options = {}) {
     }
     return nodes
   }
-  return walk(paperDir)
+  const tree = walk(paperDir)
+  if (descriptor.mode === 'managed_v1') {
+    const chatPath = path.join(descriptor.overlayDir, 'chat-notes.md')
+    if (fs.existsSync(chatPath) && !fs.lstatSync(chatPath).isSymbolicLink()) tree.push({ name: 'chat-notes.md', path: 'chat-notes.md', type: 'file' })
+    const filesRoot = path.join(descriptor.overlayDir, 'files')
+    if (fs.existsSync(filesRoot)) {
+      const children = walk(filesRoot, 'user', 1)
+      if (children.length > 0) tree.push({ name: 'user', path: 'user', type: 'directory', children })
+    }
+  }
+  return tree
+}
+
+export function readPaperTags(slug, options = {}) {
+  const descriptor = requirePaperAccess(slug, options)
+  if (descriptor.mode === 'managed_v1') return readOverlayState(descriptor).tags
+  const meta = readOptionalInternalJson(slug, 'meta.json', 'meta.json', options)
+  return Array.isArray(meta?.tags) ? meta.tags : []
+}
+
+export function writePaperOverlayState(descriptor, state) {
+  try { writeJsonAtomicNoFollow(path.join(assertWritableDescriptor(descriptor).overlayDir, 'state.json'), state) } catch (error) {
+    throw boundaryError(error?.statusCode || 500, error?.message || 'Failed to write paper overlay')
+  }
 }

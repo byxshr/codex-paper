@@ -8,10 +8,11 @@ import { parsePdfDetailed } from './parse-pdf.js';
 import { buildEvidenceLedger } from './build-evidence-ledger.js';
 import { scaffoldReasoningAnalysis } from './scaffold-reasoning-analysis.js';
 import { classifyInvalidPackageArtifacts, classifyPackageCompatibility, isLegacyMigrationSourceVersion } from '../../../src/shared/package-compatibility.mjs';
+import { resolveLibraryPaper } from '../../../src/shared/paper-library.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LIBRARY_ROOT = path.join(process.env.HOME || '', 'codex-papers');
+const LIBRARY_ROOT = path.resolve(process.env.PAPERS_DIR || path.join(process.env.HOME || '', 'codex-papers'));
 const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const PACKAGE_VERSION = '2.0.0';
 const CONTEXT_MODES = new Set(['paper-only', 'canonical', 'literature']);
@@ -71,16 +72,20 @@ function resolvePaperDir(input, options = {}) {
   const direct = path.resolve(expanded);
   if (fs.existsSync(direct)) {
     const paperDir = fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
+    const managedRelative = path.relative(path.join(LIBRARY_ROOT, '.codex-paper/store-v1'), paperDir);
+    if (managedRelative === '' || (managedRelative && !managedRelative.startsWith('..') && !path.isAbsolute(managedRelative))) {
+      throw new Error('MANAGED_LAYOUT_MIGRATION_REFUSED: Managed packages must not be rewritten by the legacy migration tool.');
+    }
     if (!options.externalPath && !isInsidePaperRoot(paperDir)) {
       throw new Error(`Refusing to migrate a directory outside ${PAPERS_ROOT}. Pass --external-path for an explicit out-of-library migration.`);
     }
     return paperDir;
   }
-  const libraryPath = path.resolve(PAPERS_ROOT, input);
-  if (!isInsidePaperRoot(libraryPath)) {
-    throw new Error(`Invalid paper slug or path outside ${PAPERS_ROOT}: ${input}`);
+  const descriptor = resolveLibraryPaper(input, { libraryRoot: LIBRARY_ROOT });
+  if (descriptor.mode !== 'legacy_flat') {
+    throw new Error('MANAGED_LAYOUT_MIGRATION_REFUSED: Managed packages must not be rewritten by the legacy migration tool.');
   }
-  return libraryPath;
+  return descriptor.packageDir;
 }
 
 function readJson(filePath, fallback = {}, label = path.basename(filePath)) {

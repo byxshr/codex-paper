@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-paper.local/schemas/paper-record-1.0.schema.json",
+  "title": "Codex Paper Record 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "paperKey", "primaryPaperId", "paperIdAliases", "routeAliases", "createdAt", "reconciliations"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "paperKey": { "pattern": "^p-[a-f0-9]{64}$" },
+    "primaryPaperId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "paperIdAliases": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+    "routeAliases": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" } },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "reconciliations": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "incomingPaperId", "previousPrimaryPaperId", "primaryPaperId", "sourceRevisionId", "generationId"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "incomingPaperId": { "type": "string", "minLength": 1 },
+          "previousPrimaryPaperId": { "type": "string", "minLength": 1 },
+          "primaryPaperId": { "type": "string", "minLength": 1 },
+          "sourceRevisionId": { "pattern": "^sha256:[a-f0-9]{64}$" },
+          "generationId": { "pattern": "^gen:sha256:[a-f0-9]{64}$" }
+        }
+      }
+    }
+  }
+}

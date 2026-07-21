@@ -31,7 +31,7 @@ Before generating a summary:
 
 - Install Node dependencies from [package.json](../../package.json) if they are missing.
 - Reuse the parser utilities in [../study/scripts](../study/scripts).
-- Ensure the paper library root exists at `~/codex-papers/papers/`.
+- Ensure the paper library root exists at `~/codex-papers/`; do not construct generation paths from slugs.
 
 ---
 
@@ -50,7 +50,7 @@ OUTPUT_LANG="en"   # or zh, based on the user's request
 node ../study/scripts/prepare-paper.js "$USER_INPUT" --workflow summary --language "$OUTPUT_LANG" --context paper-only --profile auto
 ```
 
-The preparation identity includes the summary workflow and output language. An exact matching generation is reused without writes; a different source or generation fingerprint that collides with the current flat-layout package is rejected until the C1b multi-generation layout is implemented.
+The preparation identity includes the summary workflow and output language. An exact matching generation is reused without writes; a different fingerprint or source creates a separate managed generation/revision without overwriting existing output. Legacy flat packages remain read-only until explicit migration.
 
 Do not bypass this entrypoint with `curl`, `wget`, browser downloads, or in-process parsing. It enforces HTTPS redirect/SSRF checks, DNS pinning, bounded private staging, PDF magic, parser resource/page limits, and private quarantine for rejected inputs.
 
@@ -79,11 +79,11 @@ Reuse the preparation language for rendering:
 OUTPUT_LANG="en"   # or "zh"
 ```
 
-Read `paperSlug` from the JSON output of `prepare-paper.js`, then render the quick summary from `analysis.json`:
+Read `paperDir` (or use the route slug through the shared resolver) from the JSON output of `prepare-paper.js`, then render the quick summary from `analysis.json`:
 
 ```bash
-PAPER_SLUG="<paper-slug>"
-node ../study/scripts/render-from-analysis.js "$PAPER_SLUG" summary "$OUTPUT_LANG"
+PAPER_DIR="<prepare-output.paperDir>"
+node ../study/scripts/render-from-analysis.js "$PAPER_DIR" summary "$OUTPUT_LANG"
 ```
 
 This creates `quick-summary.md` from the structured analysis layer. If you make any manual refinement afterward, preserve the same structure and do not add new facts.
@@ -171,7 +171,7 @@ After generating the summary:
    - "Would you like me to explain any section in more detail?"
 
 3. **File location reminder:**
-   - Summary saved to: `~/codex-papers/papers/{paper-slug}/quick-summary.md`
+   - Summary saved to: `{prepare-output.paperDir}/quick-summary.md`
    - Web UI available at: `http://localhost:5815`
 
 ---

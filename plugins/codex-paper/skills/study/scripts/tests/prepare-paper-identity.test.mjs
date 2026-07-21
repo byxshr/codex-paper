@@ -39,7 +39,7 @@ function snapshot(root) {
   return result;
 }
 
-test('prepare creates identity, reuses without writes, and rejects flat-layout collisions', () => {
+test('prepare creates managed identity, reuses without writes, and keeps multiple generations', () => {
   const library = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-prepare-identity-'));
   try {
     const created = runPrepare(library);
@@ -47,15 +47,16 @@ test('prepare creates identity, reuses without writes, and rejects flat-layout c
     const output = JSON.parse(created.stdout);
     assert.equal(output.action, 'created');
     assert.match(output.identity.paperId, /^source:sha256:/);
-    const paperDir = path.join(library, 'papers', output.paperSlug);
+    const paperDir = output.paperDir;
     const identity = JSON.parse(fs.readFileSync(path.join(paperDir, '.codex-paper/paper-identity.json')));
-    const metaPath = path.join(paperDir, 'meta.json');
     const indexPath = path.join(library, 'index.json');
-    const meta = JSON.parse(fs.readFileSync(metaPath));
+    const paperRoot = path.resolve(paperDir, '../../../../..');
+    const overlayPath = path.join(paperRoot, 'overlay/state.json');
+    const overlay = JSON.parse(fs.readFileSync(overlayPath));
     const index = JSON.parse(fs.readFileSync(indexPath));
-    meta.tags = ['preserved'];
+    overlay.tags = ['preserved'];
     index[0].tags = ['preserved'];
-    fs.writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
+    fs.writeFileSync(overlayPath, `${JSON.stringify(overlay, null, 2)}\n`);
     fs.writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`);
     const beforeReuse = snapshot(library);
 
@@ -65,41 +66,35 @@ test('prepare creates identity, reuses without writes, and rejects flat-layout c
     assert.deepEqual(snapshot(library), beforeReuse);
 
     const differentLanguage = runPrepare(library, fixturePdf, ['--language', 'zh']);
-    assert.equal(differentLanguage.status, 1);
-    assert.match(differentLanguage.stderr, /\[GENERATION_CONFLICT\]/);
-    assert.deepEqual(snapshot(library), beforeReuse);
+    assert.equal(differentLanguage.status, 0, differentLanguage.stderr);
+    const second = JSON.parse(differentLanguage.stdout);
+    assert.equal(second.action, 'created');
+    assert.notEqual(second.paperDir, paperDir);
+    assert.deepEqual(JSON.parse(fs.readFileSync(overlayPath)).tags, ['preserved']);
+    assert.equal(hashFile(path.join(paperDir, 'facts.json')), beforeReuse[path.relative(library, path.join(paperDir, 'facts.json'))].sha256);
 
     const alteredPdf = path.join(library, 'same-title-different-source.pdf');
     fs.copyFileSync(fixturePdf, alteredPdf);
     fs.appendFileSync(alteredPdf, '\n% different source revision\n');
     const differentSource = runPrepare(library, alteredPdf);
-    assert.equal(differentSource.status, 1);
-    assert.match(differentSource.stderr, /\[SOURCE_REVISION_CONFLICT\]/);
-    const afterDifferentSource = snapshot(library);
-    delete afterDifferentSource['same-title-different-source.pdf'];
-    assert.deepEqual(afterDifferentSource, beforeReuse);
+    assert.equal(differentSource.status, 0, differentSource.stderr);
+    const differentOutput = JSON.parse(differentSource.stdout);
+    assert.equal(differentOutput.action, 'created');
+    assert.notEqual(differentOutput.paperSlug, output.paperSlug);
+    assert.notEqual(differentOutput.paperDir, paperDir);
 
     const staleIndex = JSON.parse(fs.readFileSync(indexPath));
     fs.writeFileSync(indexPath, '[]\n');
-    const beforeStale = snapshot(library);
     const stale = runPrepare(library);
-    assert.equal(stale.status, 1);
-    assert.match(stale.stderr, /\[INDEX_PROJECTION_CONFLICT\]/);
-    assert.deepEqual(snapshot(library), beforeStale);
+    assert.equal(stale.status, 0, stale.stderr);
+    assert.equal(JSON.parse(stale.stdout).action, 'reused');
     fs.writeFileSync(indexPath, `${JSON.stringify(staleIndex, null, 2)}\n`);
-
-    const duplicateDir = path.join(library, 'papers', 'duplicate-generation');
-    fs.mkdirSync(path.join(duplicateDir, '.codex-paper'), { recursive: true });
-    fs.writeFileSync(path.join(duplicateDir, '.codex-paper/paper-identity.json'), `${JSON.stringify({ ...identity, slug: 'duplicate-generation' }, null, 2)}\n`);
-    const duplicate = runPrepare(library);
-    assert.equal(duplicate.status, 1);
-    assert.match(duplicate.stderr, /\[IDENTITY_REGISTRY_CONFLICT\]/);
   } finally {
     fs.rmSync(library, { recursive: true, force: true });
   }
 });
 
-test('prepare refuses a legacy package using the target slug', () => {
+test('prepare preserves a legacy package and allocates a distinct managed route', () => {
   const library = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-legacy-collision-'));
   try {
     const paperDir = path.join(library, 'papers', 'synthetic-front-matter-noise');
@@ -108,9 +103,34 @@ test('prepare refuses a legacy package using the target slug', () => {
     fs.writeFileSync(path.join(library, 'index.json'), '[]\n');
     const before = snapshot(library);
     const result = runPrepare(library);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /\[LEGACY_IDENTITY_COLLISION\]/);
-    assert.deepEqual(snapshot(library), before);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.notEqual(output.paperSlug, 'synthetic-front-matter-noise');
+    const afterLegacy = snapshot(paperDir);
+    const beforeLegacy = Object.fromEntries(Object.entries(before).filter(([key]) => key.startsWith('papers/synthetic-front-matter-noise/')).map(([key, value]) => [key.replace('papers/synthetic-front-matter-noise/', ''), value]));
+    assert.deepEqual(afterLegacy, beforeLegacy);
+  } finally {
+    fs.rmSync(library, { recursive: true, force: true });
+  }
+});
+
+test('prepare uses the generation fingerprint when base and source-suffixed routes both collide', () => {
+  const library = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-route-fallback-'));
+  try {
+    const baseSlug = 'synthetic-front-matter-noise';
+    const sourceSuffix = hashFile(fixturePdf).slice(0, 12);
+    for (const slug of [baseSlug, `${baseSlug}-${sourceSuffix}`]) {
+      const legacyDir = path.join(library, 'papers', slug);
+      fs.mkdirSync(legacyDir, { recursive: true });
+      fs.writeFileSync(path.join(legacyDir, 'meta.json'), '{}\n');
+    }
+    fs.writeFileSync(path.join(library, 'index.json'), '[]\n');
+
+    const result = runPrepare(library);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    const identity = JSON.parse(fs.readFileSync(path.join(output.paperDir, '.codex-paper/paper-identity.json')));
+    assert.equal(output.paperSlug, `${baseSlug}-${identity.generation.fingerprint.value.slice(0, 12)}`);
   } finally {
     fs.rmSync(library, { recursive: true, force: true });
   }
@@ -154,7 +174,7 @@ test('prepare refuses read-only reuse when a managed artifact is missing', () =>
     const created = runPrepare(library);
     assert.equal(created.status, 0, created.stderr);
     const output = JSON.parse(created.stdout);
-    fs.rmSync(path.join(library, 'papers', output.paperSlug, 'facts.json'));
+    fs.rmSync(path.join(output.paperDir, 'facts.json'));
     const before = snapshot(library);
     const result = runPrepare(library);
     assert.equal(result.status, 1);
@@ -179,6 +199,35 @@ test('prepare rejects removed force/overwrite options with argument exit 2', () 
     assert.equal(result.status, 2);
     assert.match(result.stderr, /\[ARGUMENT_INVALID\]/);
     assert.equal(fs.existsSync(path.join(library, 'papers')), false);
+    const replace = runPrepare(library, fixturePdf, ['--replace']);
+    assert.equal(replace.status, 2);
+    assert.match(replace.stderr, /--replace is not supported before P0-C2/);
+  } finally {
+    fs.rmSync(library, { recursive: true, force: true });
+  }
+});
+
+test('prepare flags make resume and revision intent explicit', () => {
+  const library = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-explicit-modes-'));
+  try {
+    const before = snapshot(library);
+    const missingResume = runPrepare(library, fixturePdf, ['--resume']);
+    assert.equal(missingResume.status, 1);
+    assert.match(missingResume.stderr, /\[RESUME_GENERATION_NOT_FOUND\]/);
+    assert.deepEqual(snapshot(library), before);
+
+    const created = runPrepare(library);
+    assert.equal(created.status, 0, created.stderr);
+    const exactResume = runPrepare(library, fixturePdf, ['--resume']);
+    assert.equal(exactResume.status, 0, exactResume.stderr);
+    assert.equal(JSON.parse(exactResume.stdout).action, 'reused');
+
+    const wrongGeneration = runPrepare(library, fixturePdf, ['--language', 'zh', '--resume']);
+    assert.equal(wrongGeneration.status, 1);
+    assert.match(wrongGeneration.stderr, /\[RESUME_GENERATION_NOT_FOUND\]/);
+    const sameRevision = runPrepare(library, fixturePdf, ['--new-revision']);
+    assert.equal(sameRevision.status, 1);
+    assert.match(sameRevision.stderr, /\[NEW_REVISION_REQUIRED\]/);
   } finally {
     fs.rmSync(library, { recursive: true, force: true });
   }

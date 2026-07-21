@@ -5,13 +5,21 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildPackageRelativePath, derivePaperKey } from '../plugins/codex-paper/src/shared/paper-library.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const serverEntry = path.join(repoRoot, 'plugins/codex-paper/src/web/.output/server/index.mjs')
 if (!fs.existsSync(serverEntry)) throw new Error('Run the production Viewer build first')
 
 const libraryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-browser-qa-'))
-const paperDir = path.join(libraryRoot, 'papers', 'active-content-fixture')
+const paperId = 'source:sha256:' + '1'.repeat(64)
+const sourceRevisionId = 'sha256:' + '1'.repeat(64)
+const generationId = 'gen:sha256:' + '2'.repeat(64)
+const paperKey = derivePaperKey(paperId)
+const paperRoot = path.join(libraryRoot, '.codex-paper/store-v1/papers', paperKey)
+const packageRelativePath = buildPackageRelativePath(sourceRevisionId, generationId)
+const paperDir = path.join(paperRoot, ...packageRelativePath.split('/'))
+const overlayDir = path.join(paperRoot, 'overlay')
 const port = Number(process.env.CODEX_PAPER_BROWSER_QA_PORT || 59615)
 const canaryPort = Number(process.env.CODEX_PAPER_CANARY_PORT || port + 1)
 const token = randomBytes(32).toString('hex')
@@ -20,6 +28,12 @@ const canaryOrigin = `http://127.0.0.1:${canaryPort}`
 let canaryHits = []
 
 fs.mkdirSync(path.join(paperDir, 'images'), { recursive: true })
+fs.mkdirSync(path.join(paperDir, '.codex-paper'), { recursive: true })
+fs.mkdirSync(path.join(overlayDir, 'files'), { recursive: true })
+fs.writeFileSync(path.join(paperRoot, 'paper.json'), JSON.stringify({ schemaVersion: '1.0.0', paperKey, primaryPaperId: paperId, paperIdAliases: [paperId], routeAliases: ['active-content-fixture'], createdAt: new Date(0).toISOString(), reconciliations: [] }))
+fs.writeFileSync(path.join(paperRoot, 'current.json'), JSON.stringify({ schemaVersion: '1.0.0', paperKey, paperId, sourceRevisionId, generationId, packageRelativePath }))
+fs.writeFileSync(path.join(paperDir, '.codex-paper/paper-identity.json'), JSON.stringify({ paperId, sourceRevisionId, generationId, slug: 'active-content-fixture' }))
+fs.writeFileSync(path.join(overlayDir, 'state.json'), JSON.stringify({ schemaVersion: '1.0.0', tags: ['security'], progress: {}, annotations: [] }))
 fs.writeFileSync(path.join(paperDir, 'README.md'), `# Active Content Fixture
 
 Safe Markdown remains visible.
@@ -28,7 +42,7 @@ Safe Markdown remains visible.
 
 ![external](${canaryOrigin}/pixel.png)
 `)
-fs.writeFileSync(path.join(paperDir, 'chat-notes.md'), `# Ask History
+fs.writeFileSync(path.join(overlayDir, 'chat-notes.md'), `# Ask History
 
 <img src=x onerror="globalThis.askPwned=true;fetch('${canaryOrigin}/ask')">
 `)
@@ -53,7 +67,7 @@ fs.writeFileSync(path.join(paperDir, 'unsafe.ipynb'), JSON.stringify({
   ]
 }))
 fs.writeFileSync(path.join(paperDir, 'images', 'pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z7V8AAAAASUVORK5CYII=', 'base64'))
-fs.writeFileSync(path.join(libraryRoot, 'index.json'), JSON.stringify([{ title: 'Active Content Fixture', slug: 'active-content-fixture', authors: ['Codex'], abstract: 'Synthetic redistributable browser QA fixture.', tags: ['security'], url: 'javascript:alert(1)' }]))
+fs.writeFileSync(path.join(libraryRoot, 'index.json'), JSON.stringify([{ title: 'Active Content Fixture', slug: 'active-content-fixture', storageKey: paperKey, paperId, paperIdAliases: [paperId], sourceRevisionId, generationId, authors: ['Codex'], abstract: 'Synthetic redistributable browser QA fixture.', tags: ['security'], url: 'javascript:alert(1)' }]))
 
 const canary = http.createServer((request, response) => {
   if (request.url === '/stats') {

@@ -46,6 +46,9 @@ jobs:
       - name: Paper Identity 1.0
         run: bash scripts/codex-paper.sh identity-test
 
+      - name: Paper Library Layout 1.0
+        run: bash scripts/codex-paper.sh layout-test
+
       - name: Validation Report 1.0
         run: bash scripts/codex-paper.sh validation-test
 

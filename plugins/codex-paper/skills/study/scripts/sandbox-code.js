@@ -26,6 +26,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const SCRIPT_DIR = path.dirname(SCRIPT_PATH)
@@ -227,17 +228,15 @@ export function getSandboxCapability({ env = process.env, requireStamp = true } 
 
 function resolvePaperDir(input, env = process.env) {
   if (!input || input.includes('\0')) throw new SandboxError('Missing or invalid paper directory or slug.')
-  const expanded = input.replace(/^~(?=$|\/)/, os.homedir())
-  const direct = path.resolve(expanded)
-  const candidate = existsSync(direct)
-    ? direct
-    : path.join(env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers'), 'papers', input)
-  if (!existsSync(candidate)) throw new SandboxError(`Paper directory not found: ${input}`)
-  const lexical = lstatSync(candidate)
-  if (lexical.isSymbolicLink() || !lexical.isDirectory()) throw new SandboxError('Paper path must be a real directory, not a symlink.')
-  const paperDir = realpathSync(candidate)
+  let descriptor
+  try {
+    descriptor = resolveExplicitPackage(input.replace(/^~(?=$|\/)/, os.homedir()), { libraryRoot: env.PAPERS_DIR })
+  } catch (error) {
+    throw new SandboxError(error?.message || `Paper directory not found: ${input}`)
+  }
+  const paperDir = descriptor.packageDir
   if (/[:,\r\n]/.test(paperDir)) throw new SandboxError('Paper path contains characters unsupported by the Docker mount boundary.')
-  return paperDir
+  return { paperDir, descriptor }
 }
 
 function scanCodeTree(paperDir) {
@@ -345,13 +344,17 @@ function sweepExpiredApprovals(root, now = Date.now()) {
 }
 
 export function buildExecutionPlan(input, { env = process.env, issueApproval = true } = {}) {
-  const paperDir = resolvePaperDir(input, env)
+  const { paperDir, descriptor } = resolvePaperDir(input, env)
   const scan = scanCodeTree(paperDir)
-  const capability = getSandboxCapability({ env })
+  const capability = descriptor.readOnly
+    ? { status: 'nonconformant', reason: 'Legacy flat-layout packages are read-only until explicitly migrated.', policyVersion: POLICY.policyVersion }
+    : getSandboxCapability({ env })
   const plan = {
     executionPlanVersion: POLICY.executionPlanVersion,
     policyVersion: POLICY.policyVersion,
     paperDir,
+    paperKey: descriptor.paperKey || null,
+    generationId: descriptor.generationId || null,
     codeDir: scan.codeDir,
     files: scan.files,
     artifacts: scan.artifacts,

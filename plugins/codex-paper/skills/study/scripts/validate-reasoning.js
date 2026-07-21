@@ -7,8 +7,10 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { collectEvidenceRefs } from './evidence-utils.js';
 import { profileForType } from '../profiles/profile-rules.js';
 import { PAPER_EVIDENCE_ID_PATTERN } from '../../../src/shared/package-compatibility.mjs';
+import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
 import {
   adaptLegacyFinding,
+  canWriteValidationReport,
   createValidationReport,
   inspectPackageArtifacts,
   writeValidationReportAtomic
@@ -16,8 +18,6 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LIBRARY_ROOT = path.join(process.env.HOME || '', 'codex-papers');
-const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const SCHEMA_PATH = path.join(__dirname, '../schemas/reasoning-analysis.schema.json');
 const EXTERNAL_SCHEMA_PATH = path.join(__dirname, '../schemas/external-evidence.schema.json');
 
@@ -59,12 +59,9 @@ function parseArgs(argv) {
 }
 
 function resolvePaperDir(input) {
-  const expanded = String(input || '').replace(/^~(?=$|\/)/, os.homedir());
-  const direct = path.resolve(expanded);
-  if (fs.existsSync(direct)) {
-    return fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
-  }
-  return path.join(PAPERS_ROOT, input);
+  return resolveExplicitPackage(String(input || '').replace(/^~(?=$|\/)/, os.homedir()), {
+    libraryRoot: process.env.PAPERS_DIR
+  }).packageDir;
 }
 
 function addFinding(target, code, pathValue, message) {
@@ -589,7 +586,7 @@ export function validateReasoningPackage(input, options = {}) {
           ...inspection.findings
         ]
       });
-      const reportWritten = options.writeReport !== false && inspection.canWriteReport;
+      const reportWritten = options.writeReport !== false && inspection.canWriteReport && canWriteValidationReport(paperDir);
       if (reportWritten) writeValidationReportAtomic(paperDir, report);
       return { paperDir, report, reportWritten, compatibility: inspection.compatibility };
     }
@@ -646,7 +643,7 @@ export function validateReasoningPackage(input, options = {}) {
       ...inspection.findings
     ]
   });
-  const reportWritten = options.writeReport !== false && inspection.canWriteReport;
+  const reportWritten = options.writeReport !== false && inspection.canWriteReport && canWriteValidationReport(paperDir);
   if (reportWritten) writeValidationReportAtomic(paperDir, report);
   return { paperDir, report, reportWritten, compatibility: inspection.compatibility };
 }

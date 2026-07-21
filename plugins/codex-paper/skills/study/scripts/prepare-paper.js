@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
@@ -17,14 +18,26 @@ import {
   readPaperIdentity,
   sha256File
 } from './paper-identity.js';
+import {
+  buildPackageRelativePath,
+  derivePaperKey,
+  ensureManagedStore,
+  getLibraryLayout,
+  listManagedRecords,
+  readCurrentRecord,
+  readOverlayState,
+  readPaperRecord,
+  reconcilePaperRecord,
+  requireSafeDirectory,
+  sourceDirectoryName,
+  generationDirectoryName,
+  writeJsonAtomicNoFollow
+} from '../../../src/shared/paper-library.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 const { stagePdfInput } = require('./download-pdf.cjs');
-const LIBRARY_ROOT = path.resolve(process.env.PAPERS_DIR || path.join(process.env.HOME || '', 'codex-papers'));
-const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
-const INDEX_PATH = path.join(LIBRARY_ROOT, 'index.json');
 const PACKAGE_VERSION = '2.1.0';
 const PLUGIN_BASE_VERSION = '2.0.0';
 const EVIDENCE_SCHEMA_VERSION = '2.0.0';
@@ -64,7 +77,11 @@ function parsePrepareArgs(argv) {
     contextMode: 'paper-only',
     profile: 'auto',
     workflow: 'study',
-    language: 'en'
+    language: 'en',
+    resume: false,
+    newRevision: false,
+    replace: false,
+    reconcileIdentity: null
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -80,6 +97,15 @@ function parsePrepareArgs(argv) {
       index += 1;
     } else if (arg === '--language') {
       args.language = argv[index + 1];
+      index += 1;
+    } else if (arg === '--resume') {
+      args.resume = true;
+    } else if (arg === '--new-revision') {
+      args.newRevision = true;
+    } else if (arg === '--replace') {
+      args.replace = true;
+    } else if (arg === '--reconcile-identity') {
+      args.reconcileIdentity = argv[index + 1];
       index += 1;
     } else if (arg.startsWith('--')) {
       throw new PaperIdentityError('ARGUMENT_INVALID', `Unknown option: ${arg}`);
@@ -104,6 +130,9 @@ function parsePrepareArgs(argv) {
 
   if (!WORKFLOWS.has(args.workflow)) throw new PaperIdentityError('ARGUMENT_INVALID', '--workflow must be study or summary.');
   if (!LANGUAGES.has(args.language)) throw new PaperIdentityError('ARGUMENT_INVALID', '--language must be zh or en.');
+  if (args.replace) throw new PaperIdentityError('ARGUMENT_INVALID', '--replace is not supported before P0-C2; no existing generation will be overwritten.');
+  if (args.resume && args.newRevision) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume and --new-revision are mutually exclusive.');
+  if (args.reconcileIdentity !== null && !args.reconcileIdentity) throw new PaperIdentityError('ARGUMENT_INVALID', '--reconcile-identity requires an existing route alias.');
 
   return args;
 }
@@ -119,16 +148,16 @@ async function resolveInput(input) {
   };
 }
 
-function readIndexPreserveShape() {
+function readIndexPreserveShape(indexPath) {
   let stats;
   try {
-    stats = fs.lstatSync(INDEX_PATH);
+    stats = fs.lstatSync(indexPath);
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;
     return { raw: [], papers: [], isArray: true };
   }
   if (stats.isSymbolicLink() || !stats.isFile()) throw new PaperIdentityError('INDEX_PATH_UNSAFE', 'Library index path is unsafe.');
-  const descriptor = fs.openSync(INDEX_PATH, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  const descriptor = fs.openSync(indexPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
   let raw;
   try {
     raw = JSON.parse(fs.readFileSync(descriptor, 'utf8'));
@@ -150,20 +179,22 @@ function readIndexPreserveShape() {
   };
 }
 
-function writeIndexPreserveShape(indexState) {
+function writeIndexPreserveShape(indexPath, indexState) {
   const content = indexState.isArray
     ? JSON.stringify(indexState.papers, null, 2)
     : (() => {
         indexState.raw.papers = indexState.papers;
         return JSON.stringify(indexState.raw, null, 2);
       })();
-  const descriptor = fs.openSync(INDEX_PATH, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0), 0o600);
+  const temporary = `${indexPath}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+  const descriptor = fs.openSync(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o600);
   try {
     fs.writeFileSync(descriptor, content);
     fs.fsyncSync(descriptor);
   } finally {
     fs.closeSync(descriptor);
   }
+  fs.renameSync(temporary, indexPath);
 }
 
 function buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl }) {
@@ -235,26 +266,37 @@ function readJsonFile(filePath, code = 'IDENTITY_STATE_INCOMPLETE') {
   }
 }
 
-function scanIdentityRegistry() {
-  if (!fs.existsSync(PAPERS_ROOT)) return [];
+function scanIdentityRegistry(libraryRoot) {
   const records = [];
-  for (const entry of fs.readdirSync(PAPERS_ROOT, { withFileTypes: true })) {
-    const paperDir = path.join(PAPERS_ROOT, entry.name);
-    if (entry.isSymbolicLink()) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper identity registry contains an unsafe directory.');
-    if (!entry.isDirectory()) continue;
-    const identityPath = path.join(paperDir, IDENTITY_RELATIVE_PATH);
-    if (!fs.existsSync(identityPath)) continue;
-    let identity;
-    try { identity = readPaperIdentity(identityPath); } catch {
-      throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper identity registry contains an invalid record.');
+  for (const managed of listManagedRecords({ libraryRoot })) {
+    const sourcesRoot = path.join(managed.recordDir, 'sources');
+    if (!fs.existsSync(sourcesRoot)) continue;
+    requireSafeDirectory(sourcesRoot, managed.recordDir);
+    for (const sourceEntry of fs.readdirSync(sourcesRoot, { withFileTypes: true })) {
+      if (sourceEntry.isSymbolicLink() || !sourceEntry.isDirectory()) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper source registry contains an unsafe entry.');
+      const generationsRoot = path.join(sourcesRoot, sourceEntry.name, 'generations');
+      requireSafeDirectory(generationsRoot, managed.recordDir);
+      for (const generationEntry of fs.readdirSync(generationsRoot, { withFileTypes: true })) {
+        if (generationEntry.isSymbolicLink() || !generationEntry.isDirectory()) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper generation registry contains an unsafe entry.');
+        const paperDir = path.join(generationsRoot, generationEntry.name, 'package');
+        requireSafeDirectory(paperDir, managed.recordDir);
+        const identityPath = path.join(paperDir, IDENTITY_RELATIVE_PATH);
+        let identity;
+        try { identity = readPaperIdentity(identityPath); } catch {
+          throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper identity registry contains an invalid generation record.');
+        }
+        if (sourceEntry.name !== sourceDirectoryName(identity.sourceRevisionId)
+          || generationEntry.name !== generationDirectoryName(identity.generationId)) {
+          throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Generation path does not match its identity.');
+        }
+        records.push({ paperDir, identity, managed });
+      }
     }
-    if (identity.slug !== entry.name) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper identity slug does not match its directory.');
-    records.push({ paperDir, identity });
   }
   return records;
 }
 
-function validateReusableGeneration(record, indexState) {
+function validateReusableGeneration(record) {
   const { paperDir, identity } = record;
   for (const relativePath of PREPARED_FILES) {
     const filePath = path.join(paperDir, relativePath);
@@ -292,9 +334,6 @@ function validateReusableGeneration(record, indexState) {
   if (!factsValidation.valid || !analysisValidation.valid) {
     throw new PaperIdentityError('IDENTITY_STATE_INCOMPLETE', 'Existing prepared artifacts contain invalid evidence references.');
   }
-  const matches = indexState.papers.filter((entry) => entry?.slug === identity.slug);
-  if (matches.length !== 1) throw new PaperIdentityError('INDEX_PROJECTION_CONFLICT', 'Library index does not contain exactly one matching identity projection.');
-  assertIdentityProjection(matches[0], identity, 'index.json');
   return {
     paperData,
     ledger,
@@ -305,32 +344,92 @@ function validateReusableGeneration(record, indexState) {
   };
 }
 
-function resolvePreparationAction(identity, candidatePaperDir, indexState) {
-  const registry = scanIdentityRegistry();
+function allocateRouteSlug(baseSlug, identity, managedRecords, indexState, legacyPapersRoot) {
+  const used = new Set([
+    ...managedRecords.flatMap(({ record }) => record.routeAliases),
+    ...indexState.papers.map((entry) => entry?.slug).filter(Boolean)
+  ]);
+  if (fs.existsSync(legacyPapersRoot)) {
+    const stats = fs.lstatSync(legacyPapersRoot);
+    if (stats.isSymbolicLink()) throw new PaperIdentityError('PAPER_PATH_UNSAFE', 'Legacy papers root is unsafe.');
+    for (const entry of fs.readdirSync(legacyPapersRoot, { withFileTypes: true })) if (entry.isDirectory() || entry.isSymbolicLink()) used.add(entry.name);
+  }
+  if (!used.has(baseSlug)) return baseSlug;
+  const sourceSuffix = identity.source.sha256.slice(0, 12);
+  const candidate = `${baseSlug.slice(0, Math.max(1, 160 - sourceSuffix.length - 1)).replace(/-+$/g, '')}-${sourceSuffix}`;
+  if (!used.has(candidate)) return candidate;
+  const generationSuffix = identity.generation.fingerprint.value.slice(0, 12);
+  const fallback = `${baseSlug.slice(0, Math.max(1, 160 - generationSuffix.length - 1)).replace(/-+$/g, '')}-${generationSuffix}`;
+  if (!used.has(fallback)) return fallback;
+  throw new PaperIdentityError('PAPER_ROUTE_CONFLICT', 'A unique route alias could not be allocated.');
+}
+
+function resolvePreparationAction(identity, baseSlug, indexState, options = {}) {
+  const layout = getLibraryLayout(options.libraryRoot);
+  const managedRecords = listManagedRecords({ libraryRoot: options.libraryRoot });
+  const registry = scanIdentityRegistry(options.libraryRoot);
   const generationMatches = registry.filter((item) => item.identity.generationId === identity.generationId);
   if (generationMatches.length > 1) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Multiple paper directories claim the same generation identity.');
   if (generationMatches.length === 1) {
     const match = generationMatches[0];
     if (match.identity.sourceRevisionId !== identity.sourceRevisionId) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Generation identity maps to conflicting source revisions.');
-    if (match.identity.paperId !== identity.paperId) throw new PaperIdentityError('PAPER_IDENTITY_CONFLICT', 'The same generation maps to a different paper identity.');
-    const artifacts = validateReusableGeneration(match, indexState);
-    return { action: 'reused', paperDir: match.paperDir, identity: match.identity, artifacts };
-  }
-  if (registry.some((item) => item.identity.sourceRevisionId === identity.sourceRevisionId)) {
-    throw new PaperIdentityError('GENERATION_CONFLICT', 'This source revision already exists with a different generation fingerprint.');
-  }
-  if (fs.existsSync(candidatePaperDir)) {
-    const stats = fs.lstatSync(candidatePaperDir);
-    if (stats.isSymbolicLink() || !stats.isDirectory()) throw new PaperIdentityError('PAPER_PATH_UNSAFE', 'Paper destination is unsafe.');
-    if (!fs.existsSync(path.join(candidatePaperDir, IDENTITY_RELATIVE_PATH))) {
-      throw new PaperIdentityError('LEGACY_IDENTITY_COLLISION', 'A legacy flat-layout package already uses this slug.');
+    if (!match.managed.record.paperIdAliases.includes(identity.paperId)) {
+      if (!options.reconcileIdentity || !match.managed.record.routeAliases.includes(options.reconcileIdentity)) {
+        throw new PaperIdentityError('PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'The same generation resolved to another paper ID; explicit reconciliation is required.');
+      }
+      const artifacts = validateReusableGeneration(match);
+      const record = reconcilePaperRecord(match.managed.record, identity.paperId, identity);
+      writeJsonAtomicNoFollow(path.join(match.managed.recordDir, 'paper.json'), record);
+      const papers = indexState.papers.map((entry) => entry?.storageKey === record.paperKey
+        ? { ...entry, paperId: record.primaryPaperId, paperIdAliases: record.paperIdAliases }
+        : entry);
+      writeIndexPreserveShape(layout.indexPath, { ...indexState, papers });
+      return { action: 'reconciled', paperDir: match.paperDir, identity: match.identity, artifacts, managed: { ...match.managed, record } };
     }
-    throw new PaperIdentityError('SOURCE_REVISION_CONFLICT', 'This slug is already assigned to another source revision.');
+    if (options.newRevision) throw new PaperIdentityError('NEW_REVISION_REQUIRED', '--new-revision requires different source bytes.');
+    const artifacts = validateReusableGeneration(match);
+    return { action: 'reused', paperDir: match.paperDir, identity: match.identity, artifacts, managed: match.managed };
   }
-  if (indexState.papers.some((entry) => entry?.slug === identity.slug)) {
-    throw new PaperIdentityError('INDEX_PROJECTION_CONFLICT', 'Library index already contains this slug without a matching generation.');
+  if (options.resume) throw new PaperIdentityError('RESUME_GENERATION_NOT_FOUND', '--resume requires an existing exact generation.');
+
+  let managed = managedRecords.find(({ record }) => record.paperIdAliases.includes(identity.paperId)) || null;
+  const sourceOwner = registry.find((item) => item.identity.sourceRevisionId === identity.sourceRevisionId) || null;
+  if (!managed && sourceOwner) {
+    if (!options.reconcileIdentity || !sourceOwner.managed.record.routeAliases.includes(options.reconcileIdentity)) {
+      throw new PaperIdentityError('PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'This source revision belongs to another paper ID; explicit reconciliation is required.');
+    }
+    const record = reconcilePaperRecord(sourceOwner.managed.record, identity.paperId, identity);
+    managed = { ...sourceOwner.managed, record, reconciled: true };
   }
-  return { action: 'created', paperDir: candidatePaperDir, identity };
+  if (options.newRevision) {
+    if (!managed) throw new PaperIdentityError('NEW_REVISION_PAPER_NOT_FOUND', '--new-revision requires an existing paper identity.');
+    const current = readCurrentRecord(managed.recordDir, managed.record);
+    if (current.sourceRevisionId === identity.sourceRevisionId) throw new PaperIdentityError('NEW_REVISION_REQUIRED', '--new-revision requires different source bytes.');
+  }
+
+  if (!managed) {
+    const routeSlug = allocateRouteSlug(baseSlug, identity, managedRecords, indexState, layout.legacyPapersRoot);
+    const paperKey = derivePaperKey(identity.paperId);
+    if (managedRecords.some(({ record }) => record.paperKey === paperKey)) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper storage key collision.');
+    managed = {
+      recordDir: path.join(layout.recordsRoot, paperKey),
+      record: {
+        schemaVersion: '1.0.0',
+        paperKey,
+        primaryPaperId: identity.paperId,
+        paperIdAliases: [identity.paperId],
+        routeAliases: [routeSlug],
+        createdAt: new Date().toISOString(),
+        reconciliations: []
+      },
+      isNew: true
+    };
+  }
+
+  const packageRelativePath = buildPackageRelativePath(identity.sourceRevisionId, identity.generationId);
+  const paperDir = path.join(managed.recordDir, ...packageRelativePath.split('/'));
+  if (fs.existsSync(paperDir)) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Generation destination already exists without a valid identity record.');
+  return { action: 'created', paperDir, identity, managed, packageRelativePath };
 }
 
 export async function preparePaper(userInput, options = {}) {
@@ -342,6 +441,10 @@ export async function preparePaper(userInput, options = {}) {
   const profile = options.profile || 'auto';
   const workflow = options.workflow || 'study';
   const language = options.language || 'en';
+  const resume = options.resume === true;
+  const newRevision = options.newRevision === true;
+  const replace = options.replace === true;
+  const reconcileIdentity = options.reconcileIdentity || null;
   if (!CONTEXT_MODES.has(contextMode)) {
     throw new PaperIdentityError('ARGUMENT_INVALID', 'contextMode must be paper-only, canonical, or literature.');
   }
@@ -350,8 +453,13 @@ export async function preparePaper(userInput, options = {}) {
   }
   if (!WORKFLOWS.has(workflow)) throw new PaperIdentityError('ARGUMENT_INVALID', 'workflow must be study or summary.');
   if (!LANGUAGES.has(language)) throw new PaperIdentityError('ARGUMENT_INVALID', 'language must be zh or en.');
+  if (replace) throw new PaperIdentityError('ARGUMENT_INVALID', '--replace is not supported before P0-C2; no existing generation will be overwritten.');
+  if (resume && newRevision) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume and --new-revision are mutually exclusive.');
 
-  ensureDir(PAPERS_ROOT);
+  const libraryRoot = path.resolve(options.libraryRoot || process.env.PAPERS_DIR || path.join(process.env.HOME || '', 'codex-papers'));
+  const layout = getLibraryLayout(libraryRoot);
+  fs.mkdirSync(libraryRoot, { recursive: true, mode: 0o700 });
+  const indexState = readIndexPreserveShape(layout.indexPath);
 
   const resolvedInput = await resolveInput(userInput);
   const { inputPath, sourceUrl } = resolvedInput;
@@ -360,13 +468,12 @@ export async function preparePaper(userInput, options = {}) {
   const parsed = detailed.publicData;
   parsed.warnings = Array.from(new Set([...(resolvedInput.inputWarnings || []), ...(parsed.warnings || [])]));
   const sourceFilename = resolvedInput.sourceFilename || path.basename(inputPath);
-  const paperSlug = slugify(parsed.title || path.basename(inputPath, path.extname(inputPath)));
-  if (!paperSlug) throw new PaperIdentityError('PAPER_SLUG_INVALID', 'Parsed title cannot produce a safe paper slug.');
-  const paperDir = path.join(PAPERS_ROOT, paperSlug);
+  const basePaperSlug = slugify(parsed.title || path.basename(inputPath, path.extname(inputPath)));
+  if (!basePaperSlug) throw new PaperIdentityError('PAPER_SLUG_INVALID', 'Parsed title cannot produce a safe paper slug.');
   const today = new Date().toISOString().slice(0, 10);
   const sourceSha256 = sha256File(inputPath);
   const identity = buildPaperIdentity({
-    slug: paperSlug,
+    slug: basePaperSlug,
     sourceSha256,
     sourceUrl,
     pages: detailed.pages,
@@ -379,12 +486,16 @@ export async function preparePaper(userInput, options = {}) {
     pluginBuildVersion: detailed.parserMetadata?.parserBuildVersion || parsed.parserBuildVersion || PLUGIN_BASE_VERSION,
     platform: platformProvenance()
   });
-  const indexState = readIndexPreserveShape();
-  const preparation = resolvePreparationAction(identity, paperDir, indexState);
-  if (preparation.action === 'reused') {
+  const preparation = resolvePreparationAction(identity, basePaperSlug, indexState, {
+    libraryRoot,
+    resume,
+    newRevision,
+    reconcileIdentity
+  });
+  if (preparation.action === 'reused' || preparation.action === 'reconciled') {
     return {
-      action: 'reused',
-      paperSlug: preparation.identity.slug,
+      action: preparation.action,
+      paperSlug: preparation.managed.record.routeAliases[0],
       paperDir: preparation.paperDir,
       inputPath,
       sourceFilename,
@@ -398,8 +509,20 @@ export async function preparePaper(userInput, options = {}) {
     };
   }
 
-  fs.mkdirSync(paperDir, { mode: 0o700 });
+  ensureManagedStore({ libraryRoot });
+  const { managed, paperDir } = preparation;
+  if (managed.isNew) {
+    fs.mkdirSync(managed.recordDir, { recursive: false, mode: 0o700 });
+    fs.mkdirSync(path.join(managed.recordDir, 'overlay'), { mode: 0o700 });
+    fs.mkdirSync(path.join(managed.recordDir, 'overlay', 'files'), { mode: 0o700 });
+  } else {
+    requireSafeDirectory(managed.recordDir, layout.recordsRoot);
+    requireSafeDirectory(path.join(managed.recordDir, 'overlay'), managed.recordDir);
+  }
+  fs.mkdirSync(paperDir, { recursive: true, mode: 0o700 });
   fs.mkdirSync(path.join(paperDir, '.codex-paper'), { mode: 0o700 });
+  const paperSlug = managed.record.routeAliases[0];
+  identity.slug = paperSlug;
   const projection = identityProjection(identity);
 
   const paperData = {
@@ -500,6 +623,9 @@ export async function preparePaper(userInput, options = {}) {
     qualityFlags: parsed.qualityFlags,
     url: sourceUrl
   };
+  indexEntry.storageKey = managed.record.paperKey;
+  indexEntry.paperId = managed.record.primaryPaperId;
+  indexEntry.paperIdAliases = managed.record.paperIdAliases;
 
   copyFileExclusive(inputPath, path.join(paperDir, 'paper.pdf'));
   writeJsonExclusive(path.join(paperDir, 'paper-data.json'), paperData);
@@ -510,8 +636,33 @@ export async function preparePaper(userInput, options = {}) {
   const externalEvidencePath = maybeWriteExternalEvidenceManifest({ paperDir, paperSlug, contextMode, sourceUrl });
   writeJsonExclusive(path.join(paperDir, IDENTITY_RELATIVE_PATH), identity);
 
-  indexState.papers.push(indexEntry);
-  writeIndexPreserveShape(indexState);
+  if (managed.isNew || managed.reconciled) {
+    writeJsonAtomicNoFollow(path.join(managed.recordDir, 'paper.json'), managed.record);
+  }
+  if (managed.isNew) {
+    writeJsonAtomicNoFollow(path.join(managed.recordDir, 'overlay', 'state.json'), {
+      schemaVersion: '1.0.0',
+      tags: [],
+      progress: {},
+      annotations: []
+    });
+  } else {
+    readOverlayState({ mode: 'managed_v1', overlayDir: path.join(managed.recordDir, 'overlay') });
+  }
+  const current = {
+    schemaVersion: '1.0.0',
+    paperKey: managed.record.paperKey,
+    paperId: identity.paperId,
+    sourceRevisionId: identity.sourceRevisionId,
+    generationId: identity.generationId,
+    packageRelativePath: preparation.packageRelativePath
+  };
+  writeJsonAtomicNoFollow(path.join(managed.recordDir, 'current.json'), current);
+  const existingIndex = indexState.papers.findIndex((entry) => entry?.storageKey === managed.record.paperKey
+    || managed.record.routeAliases.includes(entry?.slug));
+  if (existingIndex >= 0) indexState.papers[existingIndex] = { ...indexState.papers[existingIndex], ...indexEntry, tags: readOverlayState({ mode: 'managed_v1', overlayDir: path.join(managed.recordDir, 'overlay') }).tags };
+  else indexState.papers.push(indexEntry);
+  writeIndexPreserveShape(layout.indexPath, indexState);
 
   return {
     action: 'created',

@@ -1,13 +1,11 @@
-import fs from 'node:fs'
 import {
-  readJsonPath,
   readLibraryIndex,
-  requirePaperDir,
-  resolveWritablePaperFile,
+  requireWritablePaperAccess,
   validateSlug,
-  writeJsonAtomic,
+  writePaperOverlayState,
   writeLibraryIndex,
 } from '../../../utils/librarySecurity.mjs'
+import { readOverlayState } from '../../../../../shared/paper-library.mjs'
 import { withOperationLocks } from '../../../utils/operationLocks.mjs'
 
 function normalizeTags(value: unknown) {
@@ -27,20 +25,17 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ tags?: unknown }>(event)
   const tags = normalizeTags(body?.tags)
 
-  return withOperationLocks([`paper:${slug}`, 'index'], async () => {
-    requirePaperDir(slug!)
-    const metaPath = resolveWritablePaperFile(slug!, 'meta.json')
-    const hadMeta = fs.existsSync(metaPath)
-    const previousMeta = hadMeta ? readJsonPath(metaPath, 'meta.json') : {}
+  const descriptor = requireWritablePaperAccess(slug!)
+  return withOperationLocks([descriptor.paperLockKey, 'index'], async () => {
+    const previousState = readOverlayState(descriptor)
     const indexState = readLibraryIndex()
-    const nextPapers = indexState.papers.map((paper) => paper?.slug === slug ? { ...paper, tags } : paper)
+    const nextPapers = indexState.papers.map((paper) => paper?.storageKey === descriptor.paperKey || descriptor.routeAliases.includes(paper?.slug) ? { ...paper, tags } : paper)
 
-    writeJsonAtomic(metaPath, { ...previousMeta, tags })
+    writePaperOverlayState(descriptor, { ...previousState, tags })
     try {
       writeLibraryIndex(indexState, nextPapers)
     } catch (error) {
-      if (hadMeta) writeJsonAtomic(metaPath, previousMeta)
-      else try { fs.unlinkSync(metaPath) } catch {}
+      writePaperOverlayState(descriptor, previousState)
       throw error
     }
     return { success: true, tags }

@@ -122,7 +122,7 @@ cmd_test() {
   ensure_node
 
   print_section "Repository Guard Tests"
-  "$NODE_BIN" --test "$REPO_ROOT"/scripts/tests/*.test.mjs
+  "$NODE_BIN" --test --test-concurrency=1 "$REPO_ROOT"/scripts/tests/*.test.mjs
 
   print_section "Unit Tests"
   "$NODE_BIN" --test "$PLUGIN_ROOT"/skills/study/scripts/tests/*.mjs
@@ -161,6 +161,15 @@ cmd_identity_test() {
   "$NODE_BIN" --test \
     "$PLUGIN_ROOT/skills/study/scripts/tests/paper-identity.test.mjs" \
     "$PLUGIN_ROOT/skills/study/scripts/tests/prepare-paper-identity.test.mjs"
+}
+
+cmd_layout_test() {
+  ensure_node
+  ensure_python
+  ensure_pymupdf
+
+  print_section "Paper Library Layout 1.0"
+  "$NODE_BIN" --test "$REPO_ROOT/scripts/tests/library-layout.test.mjs"
 }
 
 cmd_package_test() {
@@ -343,6 +352,7 @@ Commands:
   reasoning-test Run reasoning validation fixtures
   validation-test Run Validation Report 1.0 and cross-artifact gate tests
   identity-test Run Paper Identity 1.0, fingerprint, reuse, and collision tests
+  layout-test Run current-generation resolver, legacy read-only, and overlay tests
   package-test Run package quality fixtures
   benchmark-all  Run mandatory PDF, optional parser, reasoning, and package benchmarks
   migrate      Migrate a v1 package to v2 evidence/reasoning draft files
@@ -397,6 +407,9 @@ case "$command_name" in
     ;;
   identity-test)
     cmd_identity_test
+    ;;
+  layout-test)
+    cmd_layout_test
     ;;
   package-test)
     cmd_package_test

@@ -202,47 +202,26 @@ Ask Codex lazily starts one long-running `codex mcp-server` worker the first tim
 
 ## Paper Storage Structure
 
-Papers are organized in `~/codex-papers/papers/{paper-slug}/`:
+New packages use Paper Library Layout 1.0. Route slugs are index aliases only; every CLI and Viewer request resolves the authoritative `current.json` instead of constructing `papers/{slug}` paths:
 
 ```
 ~/codex-papers/
-├── papers/
-│   └── {paper-slug}/
-│       ├── README.md                     # Quick navigation and overview
-│       ├── visual-assets.md              # Curated figure/table guide with sources and reading placement
-│       ├── summary.md                    # Detailed summary
-│       ├── insights.md                   # Key insights (most important!)
-│       ├── method.md                     # Method structure, flow, pseudocode, reproducibility risks
-│       ├── mental-model.md              # Prior knowledge, research map, and paper categorization
-│       ├── reflection.md                # Extensions, fragile assumptions, and future questions
-│       ├── qa.md                         # Layered learning questions and answers
-│       ├── chat-notes.md                 # Follow-up Q&A notes created by the Web UI
-│       ├── index.html                    # Interactive HTML explorer
-│       ├── paper.pdf                     # Copy of the original PDF
-│       ├── evidence-ledger.json          # Internal paper-only evidence ledger
-│       ├── reasoning-analysis.json       # Internal research reasoning contract
-│       ├── images/                       # Curated extracted figures, tables, and necessary page previews
-│       │   ├── fig1.png
-│       │   └── fig2.png
-│       ├── code/                         # Code demonstrations
-│       │   └── core-concept-demo.py      # At least one runnable core-concept example
-│
-│       # The following JSON files are internal evidence files and hidden in the Web UI by default
-│       ├── paper-data.json               # Canonical parsed paper facts
-│       ├── facts.json                    # Evidence-first claims, results, limitations
-│       ├── analysis.json                 # Structured analysis draft
-│       ├── meta.json                     # Paper metadata (title, authors, etc.)
-│
-│       # Hidden local context for grounded follow-up answers
-│       └── .codex-paper/
-│           ├── answering-pack.md         # Evidence navigation pack for $paper-chat
-│           ├── external-evidence.json    # Optional external evidence for canonical/literature modes
-│           ├── reasoning-review.md       # Fixed self-review checklist
-│           ├── paper-identity.json       # Paper/source/generation identity authority
-│           └── validation-report.json    # Latest validation report
-│
-├── index.json                           # Global search index
-└── .trash/                              # Persistent recoverable paper entries
+├── .codex-paper/store-v1/papers/{paperKey}/
+│   ├── paper.json                       # Paper identity aliases and reconciliation audit
+│   ├── current.json                     # Authoritative current source/generation pointer
+│   ├── overlay/                         # Mutable state outside every generation
+│   │   ├── state.json                   # Tags, progress, and annotations
+│   │   ├── chat-notes.md                # Follow-up Q&A notes
+│   │   └── files/                       # User overlay files (shown under user/)
+│   └── sources/{sourceRevision}/generations/{generation}/package/
+│       ├── README.md, summary.md, insights.md, method.md, ...
+│       ├── paper.pdf, images/, code/, index.html
+│       ├── paper-data.json, evidence-ledger.json, facts.json, analysis.json
+│       ├── reasoning-analysis.json, meta.json
+│       └── .codex-paper/                 # Identity, answering, review, and validation records
+├── papers/{legacy-slug}/                 # Existing flat 2.0/2.1 packages; read-only until migration
+├── index.json                            # Compatibility/search projection, not identity authority
+└── .trash/{trashId}/{tombstone,payload}  # Recoverable lifecycle envelope
 ```
 
 ### Validation and Migration
@@ -253,6 +232,7 @@ Run the full deterministic suite:
 bash scripts/codex-paper.sh install
 bash scripts/codex-paper.sh test
 bash scripts/codex-paper.sh identity-test
+bash scripts/codex-paper.sh layout-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
@@ -262,8 +242,8 @@ bash scripts/codex-paper.sh build
 Validate one completed study package:
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug}
-node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug}
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js {paper-route-slug}
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js {paper-route-slug}
 ```
 
 The reasoning command emits a draft-phase `allow_authoring` gate. The final standard package gate permits `pass_with_warnings`; add `--strict` only when warnings should block. Both commands update the single `.codex-paper/validation-report.json` report. Study-package validation is static and never executes generated code. Optional execution uses a separately prepared Docker sandbox and requires a fresh, code-hash-bound approval for every run:
@@ -273,10 +253,10 @@ The reasoning command emits a draft-phase `allow_authoring` gate. The final stan
 bash scripts/codex-paper.sh sandbox-setup
 
 # Inspect files, hashes, commands, permissions, and limits
-bash scripts/codex-paper.sh sandbox-plan ~/codex-papers/papers/{paper-slug}
+bash scripts/codex-paper.sh sandbox-plan {paper-route-slug}
 
 # Only after the user approves that exact plan
-bash scripts/codex-paper.sh sandbox-run ~/codex-papers/papers/{paper-slug} --approval-token <one-time-token>
+bash scripts/codex-paper.sh sandbox-run {paper-route-slug} --approval-token <one-time-token>
 ```
 
 The token binds the exact plan and prevents replay; it does not authenticate a human. Agent workflows must stop after showing the plan and wait for a new explicit user approval before running it.
@@ -298,10 +278,10 @@ bash scripts/codex-paper.sh migrate /path/to/package --external-path
 Before filling the draft reasoning analysis, you can sanity-check the migrated package:
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --allow-draft
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js {paper-route-slug} --allow-draft
 ```
 
-See the [evidence ledger](docs/evidence-ledger.md), [reasoning analysis](docs/reasoning-analysis.md), [package contract](docs/package-v2.md), and [migration guide](docs/migration-v1-to-v2.md) docs for the detailed package contracts.
+See [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md), the [evidence ledger](docs/evidence-ledger.md), [reasoning analysis](docs/reasoning-analysis.md), [package contract](docs/package-v2.md), and [migration guide](docs/migration-v1-to-v2.md) for the detailed contracts.
 
 ---
 

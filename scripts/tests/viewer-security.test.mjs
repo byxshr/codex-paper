@@ -203,7 +203,7 @@ test('trash move rolls the paper back when tombstone creation fails', (t) => {
   t.after(() => fs.rmSync(libraryRoot, { recursive: true, force: true }))
   const originalOpen = fs.openSync
   fs.openSync = (filePath, flags, mode) => {
-    if (String(filePath).includes('.codex-paper-trash.json') && String(filePath).endsWith('.tmp')) {
+    if (String(filePath).includes('.tombstone.json.') && String(filePath).endsWith('.tmp')) {
       const error = new Error('injected tombstone failure')
       error.code = 'ENOSPC'
       throw error

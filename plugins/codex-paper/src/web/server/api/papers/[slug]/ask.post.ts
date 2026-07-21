@@ -1,6 +1,6 @@
 import { askCodexWorker } from '../../../utils/codexWorker'
 import { appendChatNote } from '../../../utils/chatNotes'
-import { requirePaperDir, resolvePublicFile, validateSlug } from '../../../utils/librarySecurity.mjs'
+import { requireWritablePaperAccess, resolvePublicFile, validateSlug } from '../../../utils/librarySecurity.mjs'
 import { withOperationLocks } from '../../../utils/operationLocks.mjs'
 import { renderSafeMarkdown } from '../../../utils/activeContentSecurity.mjs'
 
@@ -110,15 +110,16 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const paperDir = requirePaperDir(slug)
+  const descriptor = requireWritablePaperAccess(slug)
+  const paperDir = descriptor.packageDir
   if (selectedFile) resolvePublicFile(slug, selectedFile)
   const fallbackPrompt = buildPaperChatPrompt(paperDir, question, selectedFile)
   const safeFallbackPrompt = fallbackPrompt.split(paperDir).join('[local paper package]')
 
-  return withOperationLocks([`paper:${slug}`], async () => {
+  return withOperationLocks([descriptor.paperLockKey], async () => {
     try {
       const { answer } = await askCodexWorker({
-        slug,
+        slug: descriptor.generationLockKey,
         paperDir,
         prompt: fallbackPrompt
       })
@@ -142,7 +143,7 @@ export default defineEventHandler(async (event) => {
       }
 
       const savedNote = appendChatNote(
-        paperDir,
+        descriptor.overlayDir,
         redactForbiddenResidues(question),
         redactForbiddenResidues(answer),
         selectedFile

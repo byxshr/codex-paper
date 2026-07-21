@@ -25,7 +25,9 @@ Current budgets are:
 
 ## Recoverable deletion
 
-Delete moves a paper directory to `PAPERS_DIR/.trash/<trashId>` on the same filesystem. A versioned `.codex-paper-trash.json` tombstone preserves the slug, deletion time, original relative path, and index entry. Index writes use temporary-file replacement. Restore refuses to overwrite an existing slug and rolls back its rename if index restoration fails.
+Delete moves the resolved paper record (or an unchanged legacy payload) to `PAPERS_DIR/.trash/<trashId>/payload` on the same filesystem. A separate versioned `tombstone.json` preserves layout, stable paper lock key, aliases, original relative path, and index projections without modifying the payload. Restore refuses identity/route/target conflicts and rolls back its rename if index restoration fails.
+
+Managed packages are resolved through Paper Library Layout 1.0 `current.json`. Tags and Chat notes are written only to the paper-level overlay; generation `meta.json`, validation reports, and study artifacts are not changed. Legacy flat packages remain readable, but tags, Ask persistence, validation writes, and sandbox execution fail closed until explicit migration.
 
 Trash is persistent and has no automatic purge or permanent-delete API in P0-A1. Retention controls belong to P1-7.
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added Paper Library Layout 1.0 with identity-keyed paper/source/generation storage, authoritative current records, stable alias-aware lock keys, and read-only flat-layout compatibility.
+- Moved tags and chat notes into a paper-level mutable overlay, added multi-generation prepare semantics and explicit identity reconciliation, and migrated Viewer/validator/sandbox/trash consumers to the shared no-follow resolver.
+- Hardened P0-C1b after independent review: fixed the third-tier route fallback to use the generation fingerprint value, and made explicit absolute paths into the legacy flat library remain read-only for every authoring and sandbox consumer.
 - Added Paper Identity 1.0 with separate canonical paper, exact source revision, and deterministic generation identifiers.
 - Added a versioned content-contract fingerprint that changes with workflow semantics while excluding cachebusters, timestamps, paths, and provenance-only runtime data.
 - Made flat-layout preparation fail closed on every ambiguous collision and reuse only complete identical generations without modifying files or mutable user state.

@@ -1,6 +1,6 @@
 ---
 name: paper-chat
-description: Use this skill when the user asks a follow-up question about an existing Codex Paper study package, wants to discuss a paper already saved under ~/codex-papers/papers, or asks for an evidence-grounded answer from generated paper learning materials.
+description: Use this skill when the user asks a follow-up question about an existing Codex Paper study package, wants to discuss a paper saved in the managed local library, or asks for an evidence-grounded answer from generated paper learning materials.
 ---
 
 # Paper Chat Workflow
@@ -11,8 +11,8 @@ Use this skill for follow-up questions about a paper that already has a Codex Pa
 
 Accept either:
 
-* a paper package directory, for example `~/codex-papers/papers/{paper-slug}`
-* a paper slug, resolved as `~/codex-papers/papers/{paper-slug}`
+* the package directory returned by `prepare-paper.js`
+* a paper route slug, resolved through the shared current-generation resolver
 * a Web UI prompt that includes the package directory, current file, and user question
 
 If the package does not exist, tell the user to run `$paper-study` first.

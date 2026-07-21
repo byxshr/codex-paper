@@ -2,12 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { assertWritablePackage, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
+import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LIBRARY_ROOT = path.join(process.env.HOME || '', 'codex-papers');
-const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
-
 const COPY = {
   en: {
     readmeTitle: 'Study Guide',
@@ -117,12 +115,11 @@ function resolvePaperDir(input) {
     throw new Error('Paper slug or directory is required');
   }
 
-  const resolved = path.resolve(input);
-  if (fs.existsSync(resolved)) {
-    return fs.statSync(resolved).isDirectory() ? resolved : path.dirname(resolved);
-  }
-
-  return path.join(PAPERS_ROOT, input);
+  const descriptor = resolveExplicitPackage(input.replace(/^~(?=$|\/)/, process.env.HOME || ''), {
+    libraryRoot: process.env.PAPERS_DIR
+  });
+  if (descriptor.readOnly) throw new Error('LEGACY_LAYOUT_READ_ONLY: migrate the flat-layout package explicitly before rendering.');
+  return descriptor.packageDir;
 }
 
 function evidenceMap(facts) {

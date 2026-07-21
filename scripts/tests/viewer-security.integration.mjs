@@ -6,6 +6,7 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildPackageRelativePath, derivePaperKey } from '../../plugins/codex-paper/src/shared/paper-library.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const serverEntry = path.join(repoRoot, 'plugins/codex-paper/src/web/.output/server/index.mjs')
@@ -14,11 +15,22 @@ const libraryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-http-secu
 const port = 59000 + Math.floor(Math.random() * 500)
 const origin = `http://127.0.0.1:${port}`
 const token = randomBytes(32).toString('hex')
-const paperDir = path.join(libraryRoot, 'papers', 'sample-paper')
+const paperId = 'source:sha256:' + '1'.repeat(64)
+const sourceRevisionId = 'sha256:' + '1'.repeat(64)
+const generationId = 'gen:sha256:' + '2'.repeat(64)
+const paperKey = derivePaperKey(paperId)
+const paperRoot = path.join(libraryRoot, '.codex-paper/store-v1/papers', paperKey)
+const packageRelativePath = buildPackageRelativePath(sourceRevisionId, generationId)
+const paperDir = path.join(paperRoot, ...packageRelativePath.split('/'))
+const overlayDir = path.join(paperRoot, 'overlay')
 fs.mkdirSync(path.join(paperDir, 'notes'), { recursive: true })
+fs.mkdirSync(path.join(overlayDir, 'files'), { recursive: true })
+fs.writeFileSync(path.join(paperRoot, 'paper.json'), JSON.stringify({ schemaVersion: '1.0.0', paperKey, primaryPaperId: paperId, paperIdAliases: [paperId], routeAliases: ['sample-paper'], createdAt: new Date(0).toISOString(), reconciliations: [] }))
+fs.writeFileSync(path.join(paperRoot, 'current.json'), JSON.stringify({ schemaVersion: '1.0.0', paperKey, paperId, sourceRevisionId, generationId, packageRelativePath }))
+fs.writeFileSync(path.join(overlayDir, 'state.json'), JSON.stringify({ schemaVersion: '1.0.0', tags: [], progress: {}, annotations: [] }))
 fs.writeFileSync(path.join(paperDir, 'README.md'), '# HTTP Security Fixture\n\n<script>globalThis.markdownPwned = true</script>\n\n[bad](javascript:alert(1))\n')
 fs.writeFileSync(path.join(paperDir, 'notes', 'public.md'), '# Public\n\n<img src=x onerror=alert(1)>\n')
-fs.writeFileSync(path.join(paperDir, 'chat-notes.md'), '# Chat\n\n<iframe src="http://127.0.0.1/canary"></iframe>\n')
+fs.writeFileSync(path.join(overlayDir, 'chat-notes.md'), '# Chat\n\n<iframe src="http://127.0.0.1/canary"></iframe>\n')
 fs.writeFileSync(path.join(paperDir, 'unsafe.html'), '<style>body{display:none}</style><script>globalThis.htmlPwned=true</script><form action="https://evil.test"><button>go</button></form><a href="https://evil.test">leave</a><p style="color:red" onclick="pwn()">visible</p>')
 fs.writeFileSync(path.join(paperDir, 'unsafe.svg'), '<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.svgPwned=true"><script>alert(1)</script><image href="https://evil.test/pixel" /></svg>')
 fs.writeFileSync(path.join(paperDir, 'unsafe.ipynb'), JSON.stringify({
@@ -38,6 +50,7 @@ fs.writeFileSync(path.join(paperDir, 'analysis.json'), JSON.stringify({ analysis
 fs.writeFileSync(path.join(paperDir, 'evidence-ledger.json'), JSON.stringify({ schemaVersion: '2.0.0', evidence: [] }))
 fs.writeFileSync(path.join(paperDir, 'reasoning-analysis.json'), JSON.stringify({ schemaVersion: '2.0.0', centralClaims: [], researchQuestion: {}, authorReasoningPath: [], validations: [] }))
 fs.mkdirSync(path.join(paperDir, '.codex-paper'))
+fs.writeFileSync(path.join(paperDir, '.codex-paper', 'paper-identity.json'), JSON.stringify({ paperId, sourceRevisionId, generationId, slug: 'sample-paper' }))
 fs.writeFileSync(path.join(paperDir, '.codex-paper', 'validation-report.json'), JSON.stringify({
   schemaVersion: '1.0.0',
   status: 'pass_with_warnings',
@@ -90,7 +103,7 @@ fs.writeFileSync(path.join(corruptMetaDir, 'analysis.json'), JSON.stringify({ re
 fs.writeFileSync(path.join(corruptMetaDir, 'meta.json'), '{not-json')
 fs.writeFileSync(path.join(paperDir, '.secret'), 'hidden')
 fs.writeFileSync(path.join(libraryRoot, 'index.json'), JSON.stringify([
-  { title: 'Fixture', slug: 'sample-paper', authors: [], abstract: '', tags: [], url: 'javascript:alert(1)', githubLinks: ['https://github.com/example/repo', 'file:///tmp/secret'], codeLinks: ['vbscript:bad'] },
+  { title: 'Fixture', slug: 'sample-paper', storageKey: paperKey, paperId, paperIdAliases: [paperId], sourceRevisionId, generationId, authors: [], abstract: '', tags: [], url: 'javascript:alert(1)', githubLinks: ['https://github.com/example/repo', 'file:///tmp/secret'], codeLinks: ['vbscript:bad'] },
   { title: 'Unknown', slug: 'unknown-paper', authors: [], abstract: '', tags: [] },
   { title: 'Mismatch', slug: 'mismatch-paper', authors: [], abstract: '', tags: [] },
   { title: 'Corrupt Ledger', slug: 'corrupt-ledger-paper', authors: [], abstract: '', tags: [] },

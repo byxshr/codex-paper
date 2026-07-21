@@ -150,8 +150,10 @@ function renderChatNotes(entries: ChatNoteEntry[]) {
   ].join('\n')
 }
 
-export function appendChatNote(paperDir: string, question: string, answer: string, selectedFile: string) {
-  const chatNotesPath = path.join(paperDir, CHAT_NOTES_FILENAME)
+export function appendChatNote(overlayDir: string, question: string, answer: string, selectedFile: string) {
+  const stats = fs.lstatSync(overlayDir)
+  if (stats.isSymbolicLink() || !stats.isDirectory()) throw boundaryError(403, 'Chat notes directory is unsafe')
+  const chatNotesPath = path.join(overlayDir, CHAT_NOTES_FILENAME)
   let chatNotesExists = false
   try {
     const stats = fs.lstatSync(chatNotesPath)

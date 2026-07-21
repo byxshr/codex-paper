@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-paper.local/schemas/paper-current-1.0.schema.json",
+  "title": "Codex Paper Current Record 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "paperKey", "paperId", "sourceRevisionId", "generationId", "packageRelativePath"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "paperKey": { "pattern": "^p-[a-f0-9]{64}$" },
+    "paperId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "sourceRevisionId": { "pattern": "^sha256:[a-f0-9]{64}$" },
+    "generationId": { "pattern": "^gen:sha256:[a-f0-9]{64}$" },
+    "packageRelativePath": { "pattern": "^sources/sha256-[a-f0-9]{64}/generations/gen-sha256-[a-f0-9]{64}/package$" }
+  }
+}

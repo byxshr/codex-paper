@@ -6,7 +6,9 @@ import { fileURLToPath } from 'url';
 import { validateReasoningPackage } from './validate-reasoning.js';
 import { REQUIRED_REFLECTION_HEADINGS } from '../profiles/profile-rules.js';
 import { classifyInvalidPackageArtifacts, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
+import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
 import {
+  canWriteValidationReport,
   createValidationReport,
   makeFinding,
   writeValidationReportAtomic
@@ -130,13 +132,9 @@ function parseArgs(argv) {
 }
 
 function resolvePaperDir(input) {
-  const expanded = input.replace(/^~(?=$|\/)/, os.homedir());
-  const direct = path.resolve(expanded);
-  if (fs.existsSync(direct)) {
-    return fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
-  }
-
-  return path.join(os.homedir(), 'codex-papers', 'papers', input);
+  return resolveExplicitPackage(input.replace(/^~(?=$|\/)/, os.homedir()), {
+    libraryRoot: process.env.PAPERS_DIR
+  }).packageDir;
 }
 
 function readText(filePath) {
@@ -978,8 +976,9 @@ export function validateStudyPackage(args) {
       ...findings.warnings.map((message) => structuredStudyFinding(message, 'warning'))
     ]
   });
-  writeValidationReportAtomic(paperDir, report);
-  return { paperDir, findings, report, reportWritten: true };
+  const reportWritten = canWriteValidationReport(paperDir);
+  if (reportWritten) writeValidationReportAtomic(paperDir, report);
+  return { paperDir, findings, report, reportWritten };
 }
 
 function printReport(result) {

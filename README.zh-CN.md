@@ -202,47 +202,26 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 
 ## 论文存储结构
 
-论文按 `~/codex-papers/papers/{paper-slug}/` 组织：
+新学习包使用 Paper Library Layout 1.0。路由 slug 只是 index alias；所有 CLI 与 Viewer 请求都解析权威 `current.json`，不再自行拼接 `papers/{slug}`：
 
 ```
 ~/codex-papers/
-├── papers/
-│   └── {paper-slug}/
-│       ├── README.md                     # 快速导航和概览
-│       ├── visual-assets.md              # 图表导航、来源和推荐阅读位置
-│       ├── summary.md                    # 详细摘要
-│       ├── insights.md                   # 核心洞察力（最重要！）
-│       ├── method.md                     # 方法结构、流程、伪代码和复现风险
-│       ├── mental-model.md              # 先验知识、研究地图和论文归类
-│       ├── reflection.md                # 可扩展方向、脆弱假设和未来问题
-│       ├── qa.md                         # 分层学习问答
-│       ├── chat-notes.md                 # Web UI 追问产生的问答笔记
-│       ├── index.html                    # 交互式 HTML 探索器
-│       ├── paper.pdf                     # 原始 PDF 文件副本
-│       ├── evidence-ledger.json          # 内部 paper-only 证据账本
-│       ├── reasoning-analysis.json       # 内部研究推理分析契约
-│       ├── images/                       # 筛选后的论文图表、表格和必要页面预览
-│       │   ├── fig1.png
-│       │   └── fig2.png
-│       ├── code/                         # 代码演示
-│       │   └── core-concept-demo.py      # 至少一个可独立运行的核心概念示例
-│
-│       # 以下 JSON 是内部证据文件，Web UI 默认隐藏
-│       ├── paper-data.json               # 标准化解析事实源
-│       ├── facts.json                    # 带证据的 claims / results / limitations
-│       ├── analysis.json                 # 结构化分析草稿
-│       ├── meta.json                     # 论文元数据（标题、作者等）
-│
-│       # 用于高质量追问回答的隐藏本地上下文
-│       └── .codex-paper/
-│           ├── answering-pack.md         # $paper-chat 使用的证据导航包
-│           ├── external-evidence.json    # canonical/literature 模式下的可选外部证据
-│           ├── reasoning-review.md       # 固定自审清单
-│           ├── paper-identity.json       # 论文/来源/生成身份权威记录
-│           └── validation-report.json    # 最新验证报告
-│
-├── index.json                           # 全局搜索索引
-└── .trash/                              # 持久化、可恢复的论文条目
+├── .codex-paper/store-v1/papers/{paperKey}/
+│   ├── paper.json                       # paper identity alias 与 reconciliation 审计
+│   ├── current.json                     # 当前 source/generation 的唯一权威指针
+│   ├── overlay/                         # 位于 generation 外的可变状态
+│   │   ├── state.json                   # tags、进度和注释
+│   │   ├── chat-notes.md                # 追问笔记
+│   │   └── files/                       # 用户文件（Viewer 中映射到 user/）
+│   └── sources/{sourceRevision}/generations/{generation}/package/
+│       ├── README.md、summary.md、insights.md、method.md 等
+│       ├── paper.pdf、images/、code/、index.html
+│       ├── paper-data.json、evidence-ledger.json、facts.json、analysis.json
+│       ├── reasoning-analysis.json、meta.json
+│       └── .codex-paper/                 # identity、answering、review、validation 记录
+├── papers/{legacy-slug}/                 # 既有 flat 2.0/2.1 包；显式迁移前只读
+├── index.json                            # 搜索/兼容投影，不是 identity 权威
+└── .trash/{trashId}/{tombstone,payload}  # 可恢复生命周期 envelope
 ```
 
 ### 验证和迁移
@@ -253,6 +232,7 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 bash scripts/codex-paper.sh install
 bash scripts/codex-paper.sh test
 bash scripts/codex-paper.sh identity-test
+bash scripts/codex-paper.sh layout-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
@@ -262,8 +242,8 @@ bash scripts/codex-paper.sh build
 验证一个已完成的学习包：
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug}
-node plugins/codex-paper/skills/study/scripts/validate-study-package.js ~/codex-papers/papers/{paper-slug}
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js {paper-route-slug}
+node plugins/codex-paper/skills/study/scripts/validate-study-package.js {paper-route-slug}
 ```
 
 reasoning 命令生成 draft 阶段的 `allow_authoring` 门禁；最终标准门禁允许 `pass_with_warnings` 发布，只有在明确要求 warning 也阻断时才添加 `--strict`。两个命令都原位更新唯一的 `.codex-paper/validation-report.json`。学习包校验只做静态检查，绝不执行生成代码。可选执行使用单独准备的 Docker sandbox，并且每次都要求绑定当前代码哈希的新授权：
@@ -273,10 +253,10 @@ reasoning 命令生成 draft 阶段的 `allow_authoring` 门禁；最终标准�
 bash scripts/codex-paper.sh sandbox-setup
 
 # 查看文件、哈希、命令、权限边界和资源限制
-bash scripts/codex-paper.sh sandbox-plan ~/codex-papers/papers/{paper-slug}
+bash scripts/codex-paper.sh sandbox-plan {paper-route-slug}
 
 # 仅在用户明确同意该计划后执行
-bash scripts/codex-paper.sh sandbox-run ~/codex-papers/papers/{paper-slug} --approval-token <one-time-token>
+bash scripts/codex-paper.sh sandbox-run {paper-route-slug} --approval-token <one-time-token>
 ```
 
 该令牌绑定精确计划并阻止重放，但不认证人类身份。Agent 流程必须在展示计划后暂停，等待用户新的明确同意后才能执行。
@@ -298,10 +278,10 @@ bash scripts/codex-paper.sh migrate /path/to/package --external-path
 填写草稿推理分析前，可以先做一次迁移结果 sanity check：
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js ~/codex-papers/papers/{paper-slug} --allow-draft
+node plugins/codex-paper/skills/study/scripts/validate-reasoning.js {paper-route-slug} --allow-draft
 ```
 
-详细包契约见[证据账本](docs/evidence-ledger.md)、[研究推理分析](docs/reasoning-analysis.md)、[学习包契约](docs/package-v2.md)和[迁移指南](docs/migration-v1-to-v2.md)文档。
+详细契约见 [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md)、[证据账本](docs/evidence-ledger.md)、[研究推理分析](docs/reasoning-analysis.md)、[学习包契约](docs/package-v2.md)和[迁移指南](docs/migration-v1-to-v2.md)。
 
 ---
 

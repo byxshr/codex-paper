@@ -9,6 +9,7 @@ import {
   classifyPackageCompatibility,
   resolveEvidenceRefs
 } from '../../../src/shared/package-compatibility.mjs';
+import { resolveLibraryPaper } from '../../../src/shared/paper-library.mjs';
 import { isFrontMatterNoise } from './extract-facts.js';
 import {
   IDENTITY_RELATIVE_PATH,
@@ -270,6 +271,9 @@ function ensureSafeReportDirectory(paperDir) {
 }
 
 export function writeValidationReportAtomic(paperDir, report) {
+  if (!canWriteValidationReport(paperDir)) {
+    throw new Error('LEGACY_LAYOUT_READ_ONLY: validation reports cannot be written to a flat-layout package; migrate explicitly first.');
+  }
   const { codexDir, target } = ensureSafeReportDirectory(paperDir);
   const temporary = path.join(codexDir, `.validation-report.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`);
   let descriptor;
@@ -291,6 +295,15 @@ export function writeValidationReportAtomic(paperDir, report) {
     try { fs.unlinkSync(temporary); } catch {}
   }
   return target;
+}
+
+export function canWriteValidationReport(paperDir) {
+  const libraryRoot = path.resolve(process.env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers'));
+  const legacyRoot = path.join(libraryRoot, 'papers');
+  const canonicalLegacyRoot = fs.existsSync(legacyRoot) ? fs.realpathSync(legacyRoot) : legacyRoot;
+  const canonicalPaperDir = fs.existsSync(paperDir) ? fs.realpathSync(paperDir) : path.resolve(paperDir);
+  const relativeToLegacy = path.relative(canonicalLegacyRoot, canonicalPaperDir);
+  return !(relativeToLegacy && !path.isAbsolute(relativeToLegacy) && relativeToLegacy !== '..' && !relativeToLegacy.startsWith(`..${path.sep}`));
 }
 
 function readJsonArtifact(paperDir, name, findings, invalidArtifacts) {
@@ -500,18 +513,22 @@ function paperIdentityFindings(paperDir, meta, paperData) {
     }));
   }
   const libraryRoot = path.resolve(process.env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers'));
-  if (path.resolve(paperDir) === path.join(libraryRoot, 'papers', identity.slug)) {
-    try {
+  try {
+    const descriptor = resolveLibraryPaper(identity.slug, { libraryRoot });
+    if (descriptor.mode === 'managed_v1' && path.resolve(paperDir) === descriptor.packageDir) {
       const rawIndex = JSON.parse(fs.readFileSync(path.join(libraryRoot, 'index.json'), 'utf8'));
       const entries = Array.isArray(rawIndex) ? rawIndex : rawIndex.papers;
-      const matches = Array.isArray(entries) ? entries.filter((entry) => entry?.slug === identity.slug) : [];
-      if (matches.length !== 1) throw new Error('identity entry count mismatch');
-      assertIdentityProjection(matches[0], identity, 'index.json');
-    } catch {
+      const matches = Array.isArray(entries) ? entries.filter((entry) => entry?.storageKey === descriptor.paperKey) : [];
+      if (matches.length !== 1
+        || matches[0].sourceRevisionId !== identity.sourceRevisionId
+        || matches[0].generationId !== identity.generationId) throw new Error('identity entry mismatch');
+    }
+  } catch (error) {
+    if (error?.code !== 'PAPER_NOT_FOUND') {
       findings.push(makeFinding({
         severity: 'error', code: 'IDENTITY_PROJECTION_MISMATCH', category: 'identity',
         artifact: 'index.json', path: identity.slug,
-        message: 'The library index does not contain exactly one matching Paper Identity projection.'
+        message: 'The managed library index does not match the authoritative current generation.'
       }));
     }
   }

@@ -11,10 +11,10 @@ Detect the user's language from the request and write every user-facing material
 
 ## Core Contract
 
-The final deliverable is a complete study package under:
+The final deliverable is a complete study package in the managed paper library. Treat the `paperDir` returned by `prepare-paper.js` as the only physical package path; never construct a path from the title slug:
 
 ```text
-~/codex-papers/papers/{paper-slug}/
+{prepare-output.paperDir}/
 ```
 
 Required user-visible files:
@@ -93,17 +93,17 @@ OUTPUT_LANG="zh"   # use en for an English request
 node ./scripts/prepare-paper.js "<user-input>" --workflow study --language "$OUTPUT_LANG" --context paper-only --profile auto
 ```
 
-Preparation is identity-aware. A byte-identical source with the same workflow/language/context/profile and generation contract is reused without writing. Until the C1b multi-generation layout is available, a changed source or generation fingerprint that collides with an existing flat-layout package fails closed instead of overwriting it.
+Preparation is identity-aware. A byte-identical source with the same workflow/language/context/profile and generation contract is reused without writing. A changed fingerprint creates a new generation-addressed package; a changed source creates a new source revision. Paper-level mutable state remains in the overlay. Until P0-C2 introduces a sealed publication workspace, the later authoring steps continue writing inside that generation package, so do not describe it as immutable before the final gate. Use `--resume` only to require exact reuse, `--new-revision` only to require a different source under an existing paper identity, and `--reconcile-identity <route-slug>` only after the user explicitly approves alias reconciliation. `--replace` is intentionally rejected before P0-C2.
 
-The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes `~/codex-papers/index.json`, and writes:
+The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes the compatibility index, and returns the authoritative generation path as `paperDir`. It writes:
 
 ```text
-~/codex-papers/papers/{paper-slug}/paper-data.json
-~/codex-papers/papers/{paper-slug}/evidence-ledger.json
-~/codex-papers/papers/{paper-slug}/facts.json
-~/codex-papers/papers/{paper-slug}/analysis.json
-~/codex-papers/papers/{paper-slug}/meta.json
-~/codex-papers/papers/{paper-slug}/.codex-paper/paper-identity.json
+{prepare-output.paperDir}/paper-data.json
+{prepare-output.paperDir}/evidence-ledger.json
+{prepare-output.paperDir}/facts.json
+{prepare-output.paperDir}/analysis.json
+{prepare-output.paperDir}/meta.json
+{prepare-output.paperDir}/.codex-paper/paper-identity.json
 ```
 
 Treat these JSON files as evidence preparation only. They are not final study material.
@@ -137,7 +137,7 @@ If parsing quality is limited, say so in `README.md` in natural language. Do not
 Create the reasoning draft:
 
 ```bash
-node ./scripts/scaffold-reasoning-analysis.js "~/codex-papers/papers/{paper-slug}" --context paper-only --profile auto
+node ./scripts/scaffold-reasoning-analysis.js "{prepare-output.paperDir}" --context paper-only --profile auto
 ```
 
 Then read the matching profile before filling any high-level analysis:
@@ -184,7 +184,7 @@ Rules:
 Run:
 
 ```bash
-node ./scripts/validate-reasoning.js "~/codex-papers/papers/{paper-slug}"
+node ./scripts/validate-reasoning.js "{prepare-output.paperDir}"
 ```
 
 The reasoning gate writes a draft-phase Validation Report and must return `allow_authoring` before visible authoring begins. Fix every error before writing user-facing materials. Review warnings and either fix them or explicitly reflect the limitation in the visible package. Complete `.codex-paper/reasoning-review.md` before authoring final Markdown and HTML. `--strict` is an optional warning-blocking policy; it does not change the intrinsic report status or findings.
@@ -199,11 +199,11 @@ Infer exactly two semantic tags from the paper:
 * avoid generic tags such as `paper`, `research`, `ai`, `ml`
 * prefer one domain/problem tag and one method/core-idea tag
 
-Persist the same tags in:
+Persist tags through the Viewer tags API (or the shared overlay writer). Tags belong to the paper-level mutable overlay and its index projection; never rewrite generation `meta.json` to save them:
 
 ```text
-~/codex-papers/papers/{paper-slug}/meta.json
-~/codex-papers/index.json
+{paper-record}/overlay/state.json
+~/codex-papers/index.json  # compatibility projection
 ```
 
 ## Step 6: Write The Complete Study Package
@@ -368,7 +368,7 @@ Answer grounded in the paper.
 Create at least one runnable code demo in:
 
 ```text
-~/codex-papers/papers/{paper-slug}/code/
+{prepare-output.paperDir}/code/
 ```
 
 Rules:
@@ -394,7 +394,7 @@ code/retrieval_uncertainty_explorer.js
 Create:
 
 ```text
-~/codex-papers/papers/{paper-slug}/index.html
+{prepare-output.paperDir}/index.html
 ```
 
 Requirements:
@@ -420,10 +420,10 @@ Choose an interaction that fits the paper: architecture explorer, training-stage
 Try to extract figures:
 
 ```bash
-mkdir -p ~/codex-papers/papers/{paper-slug}/images
+mkdir -p "{prepare-output.paperDir}/images"
 python3 ./scripts/extract-images.py \
-  ~/codex-papers/papers/{paper-slug}/paper.pdf \
-  ~/codex-papers/papers/{paper-slug}/images
+  "{prepare-output.paperDir}/paper.pdf" \
+  "{prepare-output.paperDir}/images"
 ```
 
 If useful figures are found, rename the most important ones descriptively, for example:
@@ -452,7 +452,7 @@ Do not invent paper figures. Do not use Codex image generation or bitmap image g
 Create a hidden local-only answering pack:
 
 ```text
-~/codex-papers/papers/{paper-slug}/.codex-paper/answering-pack.md
+{prepare-output.paperDir}/.codex-paper/answering-pack.md
 ```
 
 This file is not a user-facing study material and should not appear in the Web UI file tree. It is a question-answering navigation layer for `$paper-chat`, so keep it concise, structured, and evidence-oriented. Do not copy raw JSON, machine field names, evidence IDs, or extraction labels.

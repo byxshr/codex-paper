@@ -33,6 +33,11 @@ const IDENTITY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-identity
 const IDENTITY_ENGINE = 'plugins/codex-paper/skills/study/scripts/paper-identity.js'
 const GENERATION_CONTRACT = 'plugins/codex-paper/skills/study/generation-contract-1.0.json'
 const PREPARE_SCRIPT = 'plugins/codex-paper/skills/study/scripts/prepare-paper.js'
+const LIBRARY_RESOLVER = 'plugins/codex-paper/src/shared/paper-library.mjs'
+const CURRENT_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-current-1.0.schema.json'
+const PAPER_RECORD_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-record-1.0.schema.json'
+const OVERLAY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-overlay-1.0.schema.json'
+const LAYOUT_TEST = 'scripts/tests/library-layout.test.mjs'
 const STUDY_SKILL = 'plugins/codex-paper/skills/study/SKILL.md'
 const SUMMARY_SKILL = 'plugins/codex-paper/skills/summary/SKILL.md'
 const MANDATORY_SENTINELS = [
@@ -90,6 +95,11 @@ const SENTINELS = [
   IDENTITY_ENGINE,
   GENERATION_CONTRACT,
   PREPARE_SCRIPT,
+  LIBRARY_RESOLVER,
+  CURRENT_SCHEMA,
+  PAPER_RECORD_SCHEMA,
+  OVERLAY_SCHEMA,
+  LAYOUT_TEST,
   SUMMARY_SKILL,
   'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
@@ -408,6 +418,7 @@ export function checkRepository({
     if (!rootScript.includes('identity-test') || !rootScript.includes('paper-identity.test.mjs') || !rootScript.includes('prepare-paper-identity.test.mjs')) {
       errors.push(`${ROOT_SCRIPT} must expose identity-test`)
     }
+    if (!rootScript.includes('layout-test') || !rootScript.includes('library-layout.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose layout-test`)
   }
   if (existsSync(join(root, CI_WORKFLOW))) {
     const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
@@ -422,6 +433,31 @@ export function checkRepository({
     if (identityIndex < 0 || identityIndex > validationIndex || identityIndex > mandatoryIndex) {
       errors.push(`${CI_WORKFLOW} must run identity-test before validation-test and benchmark-mandatory`)
     }
+    const layoutIndex = workflow.indexOf('layout-test')
+    if (layoutIndex < 0 || layoutIndex > validationIndex || layoutIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run layout-test before validation-test and benchmark-mandatory`)
+    }
+  }
+
+  if (existsSync(join(root, LIBRARY_RESOLVER))) {
+    const resolver = readFileSync(join(root, LIBRARY_RESOLVER), 'utf8')
+    for (const required of ['managed_v1', 'legacy_flat', 'current.json', 'overlay', 'paperLockKey', 'generationLockKey']) {
+      if (!resolver.includes(required)) errors.push(`${LIBRARY_RESOLVER} must implement ${required}`)
+    }
+  }
+  for (const consumer of [
+    PREPARE_SCRIPT,
+    'plugins/codex-paper/skills/study/scripts/build-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/render-from-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/scaffold-reasoning-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/validate-reasoning.js',
+    'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
+    'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
+    'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs',
+  ]) {
+    if (!existsSync(join(root, consumer))) continue
+    const source = readFileSync(join(root, consumer), 'utf8')
+    if (!source.includes('paper-library.mjs')) errors.push(`${consumer} must use the shared paper library resolver`)
   }
 
   if (existsSync(join(root, GENERATION_CONTRACT))) {
@@ -484,7 +520,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, PREPARE_SCRIPT))) {
     const source = readFileSync(join(root, PREPARE_SCRIPT), 'utf8')
-    for (const required of ['resolvePreparationAction', 'GENERATION_CONFLICT', 'LEGACY_IDENTITY_COLLISION', 'COPYFILE_EXCL', 'IDENTITY_RELATIVE_PATH']) {
+    for (const required of ['resolvePreparationAction', 'PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'RESUME_GENERATION_NOT_FOUND', 'COPYFILE_EXCL', 'IDENTITY_RELATIVE_PATH']) {
       if (!source.includes(required)) errors.push(`${PREPARE_SCRIPT} must preserve fail-closed identity boundary ${required}`)
     }
     if (/--force\b|force\s*:\s*true|copyFileSync\([^\n]*COPYFILE_FICLONE_FORCE/.test(source)) {
