@@ -61,7 +61,7 @@ C1b 只建立布局、解析、overlay 隔离和单进程写入语义。generati
 - Viewer、validation、render/scaffold、sandbox、migration、trash/restore、Ask/tags 和根脚本已迁移到共享 resolver；legacy flat 包读取兼容但所有写操作 fail closed。
 - Library Layout 7/7、Paper Identity/prepare 17/17、repository/security 124/124、study/unit 76/76、Validation 21/21、PDF security 12/12、mandatory 2/2、external parser 5/5、reasoning/package 各 12/12、production build、HTTP security、smoke 与 Browser QA 全部通过。
 - 官方 plugin validator 通过；canonical marketplace 重装 active path 为 `plugins/codex-paper/`，版本为 `2.0.0+codex.20260721114227`。
-- 第二轮独立 Code Review 已逐项确认 B1/H1 修复并无条件 Approve；当前状态为 `Review 完成 / 未推送`。M2 保持开启，阶段提交和远端 CI 通过后进入 P0-C2a。
+- 第二轮独立 Code Review 已逐项确认 B1/H1 修复并无条件 Approve；阶段 commit `523a855` 已推送，[CI run 29828847490](https://github.com/byxshr/codex-paper/actions/runs/29828847490) 全绿，当前状态为 `Review 完成 / 已推送`。M2 保持开启，下一开发子阶段为 P0-C2a。
 
 ## 回滚
 
