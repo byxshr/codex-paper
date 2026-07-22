@@ -132,3 +132,4 @@ The two recorded defense-in-depth observations were evaluated but not adopted. `
 - Attention sample was prepared only into a temporary workspace; its source directory content+mtime fingerprint remained unchanged, and no formal store/current/index was created.
 - Active plugin path: `plugins/codex-paper/`; installed version: `2.0.0+codex.20260722090218`.
 - Local Docker conformance was not rerun in this stage; generated-code sandbox unit/policy regressions passed, while full Docker conformance remains an unchanged CI gate.
+- Stage commit `1824422` was pushed and [GitHub Actions run 29908756686](https://github.com/byxshr/codex-paper/actions/runs/29908756686) passed the complete remote CI pipeline, including Docker conformance.
