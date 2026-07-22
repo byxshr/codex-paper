@@ -392,6 +392,17 @@ P1-3a 是 M2 期间允许启动的有界并行通道，不阻塞 P0-C1 identity/
 - CI 持续禁止 tracked `node_modules` 和其他生成物回归；
 - 修正 README 中“hook 自动安装依赖”的过时描述，或实现真实、可控的依赖检查。
 
+P0-C2a 最终 Review 还确认了以下非阻塞工程化债务。它们不改变已经通过验收的 workspace、锁、CAS、原子发布和恢复契约，但必须作为 P1-3b 的正式工作范围保留：
+
+- 收敛重复的 descriptor builder、descriptor-mode policy 和相关 allowlist；合并可共享的 `.init-*` 遍历、realpath、错误文案与辅助函数，同时保持各信任边界的显式差异；
+- 为 `workspace-list` 建立大规模 synthetic workspace fixture、延迟/I/O 基线和退化阈值，减少重复 descriptor 解析、`lstat`、`realpath`、JSON 读取与哈希；不得引入“自动选择最新 workspace”或放宽 fail-closed registry 语义；
+- 基于 profiling 梳理 shared storage、CLI 和仓库工具中的同步 I/O，只对确认的热点做批处理或异步化；必须保留 lock ordering、CAS、no-follow、文件/目录 fsync 和原子 rename，锁内为防 TOCTOU/CAS 漂移而进行的 `workspace.json` 重读与哈希不得无证据删除；
+- 统一安全的目录创建与遍历辅助逻辑；同 workspace 写入继续由 workspace lock 串行，预期外竞争和不安全目录状态必须 fail closed；
+- 改进 Repository Guard 的 authority-aware 静态分析和消费者覆盖。在新机制能识别实际写权限及绕过路径前，保留显式消费者清单和完整 mutation tests，不以单纯 import 扫描替代现有门禁；
+- 对上述重构增加行为等价、安全回归和性能门禁，至少覆盖 repository/security、storage transaction、workspace lifecycle、Guard mutation 和规模化 workspace-list benchmark。
+
+职责边界保持不变：lock doctor、损坏锁恢复以及 migration/backup/restore 属于 P1-2；已完成的 publication/manifest/current/index 协议不在本项返工；Web/API streaming、Ask 队列和请求可观测性属于 P1-5。Code Review 已驳回的删除确认 TTL、冗余字符串转换和已由 workspace lock 排除的目录竞争不登记为缺陷。
+
 当前 tracked `node_modules` 已为 0，不再把删除它们列为待开发工作。
 
 本项的 runtime/OS matrix 是实际 CI gate；P2-5 的兼容矩阵是基于这些结果对外发布和承诺的支持范围。
@@ -681,7 +692,7 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 | `P0-C2` | P0 | 事务发布、共享锁、原子索引与最小 manifest | `开发中` | `已推送` | `codex/audit-optimizations-2026-07-10`；C2a commit `1824422`；`docs/P0-C2A_IMPLEMENTATION_PLAN.md`；`docs/P0-C2A_CODE_REVIEW_SUMMARY.md`；八轮 `docs/P0-C2A_CODE_REVIEW_FINDINGS*.md`；`docs/generation-workspace-storage-transaction-1.0.md`；`docs/adr/0004-generation-workspace-and-storage-transactions.md`；Generation Workspace schema；shared storage transaction/writer；workspace CLI；prepare/validator/render/sandbox/Viewer/mandatory/CI/Guard 集成 | `C2a=Review 完成/已推送`、`C2b=未开始`：前七轮 authority/correctness findings 已全部关闭；第八轮独立 Review 复核两项末轮修复并给出 clean 结论，无新增 correctness finding。纯文本 fallback 已统一字符串化，中间目录竞态在 workspace 锁下不可达且异常时 fail closed，因此不制造冗余代码变更；损坏或无 owner 锁继续 fail closed；显式 Guard inventory 保留全量 mutation coverage，自动静态分析、descriptor/list 性能与广泛同步 I/O 重构留给 P1-3，doctor/recovery、publish/manifest/current/index 留给 C2b/P1；repository/security 158/158、study 83/83、Guard 64/64、storage 16/16、Validation 24/24 及完整回归通过；[CI run 29908756686](https://github.com/byxshr/codex-paper/actions/runs/29908756686) 远端全绿；active 版本 `2.0.0+codex.20260722090218` | 进入 `P0-C2b`，实施 generation manifest、gate 驱动发布、current/index commit、sealing 与 recovery/reindex | 2026-07-22 |
 | `P1-1` | P1 | 深层版面解析与 benchmark 校准 | `未开始` | `未推送` | — | — | 复用 B1 fixture/golden 和 B3 finding 语义扩展双栏、header/footer、脚注和表格 grid benchmark | 2026-07-21 |
 | `P1-2` | P1 | 兼容实现、迁移与恢复工具 | `未开始` | `未推送` | — | — | 等 P1-4 稳定 manifest schema 后实施 identity/layout/manifest migration、doctor/reindex、backup/restore 和 rollback | 2026-07-21 |
-| `P1-3` | P1 | 依赖治理、测试与仓库工程化 | `未开始` | `未推送` | — | — | P1-3a 可有界并行 M2 并在 C2 manifest 冻结前反馈 runtime/fingerprint；P1-3b 留在 M3 | 2026-07-21 |
+| `P1-3` | P1 | 依赖治理、测试与仓库工程化 | `未开始` | `未推送` | — | — | P1-3a 处理依赖/runtime 基线；P1-3b 在 M3 实施仓库工程化，并正式承接 C2a Review 遗留的 descriptor/allowlist 收敛、workspace-list 性能、同步 I/O 与 authority-aware Guard 工程 | 2026-07-22 |
 | `P1-4` | P1 | 统一完整 provenance | `未开始` | `未推送` | — | — | M3 先冻结唯一 manifest schema，再启动 P1-2 的布局/manifest migration | 2026-07-21 |
 | `P1-5` | P1 | Web/API 流式 I/O、队列与可观测性 | `未开始` | `未推送` | — | — | 聚焦 stream/range、剩余结构预算、request ID、全局有界 Ask 队列和取消/可观测性 | 2026-07-13 |
 | `P1-6` | P1 | 分享策略、导出 allowlist 与版权元数据 | `未开始` | `未推送` | — | — | 定义 local-full/shareable/audit allowlist 和确认流程 | 2026-07-10 |
@@ -782,3 +793,4 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 | 2026-07-22 | `P0-C2` / `C2a` | 状态保持 `开发中 / 未推送`；`C2a=开发完成` | 复核第七轮独立 Review：采纳唯一 confirmed correctness finding，Ask 富 Markdown 渲染失败时改为转义纯文本并继续返回已生成/已保存答案与警告；同时采纳低可达性锁序建议，将一小时以上、无 workspace record 的 `.init-*` 有界清理移入 registry 锁并新增 Guard mutation。`--force` reasoning 覆盖按既定显式破坏性契约驳回，其余诊断分治和 Guard inventory 属已知取舍。repository/security 158/158、study 83/83、Guard 64/64、storage 16/16、identity 17/17、layout 7/7、Validation 24/24、PDF security 12/12、mandatory 2/2、external 5/5、reasoning/package 各 12/12、production build、HTTP security、smoke 和官方 validator 通过；canonical marketplace 重装版本 `2.0.0+codex.20260722090218`，等待第七轮修订后的独立复核 | Codex |
 | 2026-07-22 | `P0-C2` / `C2a` | `C2a=开发完成` → `C2a=Review 完成`；交付状态保持 `未推送` | 第八轮独立 Review 完整复核第七轮 Ask 安全纯文本投递和 init cleanup 锁内化修复，findings 为 clean，确认无新增 correctness 缺陷。两项非阻断稳健性观察经代码核对后不改：纯文本 fallback 已经由 `String(value ?? '')` 归一化；中间目录创建由 workspace 锁串行，意外 `EEXIST` 也只会 fail closed。未修改 active plugin，故 cachebuster 与已验证安装版本保持 `2.0.0+codex.20260722090218`；C2a Review gate 关闭，等待阶段提交、推送和远端 CI | Codex |
 | 2026-07-22 | `P0-C2` / `C2a` | `Review 完成 / 未推送` → `Review 完成 / 已推送` | 阶段 commit `1824422` 已推送；[CI run 29908756686](https://github.com/byxshr/codex-paper/actions/runs/29908756686) 全绿，覆盖 Repository Contract、unit/security、PDF ingestion、Docker sandbox conformance、Identity、Layout、Storage、Validation、全部 benchmarks、production build、Viewer security 与 smoke。C2a 远端验收关闭，P0-C2 父项与 M2 保持开启，下一开发子阶段为 P0-C2b | Codex |
+| 2026-07-22 | `P1-3b` | 状态保持 `未开始 / 未推送`，正式补充范围 | 根据 P0-C2a 最终 Code Review 总结，将 descriptor/mode/allowlist 收敛、workspace-list 规模化性能基线、经 profiling 证实的同步 I/O 优化、安全目录辅助逻辑和 authority-aware Guard 工程正式纳入 P1-3b；明确保留 lock/CAS/no-follow/fsync/原子 rename 防御，并排除 P1-2、P1-5 责任及已驳回候选 | Codex |
