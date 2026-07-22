@@ -39,6 +39,12 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/schemas/paper-current-1.0.schema.json',
   'plugins/codex-paper/skills/study/schemas/paper-record-1.0.schema.json',
   'plugins/codex-paper/skills/study/schemas/paper-overlay-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/generation-workspace-1.0.schema.json',
+  'plugins/codex-paper/src/shared/generation-workspace.mjs',
+  'plugins/codex-paper/src/shared/storage-transaction.mjs',
+  'plugins/codex-paper/src/shared/workspace-writer.mjs',
+  'plugins/codex-paper/skills/study/scripts/workspace-cli.js',
+  'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs',
   'plugins/codex-paper/src/web/server/utils/packageCompatibility.mjs',
   'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs',
   'plugins/codex-paper/src/web/server/api/papers/[slug]/validation.get.ts',
@@ -53,6 +59,7 @@ const SENTINELS = [
   '.github/workflows/ci.yml',
   'scripts/codex-paper.sh',
   'scripts/tests/library-layout.test.mjs',
+  'scripts/tests/storage-transaction.test.mjs',
   'benchmarks/run-mandatory-benchmark.mjs',
   'benchmarks/mandatory/run-fixture.mjs',
   'benchmarks/mandatory/contract.mjs',
@@ -426,6 +433,95 @@ test('CI cannot remove or reorder the Paper Identity 1.0 gate', () => withFixtur
   assert.match(errorsFor(fixture), /must run identity-test before validation-test and benchmark-mandatory/)
 }))
 
+test('CI cannot remove or reorder the storage transaction gate', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  const workflow = readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh storage-test', 'true')
+  writeFileSync(workflowPath, workflow)
+  assert.match(errorsFor(fixture), /must run storage-test after layout-test/)
+}))
+
+test('workspace schema, shared writer, and workspace-only prepare boundaries are required', () => withFixture((fixture) => {
+  const schema = 'plugins/codex-paper/skills/study/schemas/generation-workspace-1.0.schema.json'
+  rmSync(join(fixture.root, schema))
+  const preparePath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
+  writeFileSync(preparePath, `${readFileSync(preparePath, 'utf8')}\nfunction writeIndexPreserveShape() { fs.writeFileSync('index.json', '[]') }\n`)
+  const authoringPath = join(fixture.root, 'benchmarks/mandatory/authoring-boundary.mjs')
+  writeFileSync(authoringPath, readFileSync(authoringPath, 'utf8').replace('writeWorkspaceAuthoring', 'writeFileSync'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /generation-workspace-1\.0\.schema\.json/)
+  assert.match(errors, /must not publish current, record, or index/)
+  assert.match(errors, /must author through the shared workspace writer/)
+}))
+
+test('workspace-only prepare guard rejects imported and blessed-writer publication bypasses', () => withFixture((fixture) => {
+  const preparePath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
+  writeFileSync(preparePath, `${readFileSync(preparePath, 'utf8')}\nimport { writeFileSync } from 'node:fs'\nconst forbiddenPublication = () => atomicWriteJson({ root: libraryRoot, relativePath: 'index.json', value: {} })\n`)
+  assert.match(errorsFor(fixture), /must not publish current, record, or index/)
+}))
+
+test('workspace-only prepare guard rejects asynchronous direct writes', () => withFixture((fixture) => {
+  const preparePath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
+  writeFileSync(preparePath, `${readFileSync(preparePath, 'utf8')}\nconst forbiddenAsyncWrite = () => fs.promises.writeFile(targetPath, 'unsafe')\n`)
+  assert.match(errorsFor(fixture), /must not publish current, record, or index/)
+}))
+
+test('workspace initialization cleanup cannot move outside the registry lock', () => withFixture((fixture) => {
+  const engine = join(fixture.root, 'plugins/codex-paper/src/shared/generation-workspace.mjs')
+  writeFileSync(engine, readFileSync(engine, 'utf8').replace(
+    "  return withStorageLocks(keys, async (lockHandle) => {\n    cleanupInitDirectories(layout)",
+    "  cleanupInitDirectories(layout)\n  return withStorageLocks(keys, async (lockHandle) => {"
+  ))
+  assert.match(errorsFor(fixture), /must clean initialization residues while holding the registry lock/)
+}))
+
+test('prepare and migration must retain the shared paper library resolver', () => withFixture((fixture) => {
+  for (const relativePath of [
+    'plugins/codex-paper/skills/study/scripts/prepare-paper.js',
+    'plugins/codex-paper/skills/study/scripts/migrate-package.js',
+  ]) {
+    const target = join(fixture.root, relativePath)
+    writeFileSync(target, readFileSync(target, 'utf8').replaceAll('paper-library.mjs', 'paper-library-bypass.mjs'))
+  }
+  const errors = errorsFor(fixture)
+  assert.match(errors, /prepare-paper\.js must use the shared paper library resolver/)
+  assert.match(errors, /migrate-package\.js must use the shared paper library resolver/)
+}))
+
+test('every guarded resolver and workspace-writer consumer has mutation coverage', () => withFixture((fixture) => {
+  const resolverConsumers = [
+    'plugins/codex-paper/skills/study/scripts/validate-reasoning.js',
+    'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
+    'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
+    'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs',
+  ]
+  const writerConsumers = [
+    'plugins/codex-paper/skills/study/scripts/build-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/render-from-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/scaffold-reasoning-analysis.js',
+  ]
+  for (const relativePath of resolverConsumers) {
+    const target = join(fixture.root, relativePath)
+    writeFileSync(target, readFileSync(target, 'utf8').replaceAll('paper-library.mjs', 'paper-library-bypass.mjs'))
+  }
+  for (const relativePath of writerConsumers) {
+    const target = join(fixture.root, relativePath)
+    writeFileSync(target, readFileSync(target, 'utf8').replaceAll('workspace-writer.mjs', 'workspace-writer-bypass.mjs'))
+  }
+  const errors = errorsFor(fixture)
+  for (const relativePath of resolverConsumers) assert.ok(errors.includes(`${relativePath} must use the shared paper library resolver`))
+  for (const relativePath of writerConsumers) assert.ok(errors.includes(`${relativePath} must use the shared workspace writer`))
+}))
+
+test('legacy migration must share the paper lock and preserve existing reviews', () => withFixture((fixture) => {
+  const migrationPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/migrate-package.js')
+  writeFileSync(migrationPath, readFileSync(migrationPath, 'utf8')
+    .replace('withStorageLocks([lockKey]', 'withStorageLocks([`legacy:migration:${lockKey}`]')
+    .replace('!fs.existsSync(reviewPath) || options.force', 'options.force'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must hold the shared legacy paper lock/)
+  assert.match(errors, /must preserve an existing reasoning review/)
+}))
+
 test('Paper Identity 1.0 schema and generation contract are required', () => withFixture((fixture) => {
   const schema = 'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json'
   rmSync(join(fixture.root, schema))
@@ -465,6 +561,39 @@ test('Validation engine cannot introduce a parallel report path', () => withFixt
     "const REPORT_PATH = '.codex-paper/validation-report-v2.json'"
   ))
   assert.match(errorsFor(fixture), /must write only \.codex-paper\/validation-report\.json/)
+}))
+
+test('validators must persist workspace state and report in one atomic transaction', () => withFixture((fixture) => {
+  const validator = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/validate-reasoning.js')
+  writeFileSync(validator, readFileSync(validator, 'utf8')
+    .replaceAll('persistWorkspaceValidationReport', 'writeValidationReportAtomic'))
+  assert.match(errorsFor(fixture), /must persist validation state and report through one atomic workspace transaction/)
+}))
+
+test('shared CAS, CLI limits, and both validation failure compensations cannot drift', () => withFixture((fixture) => {
+  const librarySecurity = join(fixture.root, 'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs')
+  const prepare = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
+  const workspaceCli = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/workspace-cli.js')
+  const validation = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/validation-report.js')
+  writeFileSync(librarySecurity, readFileSync(librarySecurity, 'utf8').replaceAll('fileWritePrecondition', 'localCasPrecondition'))
+  for (const cli of [prepare, workspaceCli]) writeFileSync(cli, readFileSync(cli, 'utf8')
+    .replaceAll('storageCliExitCode', 'localCliExitCode')
+    .replaceAll('MAX_LOCK_TIMEOUT_MS', '30_000'))
+  writeFileSync(validation, readFileSync(validation, 'utf8')
+    .replaceAll('createWorkspaceDiagnostic', 'localWorkspaceDiagnostic')
+    .replaceAll('validation_report_write_failed', 'validation_started')
+    .replaceAll('validation_state_update_failed', 'validation_started')
+    .replaceAll('preservationError', 'discardedSecondaryError'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /librarySecurity\.mjs must use the shared CAS precondition helper/)
+  assert.match(errors, /prepare-paper\.js must use the shared storage CLI exit mapping/)
+  assert.match(errors, /workspace-cli\.js must use the shared storage CLI exit mapping/)
+  assert.match(errors, /prepare-paper\.js must use the shared storage lock timeout maximum/)
+  assert.match(errors, /workspace-cli\.js must use the shared storage lock timeout maximum/)
+  assert.match(errors, /Validation Report 1\.0 contract createWorkspaceDiagnostic/)
+  assert.match(errors, /Validation Report 1\.0 contract validation_report_write_failed/)
+  assert.match(errors, /Validation Report 1\.0 contract validation_state_update_failed/)
+  assert.match(errors, /Validation Report 1\.0 contract preservationError/)
 }))
 
 test('README layout cannot present the legacy tree as active', () => withFixture((fixture) => {

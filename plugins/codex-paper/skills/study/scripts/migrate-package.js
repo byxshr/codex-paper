@@ -6,14 +6,16 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { parsePdfDetailed } from './parse-pdf.js';
 import { buildEvidenceLedger } from './build-evidence-ledger.js';
-import { scaffoldReasoningAnalysis } from './scaffold-reasoning-analysis.js';
+import { buildReasoningSkeleton, REVIEW_TEMPLATE } from './scaffold-reasoning-analysis.js';
 import { classifyInvalidPackageArtifacts, classifyPackageCompatibility, isLegacyMigrationSourceVersion } from '../../../src/shared/package-compatibility.mjs';
-import { resolveLibraryPaper } from '../../../src/shared/paper-library.mjs';
+import { getLibraryLayout, resolveExplicitPackage, resolveLibraryPaper } from '../../../src/shared/paper-library.mjs';
+import { atomicWriteFile, fileWritePrecondition, withStorageLocks } from '../../../src/shared/storage-transaction.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LIBRARY_ROOT = path.resolve(process.env.PAPERS_DIR || path.join(process.env.HOME || '', 'codex-papers'));
-const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
+const LIBRARY_LAYOUT = getLibraryLayout(process.env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers'));
+const LIBRARY_ROOT = LIBRARY_LAYOUT.libraryRoot;
+const PAPERS_ROOT = LIBRARY_LAYOUT.legacyPapersRoot;
 const PACKAGE_VERSION = '2.0.0';
 const CONTEXT_MODES = new Set(['paper-only', 'canonical', 'literature']);
 const PAPER_PROFILES = new Set(['auto', 'empirical', 'theoretical', 'architecture', 'system', 'benchmark', 'survey', 'post-training', 'position', 'other']);
@@ -62,30 +64,47 @@ function parseArgs(argv) {
   return args;
 }
 
-function isInsidePaperRoot(candidatePath) {
-  const relative = path.relative(PAPERS_ROOT, candidatePath);
-  return relative === '' || (relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+function externalMigrationLockKey(canonicalPaperDir) {
+  return `legacy:migration:${crypto.createHash('sha256').update(canonicalPaperDir).digest('hex')}`;
 }
 
-function resolvePaperDir(input, options = {}) {
+function migrationTargetForDescriptor(descriptor, options = {}) {
+  if (descriptor.mode === 'generation_workspace_v1' || descriptor.mode === 'managed_v1' || descriptor.mode === 'managed_generation_v1') {
+    throw new Error('MANAGED_LAYOUT_MIGRATION_REFUSED: Managed packages and generation workspaces must not be rewritten by the legacy migration tool.');
+  }
+  if (descriptor.mode === 'legacy_flat') {
+    const canonicalPaperDir = fs.realpathSync(descriptor.packageDir);
+    const canonicalPapersRoot = fs.realpathSync(PAPERS_ROOT);
+    const legacyRelative = path.relative(canonicalPapersRoot, canonicalPaperDir);
+    if (!legacyRelative || legacyRelative.startsWith('..') || path.isAbsolute(legacyRelative) || legacyRelative.includes(path.sep)) {
+      throw new Error('LEGACY_PACKAGE_ROOT_REQUIRED: Migration input must identify one direct legacy paper package root.');
+    }
+    return { paperDir: canonicalPaperDir, lockKey: descriptor.paperLockKey || `legacy:${legacyRelative}` };
+  }
+  if (descriptor.mode !== 'explicit_path') {
+    throw new Error('MANAGED_LAYOUT_MIGRATION_REFUSED: The migration target is not a writable legacy package.');
+  }
+  if (!options.externalPath) {
+    throw new Error(`Refusing to migrate a directory outside ${PAPERS_ROOT}. Pass --external-path for an explicit out-of-library migration.`);
+  }
+  const canonicalPaperDir = fs.realpathSync(descriptor.packageDir);
+  return { paperDir: canonicalPaperDir, lockKey: externalMigrationLockKey(canonicalPaperDir) };
+}
+
+function resolveMigrationTarget(input, options = {}) {
   const expanded = String(input || '').replace(/^~(?=$|\/)/, os.homedir());
   const direct = path.resolve(expanded);
   if (fs.existsSync(direct)) {
-    const paperDir = fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
-    const managedRelative = path.relative(path.join(LIBRARY_ROOT, '.codex-paper/store-v1'), paperDir);
-    if (managedRelative === '' || (managedRelative && !managedRelative.startsWith('..') && !path.isAbsolute(managedRelative))) {
-      throw new Error('MANAGED_LAYOUT_MIGRATION_REFUSED: Managed packages must not be rewritten by the legacy migration tool.');
-    }
-    if (!options.externalPath && !isInsidePaperRoot(paperDir)) {
-      throw new Error(`Refusing to migrate a directory outside ${PAPERS_ROOT}. Pass --external-path for an explicit out-of-library migration.`);
-    }
-    return paperDir;
+    const directStats = fs.lstatSync(direct);
+    if (directStats.isSymbolicLink()) throw new Error('LIBRARY_PATH_UNSAFE: Migration input must not be a symbolic link.');
+    const paperDir = directStats.isDirectory() ? direct : path.dirname(direct);
+    const paperStats = fs.lstatSync(paperDir);
+    if (paperStats.isSymbolicLink() || !paperStats.isDirectory()) throw new Error('LIBRARY_PATH_UNSAFE: Migration package root must be a real directory.');
+    const descriptor = resolveExplicitPackage(paperDir, { libraryRoot: LIBRARY_ROOT });
+    return migrationTargetForDescriptor(descriptor, options);
   }
   const descriptor = resolveLibraryPaper(input, { libraryRoot: LIBRARY_ROOT });
-  if (descriptor.mode !== 'legacy_flat') {
-    throw new Error('MANAGED_LAYOUT_MIGRATION_REFUSED: Managed packages must not be rewritten by the legacy migration tool.');
-  }
-  return descriptor.packageDir;
+  return migrationTargetForDescriptor(descriptor, options);
 }
 
 function readJson(filePath, fallback = {}, label = path.basename(filePath)) {
@@ -100,10 +119,17 @@ function readJson(filePath, fallback = {}, label = path.basename(filePath)) {
   }
 }
 
-function writeJsonAtomic(filePath, value) {
-  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`);
-  fs.renameSync(tmpPath, filePath);
+function writeMigrationFile(paperDir, filePath, data, transaction) {
+  const relativePath = path.relative(paperDir, filePath).split(path.sep).join('/');
+  const precondition = fileWritePrecondition(filePath, 64 * 1024 * 1024);
+  return atomicWriteFile({
+    root: paperDir, relativePath, data, lockHandle: transaction.lockHandle, requiredLock: transaction.lockKey,
+    maxBytes: 64 * 1024 * 1024, ...precondition
+  });
+}
+
+function writeJsonAtomic(paperDir, filePath, value, transaction) {
+  return writeMigrationFile(paperDir, filePath, `${JSON.stringify(value, null, 2)}\n`, transaction);
 }
 
 function sha256File(filePath) {
@@ -237,8 +263,7 @@ async function buildLedgerForPackage(paperDir, meta, paperData) {
   });
 }
 
-export async function migratePackage(input, options = {}) {
-  const paperDir = resolvePaperDir(input, options);
+async function migratePackageLocked(paperDir, options, transaction) {
   if (!fs.existsSync(paperDir) || !fs.statSync(paperDir).isDirectory()) {
     throw new Error(`Paper directory not found: ${paperDir}`);
   }
@@ -274,35 +299,35 @@ export async function migratePackage(input, options = {}) {
   const paperDataForMigration = normalizedPaperDataFromLegacy(paperDir, meta, paperData);
 
   if (!fs.existsSync(paperDataPath)) {
-    writeJsonAtomic(paperDataPath, paperDataForMigration);
+    writeJsonAtomic(paperDir, paperDataPath, paperDataForMigration, transaction);
     wrote.push('paper-data.json');
   }
 
   if (!fs.existsSync(ledgerPath) || options.force) {
     const ledger = await buildLedgerForPackage(paperDir, meta, paperDataForMigration);
-    writeJsonAtomic(ledgerPath, ledger);
+    writeJsonAtomic(paperDir, ledgerPath, ledger, transaction);
     wrote.push('evidence-ledger.json');
   }
 
   if (contextMode !== 'paper-only') {
     const codexDir = path.join(paperDir, '.codex-paper');
-    fs.mkdirSync(codexDir, { recursive: true });
     const externalPath = path.join(codexDir, 'external-evidence.json');
     if (!fs.existsSync(externalPath) || options.force) {
-      writeJsonAtomic(externalPath, buildExternalEvidenceManifest({ paperSlug, contextMode }));
+      writeJsonAtomic(paperDir, externalPath, buildExternalEvidenceManifest({ paperSlug, contextMode }), transaction);
       wrote.push('.codex-paper/external-evidence.json');
     }
   }
 
   if (!fs.existsSync(reasoningPath) || options.force) {
-    scaffoldReasoningAnalysis(paperDir, {
-      force: Boolean(options.force),
-      contextMode,
-      profile,
-      explicitV2Migration: true
-    });
+    const skeleton = buildReasoningSkeleton({ paperDir, contextMode, profile });
+    writeJsonAtomic(paperDir, reasoningPath, skeleton, transaction);
+    const reviewPath = path.join(paperDir, '.codex-paper', 'reasoning-review.md');
+    if (!fs.existsSync(reviewPath) || options.force) {
+      writeMigrationFile(paperDir, reviewPath, REVIEW_TEMPLATE, transaction);
+      wrote.push('.codex-paper/reasoning-review.md');
+    }
     scaffoldedReasoning = true;
-    wrote.push('reasoning-analysis.json', '.codex-paper/reasoning-review.md');
+    wrote.push('reasoning-analysis.json');
   }
 
   const nextMeta = {
@@ -317,7 +342,7 @@ export async function migratePackage(input, options = {}) {
     migrationStatus: scaffoldedReasoning ? 'reasoning-draft' : (meta.migrationStatus || 'reasoning-draft'),
     migratedAt: new Date().toISOString()
   };
-  writeJsonAtomic(metaPath, nextMeta);
+  writeJsonAtomic(paperDir, metaPath, nextMeta, transaction);
   wrote.push('meta.json');
 
   return {
@@ -328,6 +353,14 @@ export async function migratePackage(input, options = {}) {
     wrote,
     next: 'Fill reasoning-analysis.json from evidence-ledger.json, change status to complete, then run validate-reasoning.js. Use --strict only as an explicit warning-blocking policy.'
   };
+}
+
+export async function migratePackage(input, options = {}) {
+  const { paperDir, lockKey } = resolveMigrationTarget(input, options);
+  return withStorageLocks([lockKey], (lockHandle) => migratePackageLocked(paperDir, options, { lockKey, lockHandle }), {
+    libraryRoot: LIBRARY_ROOT,
+    timeoutMs: 10_000,
+  });
 }
 
 async function runCli() {

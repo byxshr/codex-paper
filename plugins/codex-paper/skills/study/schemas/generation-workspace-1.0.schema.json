@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/byxshr/codex-paper/schemas/generation-workspace-1.0.schema.json",
+  "title": "Codex Paper Generation Workspace 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "workspaceId", "state", "paperKey", "paperId", "sourceRevisionId", "generationId", "targetPackageRelativePath", "routeSlug", "createdAt", "updatedAt", "lastSuccessfulStep", "diagnostics", "publishIntent"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "workspaceId": { "pattern": "^ws-[a-f0-9]{12}-[a-f0-9]{12}-[a-f0-9]{32}$" },
+    "state": { "enum": ["authoring", "validating", "validated", "failed", "abandoned"] },
+    "paperKey": { "pattern": "^p-[a-f0-9]{64}$" },
+    "paperId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "sourceRevisionId": { "pattern": "^sha256:[a-f0-9]{64}$" },
+    "generationId": { "pattern": "^gen:sha256:[a-f0-9]{64}$" },
+    "targetPackageRelativePath": { "pattern": "^sources/sha256-[a-f0-9]{64}/generations/gen-sha256-[a-f0-9]{64}/package$" },
+    "routeSlug": { "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "lastSuccessfulStep": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+          "message": { "type": "string", "maxLength": 600 }
+        }
+      }
+    },
+    "publishIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paperRecord", "reconciliation", "tags"],
+      "properties": {
+        "paperRecord": { "type": "object" },
+        "reconciliation": { "type": ["object", "null"] },
+        "tags": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 64 } }
+      }
+    }
+  }
+}

@@ -28,7 +28,29 @@ function prepare(library, extra = [], input = fixturePdf) {
     encoding: 'utf8', env: { ...process.env, PAPERS_DIR: library }, timeout: 30_000
   })
   assert.equal(result.status, 0, result.stderr)
-  return JSON.parse(result.stdout)
+  const output = JSON.parse(result.stdout)
+  if (!output.workspaceId) return output
+  const workspace = JSON.parse(fs.readFileSync(path.join(output.workspaceDir, 'workspace.json'), 'utf8'))
+  const recordDir = path.join(library, '.codex-paper', 'store-v1', 'papers', workspace.paperKey)
+  const packageDir = path.join(recordDir, ...workspace.targetPackageRelativePath.split('/'))
+  fs.mkdirSync(path.dirname(packageDir), { recursive: true })
+  fs.cpSync(output.paperDir, packageDir, { recursive: true })
+  fs.mkdirSync(path.join(recordDir, 'overlay'), { recursive: true })
+  const record = workspace.publishIntent.paperRecord
+  fs.writeFileSync(path.join(recordDir, 'paper.json'), `${JSON.stringify(record, null, 2)}\n`)
+  fs.writeFileSync(path.join(recordDir, 'current.json'), `${JSON.stringify({
+    schemaVersion: '1.0.0', paperKey: workspace.paperKey, paperId: output.identity.paperId,
+    sourceRevisionId: workspace.sourceRevisionId, generationId: workspace.generationId,
+    packageRelativePath: workspace.targetPackageRelativePath,
+  }, null, 2)}\n`)
+  const indexPath = path.join(library, 'index.json')
+  const index = fs.existsSync(indexPath) ? JSON.parse(fs.readFileSync(indexPath, 'utf8')) : []
+  const papers = Array.isArray(index) ? index : index.papers
+  const next = papers.filter((entry) => entry.storageKey !== workspace.paperKey)
+  const meta = JSON.parse(fs.readFileSync(path.join(output.paperDir, 'meta.json'), 'utf8'))
+  next.push({ slug: workspace.routeSlug, title: meta.title, storageKey: workspace.paperKey, paperId: output.identity.paperId, paperIdAliases: record.paperIdAliases, tags: [] })
+  fs.writeFileSync(indexPath, `${JSON.stringify(Array.isArray(index) ? next : { ...index, papers: next }, null, 2)}\n`)
+  return { ...output, paperDir: packageDir }
 }
 
 function fileSnapshot(root) {

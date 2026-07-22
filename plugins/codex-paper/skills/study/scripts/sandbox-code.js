@@ -26,7 +26,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs'
+import { generationDirectoryName, resolveExplicitPackage } from '../../../src/shared/paper-library.mjs'
+import {
+  atomicRemoveFile,
+  atomicWriteJson,
+  ensureStorageDirectory,
+  withStorageLocksSync,
+} from '../../../src/shared/storage-transaction.mjs'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const SCRIPT_DIR = path.dirname(SCRIPT_PATH)
@@ -346,8 +352,17 @@ function sweepExpiredApprovals(root, now = Date.now()) {
 export function buildExecutionPlan(input, { env = process.env, issueApproval = true } = {}) {
   const { paperDir, descriptor } = resolvePaperDir(input, env)
   const scan = scanCodeTree(paperDir)
-  const capability = descriptor.readOnly
-    ? { status: 'nonconformant', reason: 'Legacy flat-layout packages are read-only until explicitly migrated.', policyVersion: POLICY.policyVersion }
+  const reportPolicy = reportPolicyForDescriptor(descriptor)
+  const capability = !reportPolicy
+    ? {
+        status: 'nonconformant',
+        reason: descriptor.mode === 'generation_workspace_v1' && descriptor.workspace?.state === 'abandoned'
+          ? 'Abandoned generation workspaces are read-only and cannot receive execution reports.'
+          : descriptor.mode === 'legacy_flat'
+            ? 'Legacy flat-layout packages are read-only until explicitly migrated.'
+          : 'Execution reports require a generation workspace or managed published generation.',
+        policyVersion: POLICY.policyVersion,
+      }
     : getSandboxCapability({ env })
   const plan = {
     executionPlanVersion: POLICY.executionPlanVersion,
@@ -588,20 +603,96 @@ export async function runArtifactDocker(codeDir, artifact, { env = process.env, 
   return response
 }
 
-function prepareReport(paperDir) {
-  const internal = path.join(paperDir, '.codex-paper')
-  const reports = path.join(internal, 'execution-reports')
-  for (const directory of [internal, reports]) {
-    if (!existsSync(directory)) mkdirSync(directory, { mode: 0o700 })
-    const info = lstatSync(directory)
-    if (info.isSymbolicLink() || !info.isDirectory()) throw new SandboxError('Execution report path is unsafe.')
+function reportPolicyForDescriptor(descriptor) {
+  if (descriptor.mode === 'generation_workspace_v1') {
+    if (descriptor.readOnly || descriptor.workspace?.state === 'abandoned') return null
+    return {
+      root: descriptor.packageDir,
+      rootParent: null,
+      ensureRoot: false,
+      relativeRoot: '.codex-paper/execution-reports',
+      requiredLock: descriptor.workspaceLockKey,
+      lockKeys: [descriptor.paperLockKey, descriptor.generationLockKey, descriptor.workspaceLockKey],
+    }
   }
-  const executionId = randomBytes(16).toString('hex')
+  if (descriptor.mode === 'managed_v1' || descriptor.mode === 'managed_generation_v1') {
+    return {
+      root: descriptor.overlayDir,
+      rootParent: descriptor.paperRoot,
+      ensureRoot: true,
+      relativeRoot: `execution-reports/${generationDirectoryName(descriptor.generationId)}`,
+      requiredLock: descriptor.generationLockKey,
+      lockKeys: [descriptor.paperLockKey, descriptor.generationLockKey],
+    }
+  }
+  return null
+}
+
+function reportTarget(input, env, executionId = randomBytes(16).toString('hex')) {
+  const { paperDir, descriptor } = resolvePaperDir(input, env)
+  const policy = reportPolicyForDescriptor(descriptor)
+  if (!policy) throw new SandboxError('Execution reports require a generation workspace or managed published generation.')
   const timestamp = new Date().toISOString().replaceAll(':', '').replaceAll('.', '-')
-  const finalPath = path.join(reports, `${timestamp}-${executionId}.json`)
-  const temporaryPath = path.join(reports, `.${executionId}.pending`)
-  const fd = openSync(temporaryPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW || 0), 0o600)
-  return { executionId, finalPath, temporaryPath, fd }
+  return {
+    input,
+    executionId,
+    paperDir,
+    descriptorMode: descriptor.mode,
+    generationId: descriptor.generationId,
+    workspaceId: descriptor.workspaceId || null,
+    ...policy,
+    pendingPath: `${policy.relativeRoot}/.${executionId}.pending`,
+    finalPath: `${policy.relativeRoot}/${timestamp}-${executionId}.json`,
+  }
+}
+
+function withReportLock(reservation, env, operation) {
+  return withStorageLocksSync(reservation.lockKeys, operation, {
+    libraryRoot: env.PAPERS_DIR,
+    timeoutMs: 10_000,
+  })
+}
+
+function prepareReport(input, env) {
+  const reservation = reportTarget(input, env)
+  const pending = {
+    schemaVersion: '1.0.0',
+    executionId: reservation.executionId,
+    state: 'reserved',
+    createdAt: new Date().toISOString(),
+  }
+  let write
+  try {
+    write = withReportLock(reservation, env, (lockHandle) => {
+      if (reservation.ensureRoot) ensureStorageDirectory({
+        parent: reservation.rootParent,
+        directory: reservation.root,
+        lockHandle,
+        requiredLock: reservation.requiredLock,
+      })
+      return atomicWriteJson({
+        root: reservation.root,
+        relativePath: reservation.pendingPath,
+        value: pending,
+        lockHandle,
+        requiredLock: reservation.requiredLock,
+        expectAbsent: true,
+        maxBytes: 4096,
+      })
+    })
+  } catch (error) {
+    if (String(error?.code || '').startsWith('STORAGE_LOCK_')) {
+      const wrapped = new SandboxError(error.message, EXIT.UNAVAILABLE, error.code)
+      wrapped.statusCode = error.statusCode
+      wrapped.details = error.details
+      throw wrapped
+    }
+    if (String(error?.code || '').startsWith('STORAGE_PATH_') || error?.code === 'STORAGE_DIRECTORY_MISSING') {
+      throw new SandboxError(`Execution report path is unsafe: ${error?.message || 'storage boundary rejected the target'}`)
+    }
+    throw error
+  }
+  return { ...reservation, pendingSha256: write.sha256 }
 }
 
 function snapshotApprovedCode(plan) {
@@ -639,14 +730,31 @@ function snapshotApprovedCode(plan) {
   }
 }
 
-function commitReport(reservation, report) {
-  try {
-    writeSync(reservation.fd, `${JSON.stringify(report, null, 2)}\n`)
-    fsyncSync(reservation.fd)
-  } finally {
-    closeSync(reservation.fd)
+function commitReport(reservation, report, env) {
+  const current = reportTarget(reservation.input, env, reservation.executionId)
+  if (current.paperDir !== reservation.paperDir || current.descriptorMode !== reservation.descriptorMode
+    || current.generationId !== reservation.generationId || current.workspaceId !== reservation.workspaceId) {
+    throw new SandboxError('Execution report target changed after approval.')
   }
-  renameSync(reservation.temporaryPath, reservation.finalPath)
+  return withReportLock(reservation, env, (lockHandle) => {
+    const result = atomicWriteJson({
+      root: reservation.root,
+      relativePath: reservation.finalPath,
+      value: report,
+      lockHandle,
+      requiredLock: reservation.requiredLock,
+      expectAbsent: true,
+      maxBytes: 4 * 1024 * 1024,
+    })
+    atomicRemoveFile({
+      root: reservation.root,
+      relativePath: reservation.pendingPath,
+      lockHandle,
+      requiredLock: reservation.requiredLock,
+      expectedSha256: reservation.pendingSha256,
+    })
+    return result
+  })
 }
 
 export async function executeApprovedPlan(input, token, { env = process.env } = {}) {
@@ -662,7 +770,7 @@ export async function executeApprovedPlan(input, token, { env = process.env } = 
   const results = []
   let failed = false
   try {
-    reservation = prepareReport(plan.paperDir)
+    reservation = prepareReport(input, env)
     for (const artifact of plan.artifacts) {
       if (failed) {
         results.push({ relativePath: artifact.relativePath, sha256: artifact.sha256, argv: artifact.argv, outcome: 'skipped' })
@@ -683,12 +791,19 @@ export async function executeApprovedPlan(input, token, { env = process.env } = 
       artifacts: results,
       outcome: failed ? 'fail' : 'pass',
     }
-    commitReport(reservation, report)
-    return { report, reportPath: reservation.finalPath, exitCode: failed ? EXIT.EXECUTION : EXIT.OK }
+    commitReport(reservation, report, env)
+    return { report, reportPath: path.join(reservation.root, ...reservation.finalPath.split('/')), exitCode: failed ? EXIT.EXECUTION : EXIT.OK }
   } catch (error) {
     if (reservation) {
-      try { closeSync(reservation.fd) } catch {}
-      rmSync(reservation.temporaryPath, { force: true })
+      try {
+        withReportLock(reservation, env, (lockHandle) => atomicRemoveFile({
+          root: reservation.root,
+          relativePath: reservation.pendingPath,
+          lockHandle,
+          requiredLock: reservation.requiredLock,
+          expectedSha256: reservation.pendingSha256,
+        }))
+      } catch {}
     }
     throw error
   } finally {

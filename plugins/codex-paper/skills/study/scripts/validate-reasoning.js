@@ -13,7 +13,7 @@ import {
   canWriteValidationReport,
   createValidationReport,
   inspectPackageArtifacts,
-  writeValidationReportAtomic
+  persistWorkspaceValidationReport
 } from './validation-report.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -510,6 +510,13 @@ function loadExternalEvidence(paperDir) {
   return read.ok ? read.value : null;
 }
 
+function persistWorkspaceReport(paperDir, report, enabled = true) {
+  const reportWritten = enabled && canWriteValidationReport(paperDir);
+  if (!reportWritten) return false;
+  persistWorkspaceValidationReport(paperDir, report);
+  return true;
+}
+
 export function validateReasoningPackage(input, options = {}) {
   const paperDir = resolvePaperDir(input);
   const errors = [];
@@ -586,8 +593,7 @@ export function validateReasoningPackage(input, options = {}) {
           ...inspection.findings
         ]
       });
-      const reportWritten = options.writeReport !== false && inspection.canWriteReport && canWriteValidationReport(paperDir);
-      if (reportWritten) writeValidationReportAtomic(paperDir, report);
+      const reportWritten = inspection.canWriteReport && persistWorkspaceReport(paperDir, report, options.writeReport !== false);
       return { paperDir, report, reportWritten, compatibility: inspection.compatibility };
     }
 
@@ -643,8 +649,7 @@ export function validateReasoningPackage(input, options = {}) {
       ...inspection.findings
     ]
   });
-  const reportWritten = options.writeReport !== false && inspection.canWriteReport && canWriteValidationReport(paperDir);
-  if (reportWritten) writeValidationReportAtomic(paperDir, report);
+  const reportWritten = inspection.canWriteReport && persistWorkspaceReport(paperDir, report, options.writeReport !== false);
   return { paperDir, report, reportWritten, compatibility: inspection.compatibility };
 }
 

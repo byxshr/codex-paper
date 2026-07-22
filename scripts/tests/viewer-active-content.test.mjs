@@ -7,6 +7,7 @@ import {
   createNotebookView,
   createStaticHtmlPreview,
   renderSafeMarkdown,
+  renderSafeMarkdownForDelivery,
   sanitizeExternalUrl,
   sanitizePaperIndexEntry,
 } from '../../plugins/codex-paper/src/web/server/utils/activeContentSecurity.mjs'
@@ -75,6 +76,18 @@ $$\begin{pmatrix}a&b\\c&d\end{pmatrix} \quad \widehat{abc} \quad \overrightarrow
   }
   assert.doesNotMatch(html, /<span[^>]+onclick=/i)
   assert.match(html, /&lt;span class="tag cancel-pad col-align-c"/)
+})
+
+test('Ask delivery falls back to escaped plain text when Markdown rendering fails', () => {
+  const answer = '<script>globalThis.pwned = true</script>\n**still delivered**'
+  const rendered = renderSafeMarkdownForDelivery(answer, { slug: 'sample-paper' }, () => {
+    throw new Error('synthetic renderer failure')
+  })
+  assert.equal(rendered.degraded, true)
+  assert.match(rendered.html, /^<pre class="raw-html"><code>/)
+  assert.match(rendered.html, /&lt;script&gt;globalThis\.pwned = true&lt;\/script&gt;/)
+  assert.match(rendered.html, /\*\*still delivered\*\*/)
+  assert.doesNotMatch(rendered.html, /<script>/)
 })
 
 test('static HTML preview has one restrictive CSP and removes active content, CSS, navigation, and resources', () => {

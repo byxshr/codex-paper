@@ -10,6 +10,8 @@ import {
   resolveEvidenceRefs
 } from '../../../src/shared/package-compatibility.mjs';
 import { resolveLibraryPaper } from '../../../src/shared/paper-library.mjs';
+import { requireWritableWorkspace, replaceWorkspaceJson, withWorkspaceMutationSync } from '../../../src/shared/workspace-writer.mjs';
+import { createWorkspaceDiagnostic, updateWorkspaceRecordLocked } from '../../../src/shared/generation-workspace.mjs';
 import { isFrontMatterNoise } from './extract-facts.js';
 import {
   IDENTITY_RELATIVE_PATH,
@@ -252,58 +254,55 @@ export function createValidationReport({
   return report;
 }
 
-function ensureSafeReportDirectory(paperDir) {
-  const paperStats = fs.lstatSync(paperDir);
-  if (!paperStats.isDirectory() || paperStats.isSymbolicLink()) throw new Error('Paper directory must be a non-symlink directory.');
-  const codexDir = path.join(paperDir, '.codex-paper');
-  try {
-    fs.mkdirSync(codexDir, { mode: 0o700 });
-  } catch (error) {
-    if (error?.code !== 'EEXIST') throw error;
-  }
-  const codexStats = fs.lstatSync(codexDir);
-  if (!codexStats.isDirectory() || codexStats.isSymbolicLink()) throw new Error('.codex-paper must be a non-symlink directory.');
-  const target = path.join(codexDir, 'validation-report.json');
-  if (fs.existsSync(target) && fs.lstatSync(target).isSymbolicLink()) {
-    throw new Error('validation-report.json symlinks are not allowed.');
-  }
-  return { codexDir, target };
+export function writeValidationReportAtomic(paperDir, report) {
+  return withWorkspaceMutationSync(paperDir, ({ descriptor, lockHandle }) => {
+    replaceWorkspaceJson({ descriptor, lockHandle, relativePath: '.codex-paper/validation-report.json', value: report, policy: 'validation_report' });
+    return path.join(descriptor.packageDir, '.codex-paper/validation-report.json');
+  }, { preserveValidationState: true });
 }
 
-export function writeValidationReportAtomic(paperDir, report) {
-  if (!canWriteValidationReport(paperDir)) {
-    throw new Error('LEGACY_LAYOUT_READ_ONLY: validation reports cannot be written to a flat-layout package; migrate explicitly first.');
-  }
-  const { codexDir, target } = ensureSafeReportDirectory(paperDir);
-  const temporary = path.join(codexDir, `.validation-report.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`);
-  let descriptor;
-  try {
-    descriptor = fs.openSync(
-      temporary,
-      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0),
-      0o600
-    );
-    fs.writeFileSync(descriptor, `${JSON.stringify(report, null, 2)}\n`);
-    fs.fsyncSync(descriptor);
-    fs.closeSync(descriptor);
-    descriptor = undefined;
-    fs.renameSync(temporary, target);
-    const directoryDescriptor = fs.openSync(codexDir, fs.constants.O_RDONLY);
-    try { fs.fsyncSync(directoryDescriptor); } finally { fs.closeSync(directoryDescriptor); }
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor);
-    try { fs.unlinkSync(temporary); } catch {}
-  }
-  return target;
+export function persistWorkspaceValidationReport(paperDir, report) {
+  return withWorkspaceMutationSync(paperDir, ({ descriptor, lockHandle }) => {
+    let current = updateWorkspaceRecordLocked(descriptor, { state: 'validating', lastSuccessfulStep: 'validation_started' }, lockHandle);
+    const compensate = (error, lastSuccessfulStep) => {
+      const diagnostic = createWorkspaceDiagnostic(error, {
+        fallbackCode: lastSuccessfulStep.toUpperCase(),
+        redactions: [current.libraryRoot, current.workspaceDir, current.packageDir]
+      });
+      try {
+        current = updateWorkspaceRecordLocked(current, {
+          state: 'failed',
+          lastSuccessfulStep,
+          diagnostics: [diagnostic]
+        }, lockHandle);
+      } catch (preservationError) {
+        if (error && (typeof error === 'object' || typeof error === 'function')) {
+          try { error.preservationError = preservationError; } catch {}
+        }
+      }
+      throw error;
+    };
+    try {
+      replaceWorkspaceJson({ descriptor: current, lockHandle, relativePath: '.codex-paper/validation-report.json', value: report, policy: 'validation_report' });
+    } catch (error) {
+      compensate(error, 'validation_report_write_failed');
+    }
+    const failed = report.status === 'fail';
+    try {
+      current = updateWorkspaceRecordLocked(current, {
+        state: failed ? 'failed' : (report.phase === 'complete' ? 'validated' : 'authoring'),
+        lastSuccessfulStep: failed ? 'validation_failed' : (report.phase === 'complete' ? 'complete_validation' : 'reasoning_validation'),
+        diagnostics: failed ? report.errors.slice(0, 32).map((finding) => ({ code: finding.code, message: finding.message.slice(0, 600) })) : []
+      }, lockHandle);
+    } catch (error) {
+      compensate(error, 'validation_state_update_failed');
+    }
+    return { reportPath: path.join(current.packageDir, '.codex-paper/validation-report.json'), workspace: current };
+  }, { preserveValidationState: true });
 }
 
 export function canWriteValidationReport(paperDir) {
-  const libraryRoot = path.resolve(process.env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers'));
-  const legacyRoot = path.join(libraryRoot, 'papers');
-  const canonicalLegacyRoot = fs.existsSync(legacyRoot) ? fs.realpathSync(legacyRoot) : legacyRoot;
-  const canonicalPaperDir = fs.existsSync(paperDir) ? fs.realpathSync(paperDir) : path.resolve(paperDir);
-  const relativeToLegacy = path.relative(canonicalLegacyRoot, canonicalPaperDir);
-  return !(relativeToLegacy && !path.isAbsolute(relativeToLegacy) && relativeToLegacy !== '..' && !relativeToLegacy.startsWith(`..${path.sep}`));
+  try { return requireWritableWorkspace(paperDir).mode === 'generation_workspace_v1'; } catch { return false; }
 }
 
 function readJsonArtifact(paperDir, name, findings, invalidArtifacts) {

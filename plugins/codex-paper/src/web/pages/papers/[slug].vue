@@ -130,6 +130,7 @@
             </div>
 
             <p v-if="askError" class="ask-error">{{ askError }}</p>
+            <p v-if="askSaveWarning" class="ask-warning">{{ askSaveWarning }}</p>
             <div v-if="askSavedTo" class="ask-saved">
               <span>已保存到 {{ askSavedTo }}</span>
               <button type="button" @click="openChatNotes">查看历史</button>
@@ -419,6 +420,7 @@ const askQuestion = ref('')
 const askAnswer = ref('')
 const askAnswerHtml = ref('')
 const askError = ref('')
+const askSaveWarning = ref('')
 const askLoading = ref(false)
 const fallbackPrompt = ref('')
 const copyStatus = ref('')
@@ -565,6 +567,7 @@ const submitAsk = async () => {
 
   askLoading.value = true
   askError.value = ''
+  askSaveWarning.value = ''
   askAnswer.value = ''
   askAnswerHtml.value = ''
   fallbackPrompt.value = ''
@@ -573,7 +576,7 @@ const submitAsk = async () => {
   askEntryId.value = ''
 
   try {
-    const response = await $fetch<{ answer: string; answerHtml: string; savedTo: string; entryId: string }>(`/api/papers/${slug}/ask`, {
+    const response = await $fetch<{ answer: string; answerHtml: string; saved: boolean; saveWarning: string | null; savedTo: string | null; entryId: string | null }>(`/api/papers/${slug}/ask`, {
       method: 'POST',
       headers: useSecuritySession().mutationHeaders(),
       body: {
@@ -584,10 +587,11 @@ const submitAsk = async () => {
 
     askAnswer.value = response.answer
     askAnswerHtml.value = response.answerHtml
-    askSavedTo.value = response.savedTo
-    askEntryId.value = response.entryId
-    await loadFileTree()
-    if (selectedFile.value === response.savedTo) {
+    askSaveWarning.value = response.saveWarning || ''
+    askSavedTo.value = response.savedTo || ''
+    askEntryId.value = response.entryId || ''
+    if (response.saved) await loadFileTree()
+    if (response.savedTo && response.entryId && selectedFile.value === response.savedTo) {
       await loadFile(response.savedTo)
       scrollToChatEntry(response.entryId)
     }
@@ -1130,6 +1134,11 @@ useHead({
   margin: 0.875rem 0 0;
   color: #b91c1c;
   font-size: 0.9rem;
+}
+
+.ask-warning {
+  color: #9a6700;
+  margin: 0.75rem 0 0;
 }
 
 .ask-saved {

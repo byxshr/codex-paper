@@ -89,9 +89,17 @@ function resultClaimChecks(result, required) {
 
 function requiredChecks({ result, gold, license, pdfPath, validators, targetErrors }) {
   const required = gold.requiredAssertions;
+  const workspaceRecord = JSON.parse(fs.readFileSync(path.join(result.workspaceDir, 'workspace.json'), 'utf8'));
+  const formalPackage = path.join(process.env.PAPERS_DIR, '.codex-paper', 'store-v1', 'papers', workspaceRecord.paperKey, ...workspaceRecord.targetPackageRelativePath.split('/'));
   const evidenceText = (result.ledger.evidence || []).map((item) => item.text).join('\n');
   const checks = {
     sourceHash: sha256File(pdfPath) === license.sha256,
+    generationWorkspace1_0: result.action === 'workspace_created' && workspaceRecord.schemaVersion === '1.0.0'
+      && result.paperDir === path.join(result.workspaceDir, 'package'),
+    unpublishedBeforeC2b: !fs.existsSync(formalPackage)
+      && !fs.existsSync(path.join(process.env.PAPERS_DIR, '.codex-paper', 'store-v1', 'papers', workspaceRecord.paperKey, 'paper.json'))
+      && !fs.existsSync(path.join(process.env.PAPERS_DIR, '.codex-paper', 'store-v1', 'papers', workspaceRecord.paperKey, 'current.json'))
+      && fs.readFileSync(path.join(process.env.PAPERS_DIR, 'index.json'), 'utf8') === '[]\n',
     title: result.paperData.title === required.title,
     paperSlug: result.paperSlug === required.paperSlug,
     pageCount: Number(result.paperData.pageCount) === Number(required.pageCount),
@@ -123,7 +131,7 @@ async function main() {
     const { preparePaper } = await import('../../plugins/codex-paper/skills/study/scripts/prepare-paper.js');
     executed = true;
     const result = await preparePaper(pdfPath, { contextMode: 'paper-only', profile: 'empirical', workflow: 'study', language: 'en' });
-    writeAuthoringBoundary({ paperDir: result.paperDir, fixtureId, gold, ledger: result.ledger });
+    await writeAuthoringBoundary({ paperDir: result.paperDir, fixtureId, gold, ledger: result.ledger });
 
     const reasoningDraft = runValidator('validate-reasoning.js', result.paperDir, ['--json']);
     const studyStrict = runValidator('validate-study-package.js', result.paperDir, ['--lang', 'en', '--json', '--strict']);
@@ -151,7 +159,7 @@ async function main() {
       failedChecks,
       expectedFindingCodes: gold.requiredAssertions.validationReport1_0.expectedFindingCodes,
       observedFindingCodes: (standardReport?.findings || []).map((finding) => finding.code),
-      activeContractIds: ['paperIdentity1_0', 'resultClaims2_1', 'validationReport1_0'],
+      activeContractIds: ['paperIdentity1_0', 'generationWorkspace1_0', 'resultClaims2_1', 'validationReport1_0'],
       reservedTargetIds: [],
       packageVersion: result.meta?.packageVersion,
       factsSchemaVersion: result.facts?.schemaVersion,

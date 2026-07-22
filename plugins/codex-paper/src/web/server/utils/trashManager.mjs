@@ -76,7 +76,7 @@ export function movePaperToTrash(slug, options = {}) {
 
   fs.mkdirSync(trashDir, { mode: 0o700 })
   try {
-    writeJsonAtomic(path.join(trashDir, TOMBSTONE), tombstone)
+    writeJsonAtomic(path.join(trashDir, TOMBSTONE), tombstone, descriptor.paperLockKey)
     fs.renameSync(descriptor.paperRoot, payloadDir)
     writeLibraryIndex(indexState, nextPapers, options)
   } catch (error) {
@@ -157,7 +157,7 @@ export function restoreTrashEntry(trashId, options = {}) {
     writeLibraryIndex(indexState, nextPapers, options)
   } catch (error) {
     try { fs.renameSync(target, payloadDir) } catch {}
-    if (!fs.existsSync(tombstonePath)) writeFileAtomic(tombstonePath, originalTombstone)
+    if (!fs.existsSync(tombstonePath)) writeFileAtomic(tombstonePath, originalTombstone, 0o600, tombstone.paperLockKey || `trash:${trashId}`)
     throw error
   }
   try { fs.unlinkSync(tombstonePath) } catch {}

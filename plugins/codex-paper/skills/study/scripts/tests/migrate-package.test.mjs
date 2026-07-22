@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { migratePackage } from '../migrate-package.js';
+
+const MIGRATE_SCRIPT = path.resolve('plugins/codex-paper/skills/study/scripts/migrate-package.js');
 
 function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
@@ -46,6 +49,26 @@ test('migratePackage creates v2 evidence ledger and draft reasoning without inve
     assert.equal(reasoning.status, 'draft');
     assert.deepEqual(reasoning.centralClaims, []);
     assert.equal(fs.existsSync(path.join(dir, '.codex-paper', 'reasoning-review.md')), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migratePackage preserves an existing reasoning review unless force is explicit', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-migrate-review-test-'));
+  try {
+    writeJson(path.join(dir, 'meta.json'), { slug: 'reviewed-paper', title: 'Reviewed Paper' });
+    writeJson(path.join(dir, 'paper-data.json'), {
+      paperSlug: 'reviewed-paper', title: 'Reviewed Paper', abstract: 'A retained abstract.',
+      sections: { abstract: 'A retained abstract.' }, rawText: 'A retained abstract.'
+    });
+    fs.mkdirSync(path.join(dir, '.codex-paper'));
+    const reviewPath = path.join(dir, '.codex-paper', 'reasoning-review.md');
+    fs.writeFileSync(reviewPath, '# Human review\nKeep this content.\n');
+
+    const result = await migratePackage(dir, { externalPath: true });
+    assert.equal(fs.readFileSync(reviewPath, 'utf8'), '# Human review\nKeep this content.\n');
+    assert.equal(result.wrote.includes('.codex-paper/reasoning-review.md'), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -217,5 +240,74 @@ test('migratePackage reports corrupt metadata before writing any artifact', asyn
     assert.equal(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'), before);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migration rejects nested in-library paths so every legacy package shares one slug lock', () => {
+  const libraryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-migrate-nested-'));
+  try {
+    const packageDir = path.join(libraryRoot, 'papers', 'legacy-paper');
+    const nestedDir = path.join(packageDir, 'notes');
+    fs.mkdirSync(nestedDir, { recursive: true });
+    writeJson(path.join(packageDir, 'meta.json'), { slug: 'legacy-paper', title: 'Legacy Paper' });
+    const result = spawnSync(process.execPath, [MIGRATE_SCRIPT, nestedDir, '--external-path'], {
+      encoding: 'utf8', env: { ...process.env, PAPERS_DIR: libraryRoot }
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /LEGACY_PACKAGE_ROOT_REQUIRED/);
+    assert.equal(fs.existsSync(path.join(nestedDir, 'evidence-ledger.json')), false);
+  } finally {
+    fs.rmSync(libraryRoot, { recursive: true, force: true });
+  }
+});
+
+test('migration refuses active generation workspaces even with --external-path', () => {
+  const libraryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-migrate-workspace-'));
+  try {
+    const workspaceId = 'ws-aaaaaaaaaaaa-bbbbbbbbbbbb-cccccccccccccccccccccccccccccccc';
+    const workspaceDir = path.join(libraryRoot, '.codex-paper', 'workspaces-v1', workspaceId);
+    const packageDir = path.join(workspaceDir, 'package');
+    fs.mkdirSync(packageDir, { recursive: true });
+    const sourceRevisionId = `sha256:${'1'.repeat(64)}`;
+    const generationId = `gen:sha256:${'2'.repeat(64)}`;
+    writeJson(path.join(workspaceDir, 'workspace.json'), {
+      schemaVersion: '1.0.0', workspaceId, state: 'authoring', paperKey: `p-${'3'.repeat(64)}`,
+      paperId: `source:${sourceRevisionId}`, sourceRevisionId, generationId,
+      targetPackageRelativePath: `sources/sha256-${'1'.repeat(64)}/generations/gen-sha256-${'2'.repeat(64)}/package`,
+      routeSlug: 'managed-workspace', createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(),
+      lastSuccessfulStep: 'prepared', diagnostics: [], publishIntent: { paperRecord: {}, reconciliation: null, tags: [] }
+    });
+    writeJson(path.join(packageDir, 'meta.json'), { slug: 'managed-workspace', title: 'Managed Workspace' });
+    const beforeWorkspace = fs.readFileSync(path.join(workspaceDir, 'workspace.json'), 'utf8');
+    const beforeMeta = fs.readFileSync(path.join(packageDir, 'meta.json'), 'utf8');
+    const result = spawnSync(process.execPath, [MIGRATE_SCRIPT, packageDir, '--external-path'], {
+      encoding: 'utf8', env: { ...process.env, PAPERS_DIR: libraryRoot }
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /MANAGED_LAYOUT_MIGRATION_REFUSED/);
+    assert.equal(fs.readFileSync(path.join(workspaceDir, 'workspace.json'), 'utf8'), beforeWorkspace);
+    assert.equal(fs.readFileSync(path.join(packageDir, 'meta.json'), 'utf8'), beforeMeta);
+    assert.deepEqual(fs.readdirSync(packageDir), ['meta.json']);
+  } finally {
+    fs.rmSync(libraryRoot, { recursive: true, force: true });
+  }
+});
+
+test('migration rejects a symlinked in-library package before lock selection', () => {
+  const libraryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-migrate-symlink-'));
+  const external = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-migrate-symlink-target-'));
+  try {
+    fs.mkdirSync(path.join(libraryRoot, 'papers'), { recursive: true });
+    writeJson(path.join(external, 'meta.json'), { slug: 'linked-paper', title: 'Linked Paper' });
+    fs.symlinkSync(external, path.join(libraryRoot, 'papers', 'linked-paper'));
+    const result = spawnSync(process.execPath, [MIGRATE_SCRIPT, path.join(libraryRoot, 'papers', 'linked-paper'), '--external-path'], {
+      encoding: 'utf8', env: { ...process.env, PAPERS_DIR: libraryRoot }
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /LIBRARY_PATH_UNSAFE/);
+    assert.deepEqual(fs.readdirSync(external), ['meta.json']);
+  } finally {
+    fs.rmSync(libraryRoot, { recursive: true, force: true });
+    fs.rmSync(external, { recursive: true, force: true });
   }
 });

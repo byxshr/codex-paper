@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { assertWritablePackage, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
-import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
+import { replaceWorkspaceJson, withWorkspaceMutationSync } from '../../../src/shared/workspace-writer.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -582,20 +582,9 @@ function readJsonFile(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-function resolvePaperDir(input) {
-  if (!input) {
-    throw new Error('Prepared paper path or slug is required');
-  }
-
-  const descriptor = resolveExplicitPackage(input.replace(/^~(?=$|\/)/, process.env.HOME || ''), {
-    libraryRoot: process.env.PAPERS_DIR
-  });
-  if (descriptor.readOnly) throw new Error('LEGACY_LAYOUT_READ_ONLY: migrate the flat-layout package explicitly before writing analysis.');
-  return descriptor.packageDir;
-}
-
 export function buildAnalysisForPaperDir(input) {
-  const paperDir = resolvePaperDir(input);
+  return withWorkspaceMutationSync(input, ({ descriptor, lockHandle }) => {
+  const paperDir = descriptor.packageDir;
   const metaPath = path.join(paperDir, 'meta.json');
   const ledgerPath = path.join(paperDir, 'evidence-ledger.json');
   const paperDataPath = path.join(paperDir, 'paper-data.json');
@@ -619,14 +608,16 @@ export function buildAnalysisForPaperDir(input) {
   assertWritablePackage(compatibility);
   const analysis = buildAnalysisFromArtifacts(paperData, facts);
 
-  fs.writeFileSync(analysisPath, JSON.stringify(analysis, null, 2));
+  const write = replaceWorkspaceJson({ descriptor, lockHandle, relativePath: 'analysis.json', value: analysis, policy: 'analysis' });
 
   return {
     paperDir,
     analysisPath,
     paperSlug: paperData.paperSlug,
-    analysis
+    analysis,
+    analysisSha256: write.sha256
   };
+  });
 }
 
 async function runCli() {
@@ -641,6 +632,7 @@ async function runCli() {
     paperSlug: result.paperSlug,
     paperDir: result.paperDir,
     analysisPath: result.analysisPath,
+    analysisSha256: result.analysisSha256,
     analysisVersion: result.analysis.analysisVersion
   }, null, 2)}\n`);
 }

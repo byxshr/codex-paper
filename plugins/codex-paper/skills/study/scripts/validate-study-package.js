@@ -11,7 +11,7 @@ import {
   canWriteValidationReport,
   createValidationReport,
   makeFinding,
-  writeValidationReportAtomic
+  persistWorkspaceValidationReport
 } from './validation-report.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -977,7 +977,9 @@ export function validateStudyPackage(args) {
     ]
   });
   const reportWritten = canWriteValidationReport(paperDir);
-  if (reportWritten) writeValidationReportAtomic(paperDir, report);
+  if (reportWritten) {
+    persistWorkspaceValidationReport(paperDir, report);
+  }
   return { paperDir, findings, report, reportWritten };
 }
 

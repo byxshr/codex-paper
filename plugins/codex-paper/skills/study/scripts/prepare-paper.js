@@ -1,5 +1,5 @@
-import crypto from 'node:crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
@@ -21,18 +21,27 @@ import {
 import {
   buildPackageRelativePath,
   derivePaperKey,
-  ensureManagedStore,
   getLibraryLayout,
   listManagedRecords,
   readCurrentRecord,
-  readOverlayState,
-  readPaperRecord,
   reconcilePaperRecord,
   requireSafeDirectory,
   sourceDirectoryName,
-  generationDirectoryName,
-  writeJsonAtomicNoFollow
+  generationDirectoryName
 } from '../../../src/shared/paper-library.mjs';
+import {
+  createGenerationWorkspace,
+  isActiveGenerationWorkspace,
+  listGenerationWorkspaces,
+  resolveGenerationWorkspace
+} from '../../../src/shared/generation-workspace.mjs';
+import {
+  MAX_LOCK_TIMEOUT_MS,
+  atomicWriteFile,
+  atomicWriteJson,
+  readFileNoFollowBounded,
+  storageCliExitCode
+} from '../../../src/shared/storage-transaction.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,10 +76,6 @@ export function slugify(value) {
   return normalized.length <= 160 ? normalized : normalized.slice(0, 160).replace(/-+$/g, '');
 }
 
-function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-
 function parsePrepareArgs(argv) {
   const args = {
     input: null,
@@ -81,7 +86,9 @@ function parsePrepareArgs(argv) {
     resume: false,
     newRevision: false,
     replace: false,
-    reconcileIdentity: null
+    reconcileIdentity: null,
+    resumeWorkspace: null,
+    lockTimeoutMs: 10_000
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -106,6 +113,12 @@ function parsePrepareArgs(argv) {
       args.replace = true;
     } else if (arg === '--reconcile-identity') {
       args.reconcileIdentity = argv[index + 1];
+      index += 1;
+    } else if (arg === '--resume-workspace') {
+      args.resumeWorkspace = argv[index + 1];
+      index += 1;
+    } else if (arg === '--lock-timeout-ms') {
+      args.lockTimeoutMs = Number(argv[index + 1]);
       index += 1;
     } else if (arg.startsWith('--')) {
       throw new PaperIdentityError('ARGUMENT_INVALID', `Unknown option: ${arg}`);
@@ -132,6 +145,8 @@ function parsePrepareArgs(argv) {
   if (!LANGUAGES.has(args.language)) throw new PaperIdentityError('ARGUMENT_INVALID', '--language must be zh or en.');
   if (args.replace) throw new PaperIdentityError('ARGUMENT_INVALID', '--replace is not supported before P0-C2; no existing generation will be overwritten.');
   if (args.resume && args.newRevision) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume and --new-revision are mutually exclusive.');
+  if (args.resumeWorkspace && (args.resume || args.newRevision || args.replace)) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume-workspace cannot be combined with --resume, --new-revision, or --replace.');
+  if (!Number.isInteger(args.lockTimeoutMs) || args.lockTimeoutMs < 0 || args.lockTimeoutMs > MAX_LOCK_TIMEOUT_MS) throw new PaperIdentityError('ARGUMENT_INVALID', `--lock-timeout-ms must be an integer from 0 to ${MAX_LOCK_TIMEOUT_MS}.`);
   if (args.reconcileIdentity !== null && !args.reconcileIdentity) throw new PaperIdentityError('ARGUMENT_INVALID', '--reconcile-identity requires an existing route alias.');
 
   return args;
@@ -179,24 +194,6 @@ function readIndexPreserveShape(indexPath) {
   };
 }
 
-function writeIndexPreserveShape(indexPath, indexState) {
-  const content = indexState.isArray
-    ? JSON.stringify(indexState.papers, null, 2)
-    : (() => {
-        indexState.raw.papers = indexState.papers;
-        return JSON.stringify(indexState.raw, null, 2);
-      })();
-  const temporary = `${indexPath}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`;
-  const descriptor = fs.openSync(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o600);
-  try {
-    fs.writeFileSync(descriptor, content);
-    fs.fsyncSync(descriptor);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  fs.renameSync(temporary, indexPath);
-}
-
 function buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl }) {
   return {
     schemaVersion: EVIDENCE_SCHEMA_VERSION,
@@ -219,41 +216,6 @@ function buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl }) {
     }] : [],
     evidence: []
   };
-}
-
-function writeFileExclusive(filePath, content, mode = 0o600) {
-  const parent = path.dirname(filePath);
-  const parentStats = fs.lstatSync(parent);
-  if (parentStats.isSymbolicLink() || !parentStats.isDirectory()) throw new PaperIdentityError('PAPER_PATH_UNSAFE', 'Paper output directory is unsafe.');
-  const descriptor = fs.openSync(filePath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), mode);
-  try {
-    fs.writeFileSync(descriptor, content);
-    fs.fsyncSync(descriptor);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-}
-
-function writeJsonExclusive(filePath, value) {
-  writeFileExclusive(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-function copyFileExclusive(source, destination) {
-  fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
-  fs.chmodSync(destination, 0o600);
-}
-
-function maybeWriteExternalEvidenceManifest({ paperDir, paperSlug, contextMode, sourceUrl }) {
-  if (contextMode === 'paper-only') {
-    return null;
-  }
-
-  const codexDir = path.join(paperDir, '.codex-paper');
-  if (!fs.existsSync(codexDir)) fs.mkdirSync(codexDir, { mode: 0o700 });
-  const outputPath = path.join(codexDir, 'external-evidence.json');
-  const manifest = buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl });
-  writeJsonExclusive(outputPath, manifest);
-  return outputPath;
 }
 
 function readJsonFile(filePath, code = 'IDENTITY_STATE_INCOMPLETE') {
@@ -344,10 +306,14 @@ function validateReusableGeneration(record) {
   };
 }
 
-function allocateRouteSlug(baseSlug, identity, managedRecords, indexState, legacyPapersRoot) {
+function allocateRouteSlug(baseSlug, identity, managedRecords, indexState, legacyPapersRoot, workspaces) {
+  const proposedPaperKey = derivePaperKey(identity.paperId);
   const used = new Set([
     ...managedRecords.flatMap(({ record }) => record.routeAliases),
-    ...indexState.papers.map((entry) => entry?.slug).filter(Boolean)
+    ...indexState.papers.map((entry) => entry?.slug).filter(Boolean),
+    ...workspaces
+      .filter((item) => isActiveGenerationWorkspace(item) && item.paperKey !== proposedPaperKey)
+      .map((item) => item.routeSlug)
   ]);
   if (fs.existsSync(legacyPapersRoot)) {
     const stats = fs.lstatSync(legacyPapersRoot);
@@ -367,6 +333,7 @@ function allocateRouteSlug(baseSlug, identity, managedRecords, indexState, legac
 function resolvePreparationAction(identity, baseSlug, indexState, options = {}) {
   const layout = getLibraryLayout(options.libraryRoot);
   const managedRecords = listManagedRecords({ libraryRoot: options.libraryRoot });
+  const workspaces = listGenerationWorkspaces({ libraryRoot: options.libraryRoot });
   const registry = scanIdentityRegistry(options.libraryRoot);
   const generationMatches = registry.filter((item) => item.identity.generationId === identity.generationId);
   if (generationMatches.length > 1) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Multiple paper directories claim the same generation identity.');
@@ -377,14 +344,12 @@ function resolvePreparationAction(identity, baseSlug, indexState, options = {}) 
       if (!options.reconcileIdentity || !match.managed.record.routeAliases.includes(options.reconcileIdentity)) {
         throw new PaperIdentityError('PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'The same generation resolved to another paper ID; explicit reconciliation is required.');
       }
-      const artifacts = validateReusableGeneration(match);
       const record = reconcilePaperRecord(match.managed.record, identity.paperId, identity);
-      writeJsonAtomicNoFollow(path.join(match.managed.recordDir, 'paper.json'), record);
-      const papers = indexState.papers.map((entry) => entry?.storageKey === record.paperKey
-        ? { ...entry, paperId: record.primaryPaperId, paperIdAliases: record.paperIdAliases }
-        : entry);
-      writeIndexPreserveShape(layout.indexPath, { ...indexState, papers });
-      return { action: 'reconciled', paperDir: match.paperDir, identity: match.identity, artifacts, managed: { ...match.managed, record } };
+      return {
+        action: 'workspace', identity, managed: { ...match.managed, record, reconciled: true },
+        reconciliation: { existingPaperKey: record.paperKey, incomingPaperId: identity.paperId },
+        packageRelativePath: buildPackageRelativePath(identity.sourceRevisionId, identity.generationId)
+      };
     }
     if (options.newRevision) throw new PaperIdentityError('NEW_REVISION_REQUIRED', '--new-revision requires different source bytes.');
     const artifacts = validateReusableGeneration(match);
@@ -408,7 +373,7 @@ function resolvePreparationAction(identity, baseSlug, indexState, options = {}) 
   }
 
   if (!managed) {
-    const routeSlug = allocateRouteSlug(baseSlug, identity, managedRecords, indexState, layout.legacyPapersRoot);
+    const routeSlug = allocateRouteSlug(baseSlug, identity, managedRecords, indexState, layout.legacyPapersRoot, workspaces);
     const paperKey = derivePaperKey(identity.paperId);
     if (managedRecords.some(({ record }) => record.paperKey === paperKey)) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Paper storage key collision.');
     managed = {
@@ -429,7 +394,7 @@ function resolvePreparationAction(identity, baseSlug, indexState, options = {}) 
   const packageRelativePath = buildPackageRelativePath(identity.sourceRevisionId, identity.generationId);
   const paperDir = path.join(managed.recordDir, ...packageRelativePath.split('/'));
   if (fs.existsSync(paperDir)) throw new PaperIdentityError('IDENTITY_REGISTRY_CONFLICT', 'Generation destination already exists without a valid identity record.');
-  return { action: 'created', paperDir, identity, managed, packageRelativePath };
+  return { action: 'workspace', paperDir, identity, managed, packageRelativePath, reconciliation: managed.reconciled ? { existingPaperKey: managed.record.paperKey, incomingPaperId: identity.paperId } : null };
 }
 
 export async function preparePaper(userInput, options = {}) {
@@ -445,6 +410,8 @@ export async function preparePaper(userInput, options = {}) {
   const newRevision = options.newRevision === true;
   const replace = options.replace === true;
   const reconcileIdentity = options.reconcileIdentity || null;
+  const resumeWorkspace = options.resumeWorkspace || null;
+  const lockTimeoutMs = options.lockTimeoutMs ?? 10_000;
   if (!CONTEXT_MODES.has(contextMode)) {
     throw new PaperIdentityError('ARGUMENT_INVALID', 'contextMode must be paper-only, canonical, or literature.');
   }
@@ -453,10 +420,12 @@ export async function preparePaper(userInput, options = {}) {
   }
   if (!WORKFLOWS.has(workflow)) throw new PaperIdentityError('ARGUMENT_INVALID', 'workflow must be study or summary.');
   if (!LANGUAGES.has(language)) throw new PaperIdentityError('ARGUMENT_INVALID', 'language must be zh or en.');
-  if (replace) throw new PaperIdentityError('ARGUMENT_INVALID', '--replace is not supported before P0-C2; no existing generation will be overwritten.');
+  if (replace) throw new PaperIdentityError('ARGUMENT_INVALID', '--replace is not supported before P0-C2b publication; no existing generation will be overwritten.');
   if (resume && newRevision) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume and --new-revision are mutually exclusive.');
+  if (resumeWorkspace && (resume || newRevision || replace)) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume-workspace cannot be combined with --resume, --new-revision, or --replace.');
+  if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs < 0 || lockTimeoutMs > MAX_LOCK_TIMEOUT_MS) throw new PaperIdentityError('ARGUMENT_INVALID', `lockTimeoutMs must be an integer from 0 to ${MAX_LOCK_TIMEOUT_MS}.`);
 
-  const libraryRoot = path.resolve(options.libraryRoot || process.env.PAPERS_DIR || path.join(process.env.HOME || '', 'codex-papers'));
+  const libraryRoot = path.resolve(options.libraryRoot || process.env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers'));
   const layout = getLibraryLayout(libraryRoot);
   fs.mkdirSync(libraryRoot, { recursive: true, mode: 0o700 });
   const indexState = readIndexPreserveShape(layout.indexPath);
@@ -486,13 +455,38 @@ export async function preparePaper(userInput, options = {}) {
     pluginBuildVersion: detailed.parserMetadata?.parserBuildVersion || parsed.parserBuildVersion || PLUGIN_BASE_VERSION,
     platform: platformProvenance()
   });
+  if (resumeWorkspace) {
+    const workspace = resolveGenerationWorkspace(resumeWorkspace, { libraryRoot });
+    if (workspace.initializationResidue) {
+      throw new PaperIdentityError('WORKSPACE_INITIALIZATION_INCOMPLETE', 'Initialization residues are read-only; inspect or abandon this workspace and run prepare again.');
+    }
+    if (workspace.workspace.state === 'abandoned') {
+      throw new PaperIdentityError('WORKSPACE_ABANDONED', 'Abandoned workspaces are read-only and cannot be resumed.');
+    }
+    const storedIdentity = readPaperIdentity(path.join(workspace.packageDir, IDENTITY_RELATIVE_PATH));
+    if (workspace.generationId !== identity.generationId || workspace.sourceRevisionId !== identity.sourceRevisionId || workspace.paperId !== identity.paperId
+      || storedIdentity.generationId !== identity.generationId || storedIdentity.sourceRevisionId !== identity.sourceRevisionId || storedIdentity.paperId !== identity.paperId) {
+      throw new PaperIdentityError('WORKSPACE_IDENTITY_MISMATCH', 'The requested workspace does not match the prepared paper identity.');
+    }
+    const artifacts = validateReusableGeneration({ paperDir: workspace.packageDir, identity: storedIdentity, managed: { record: workspace.workspace.publishIntent.paperRecord } });
+    return {
+      action: 'workspace_resumed', workspaceId: workspace.workspaceId, workspaceDir: workspace.workspaceDir,
+      paperSlug: workspace.routeSlug, paperDir: workspace.packageDir, inputPath, sourceFilename, ...artifacts,
+      identity: storedIdentity,
+      diagnostics: storedIdentity.canonical.diagnostics,
+      contextMode: storedIdentity.generation.inputs.contextMode,
+      profile: storedIdentity.generation.inputs.requestedPaperProfile,
+      workflow: storedIdentity.generation.inputs.workflow,
+      language: storedIdentity.generation.inputs.language
+    };
+  }
   const preparation = resolvePreparationAction(identity, basePaperSlug, indexState, {
     libraryRoot,
     resume,
     newRevision,
     reconcileIdentity
   });
-  if (preparation.action === 'reused' || preparation.action === 'reconciled') {
+  if (preparation.action === 'reused') {
     return {
       action: preparation.action,
       paperSlug: preparation.managed.record.routeAliases[0],
@@ -509,18 +503,7 @@ export async function preparePaper(userInput, options = {}) {
     };
   }
 
-  ensureManagedStore({ libraryRoot });
-  const { managed, paperDir } = preparation;
-  if (managed.isNew) {
-    fs.mkdirSync(managed.recordDir, { recursive: false, mode: 0o700 });
-    fs.mkdirSync(path.join(managed.recordDir, 'overlay'), { mode: 0o700 });
-    fs.mkdirSync(path.join(managed.recordDir, 'overlay', 'files'), { mode: 0o700 });
-  } else {
-    requireSafeDirectory(managed.recordDir, layout.recordsRoot);
-    requireSafeDirectory(path.join(managed.recordDir, 'overlay'), managed.recordDir);
-  }
-  fs.mkdirSync(paperDir, { recursive: true, mode: 0o700 });
-  fs.mkdirSync(path.join(paperDir, '.codex-paper'), { mode: 0o700 });
+  const { managed } = preparation;
   const paperSlug = managed.record.routeAliases[0];
   identity.slug = paperSlug;
   const projection = identityProjection(identity);
@@ -602,70 +585,38 @@ export async function preparePaper(userInput, options = {}) {
     url: sourceUrl
   };
 
-  const indexEntry = {
-    id: paperSlug,
-    title: parsed.title,
-    slug: paperSlug,
-    authors: parsed.authors,
-    abstract: parsed.abstract,
-    year: parsed.year,
-    date: today,
+  const workspace = await createGenerationWorkspace({
+    identity,
+    routeSlug: paperSlug,
+    paperRecord: managed.record,
+    reconciliation: preparation.reconciliation,
     tags: [],
-    githubLinks: parsed.githubLinks,
-    codeLinks: parsed.codeLinks,
-    sourceFilename,
-    parserVersion: parsed.parserVersion,
-    packageVersion: PACKAGE_VERSION,
-    contextMode,
-    workflow,
-    language,
-    ...projection,
-    qualityFlags: parsed.qualityFlags,
-    url: sourceUrl
-  };
-  indexEntry.storageKey = managed.record.paperKey;
-  indexEntry.paperId = managed.record.primaryPaperId;
-  indexEntry.paperIdAliases = managed.record.paperIdAliases;
-
-  copyFileExclusive(inputPath, path.join(paperDir, 'paper.pdf'));
-  writeJsonExclusive(path.join(paperDir, 'paper-data.json'), paperData);
-  writeJsonExclusive(path.join(paperDir, 'evidence-ledger.json'), ledger);
-  writeJsonExclusive(path.join(paperDir, 'facts.json'), facts);
-  writeJsonExclusive(path.join(paperDir, 'analysis.json'), analysis);
-  writeJsonExclusive(path.join(paperDir, 'meta.json'), meta);
-  const externalEvidencePath = maybeWriteExternalEvidenceManifest({ paperDir, paperSlug, contextMode, sourceUrl });
-  writeJsonExclusive(path.join(paperDir, IDENTITY_RELATIVE_PATH), identity);
-
-  if (managed.isNew || managed.reconciled) {
-    writeJsonAtomicNoFollow(path.join(managed.recordDir, 'paper.json'), managed.record);
-  }
-  if (managed.isNew) {
-    writeJsonAtomicNoFollow(path.join(managed.recordDir, 'overlay', 'state.json'), {
-      schemaVersion: '1.0.0',
-      tags: [],
-      progress: {},
-      annotations: []
-    });
-  } else {
-    readOverlayState({ mode: 'managed_v1', overlayDir: path.join(managed.recordDir, 'overlay') });
-  }
-  const current = {
-    schemaVersion: '1.0.0',
-    paperKey: managed.record.paperKey,
-    paperId: identity.paperId,
-    sourceRevisionId: identity.sourceRevisionId,
-    generationId: identity.generationId,
-    packageRelativePath: preparation.packageRelativePath
-  };
-  writeJsonAtomicNoFollow(path.join(managed.recordDir, 'current.json'), current);
-  const existingIndex = indexState.papers.findIndex((entry) => entry?.storageKey === managed.record.paperKey
-    || managed.record.routeAliases.includes(entry?.slug));
-  if (existingIndex >= 0) indexState.papers[existingIndex] = { ...indexState.papers[existingIndex], ...indexEntry, tags: readOverlayState({ mode: 'managed_v1', overlayDir: path.join(managed.recordDir, 'overlay') }).tags };
-  else indexState.papers.push(indexEntry);
-  writeIndexPreserveShape(layout.indexPath, indexState);
+    libraryRoot,
+    lockTimeoutMs,
+    populate: async ({ packageDir, lockHandle, requiredLock }) => {
+      const write = (relativePath, data, maxBytes = 128 * 1024 * 1024) => atomicWriteFile({
+        root: packageDir, relativePath, data, lockHandle, requiredLock, expectAbsent: true, maxBytes
+      });
+      const writeJson = (relativePath, value) => atomicWriteJson({
+        root: packageDir, relativePath, value, lockHandle, requiredLock, expectAbsent: true, maxBytes: 64 * 1024 * 1024
+      });
+      write('paper.pdf', readFileNoFollowBounded(inputPath, 128 * 1024 * 1024));
+      writeJson('paper-data.json', paperData);
+      writeJson('evidence-ledger.json', ledger);
+      writeJson('facts.json', facts);
+      writeJson('analysis.json', analysis);
+      writeJson('meta.json', meta);
+      if (contextMode !== 'paper-only') writeJson('.codex-paper/external-evidence.json', buildExternalEvidenceManifest({ paperSlug, contextMode, sourceUrl }));
+      writeJson(IDENTITY_RELATIVE_PATH, identity);
+    }
+  });
+  const paperDir = workspace.packageDir;
+  const externalEvidencePath = contextMode === 'paper-only' ? null : path.join(paperDir, '.codex-paper/external-evidence.json');
 
   return {
-    action: 'created',
+    action: 'workspace_created',
+    workspaceId: workspace.workspaceId,
+    workspaceDir: workspace.workspaceDir,
     paperSlug,
     paperDir,
     inputPath,
@@ -693,6 +644,8 @@ async function runCli() {
   const result = await preparePaper(args.input, args);
   process.stdout.write(`${JSON.stringify({
     action: result.action,
+    workspaceId: result.workspaceId || null,
+    workspaceDir: result.workspaceDir || null,
     paperSlug: result.paperSlug,
     paperDir: result.paperDir,
     sourceFilename: result.sourceFilename,
@@ -712,7 +665,9 @@ async function runCli() {
     evidenceCount: result.ledger.evidence.length,
     analysisVersion: result.analysis.analysisVersion,
     externalEvidencePath: result.externalEvidencePath || null,
-    next: 'Run scaffold-reasoning-analysis.js, fill reasoning-analysis.json from the evidence ledger, then run validate-reasoning.js before authoring visible materials. Use --strict only as an explicit warning-blocking policy.'
+    next: result.workspaceId
+      ? 'Run scaffold-reasoning-analysis.js with this exact workspace path, update authoring files through workspace-write, then validate inside the workspace. C2b publication is still required before Viewer visibility.'
+      : 'This published generation was reused read-only; create or resume an exact generation workspace before authoring changes.'
   }, null, 2)}\n`);
 }
 
@@ -720,6 +675,6 @@ if (process.argv[1] === __filename) {
   runCli().catch((error) => {
     const code = error?.code || 'PREPARE_FAILED';
     console.error(`Error [${code}]: ${String(error?.message || error).replace(/[\r\n]+/g, ' ').slice(0, 2048)}`);
-    process.exit(code === 'ARGUMENT_INVALID' ? 2 : 1);
+    process.exit(storageCliExitCode(error));
   });
 }

@@ -5,9 +5,13 @@ import path from 'node:path'
 
 export const LIBRARY_LAYOUT_VERSION = '1.0.0'
 export const STORE_RELATIVE_PATH = '.codex-paper/store-v1'
+export const WORKSPACES_RELATIVE_PATH = '.codex-paper/workspaces-v1'
 export const PAPER_RECORD_FILENAME = 'paper.json'
 export const CURRENT_RECORD_FILENAME = 'current.json'
 export const OVERLAY_STATE_FILENAME = 'state.json'
+export const GENERATION_WORKSPACE_VERSION = '1.0.0'
+export const GENERATION_WORKSPACE_STATES = Object.freeze(['authoring', 'validating', 'validated', 'failed', 'abandoned'])
+export const WORKSPACE_ID_PATTERN = /^ws-[a-f0-9]{12}-[a-f0-9]{12}-[a-f0-9]{32}$/
 
 const ROUTE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 const PAPER_KEY_PATTERN = /^p-[a-f0-9]{64}$/
@@ -34,6 +38,8 @@ export function getLibraryLayout(libraryRoot = process.env.PAPERS_DIR || path.jo
     indexPath: path.join(root, 'index.json'),
     storeRoot,
     recordsRoot: path.join(storeRoot, 'papers'),
+    workspacesRoot: path.join(root, WORKSPACES_RELATIVE_PATH),
+    locksRoot: path.join(root, '.codex-paper/locks-v1'),
     trashRoot: path.join(root, '.trash')
   }
 }
@@ -42,6 +48,12 @@ export function derivePaperKey(paperId) {
   if (typeof paperId !== 'string' || !paperId) throw new LibraryLayoutError('PAPER_ID_INVALID', 'Paper ID is required.')
   return `p-${crypto.createHash('sha256').update(paperId).digest('hex')}`
 }
+
+export const paperStorageLockKey = (paperKey) => `paper:${paperKey}`
+export const sourceStorageLockKey = (paperKey, sourceRevisionId) => `source:${paperKey}:${sourceRevisionId}`
+export const generationStorageLockKey = (paperKey, generationId) => `generation:${paperKey}:${generationId}`
+export const workspaceStorageLockKey = (workspaceId) => `workspace:${workspaceId}`
+export const legacyStorageLockKey = (routeSlug) => `legacy:${routeSlug}`
 
 function canonicalRank(paperId) {
   if (String(paperId).startsWith('doi:')) return 3
@@ -84,6 +96,27 @@ export function generationDirectoryName(generationId) {
 
 export function buildPackageRelativePath(sourceRevisionId, generationId) {
   return `sources/${sourceDirectoryName(sourceRevisionId)}/generations/${generationDirectoryName(generationId)}/package`
+}
+
+export function validateGenerationWorkspaceRecord(record, expectedId = null) {
+  if (record?.schemaVersion !== GENERATION_WORKSPACE_VERSION
+    || !WORKSPACE_ID_PATTERN.test(String(record?.workspaceId || ''))
+    || (expectedId && record.workspaceId !== expectedId)
+    || !GENERATION_WORKSPACE_STATES.includes(record?.state)
+    || !PAPER_KEY_PATTERN.test(String(record?.paperKey || ''))
+    || typeof record?.paperId !== 'string' || !record.paperId || record.paperId.length > 512
+    || !SOURCE_ID_PATTERN.test(String(record?.sourceRevisionId || ''))
+    || !GENERATION_ID_PATTERN.test(String(record?.generationId || ''))
+    || record?.targetPackageRelativePath !== buildPackageRelativePath(record.sourceRevisionId, record.generationId)
+    || !ROUTE_PATTERN.test(String(record?.routeSlug || ''))
+    || Number.isNaN(Date.parse(record?.createdAt)) || Number.isNaN(Date.parse(record?.updatedAt))
+    || typeof record?.lastSuccessfulStep !== 'string' || !record.lastSuccessfulStep || record.lastSuccessfulStep.length > 64
+    || !Array.isArray(record?.diagnostics) || record.diagnostics.length > 32
+    || record.diagnostics.some((item) => !/^[A-Z0-9_]+$/.test(String(item?.code || '')) || typeof item?.message !== 'string' || item.message.length > 600)
+    || !record?.publishIntent || typeof record.publishIntent !== 'object' || !Array.isArray(record.publishIntent.tags)) {
+    throw new LibraryLayoutError('WORKSPACE_RECORD_INVALID', 'Generation workspace record is invalid.', 422)
+  }
+  return record
 }
 
 export function isContained(root, target) {
@@ -254,8 +287,8 @@ export function descriptorForRecord(recordDir, record, options = {}) {
     routeAliases: [...record.routeAliases],
     sourceRevisionId: current.sourceRevisionId,
     generationId: current.generationId,
-    paperLockKey: `paper:${record.paperKey}`,
-    generationLockKey: `generation:${record.paperKey}:${current.generationId}`,
+    paperLockKey: paperStorageLockKey(record.paperKey),
+    generationLockKey: generationStorageLockKey(record.paperKey, current.generationId),
     record,
     current,
     identity
@@ -288,8 +321,8 @@ function descriptorForLegacy(input, options = {}) {
     paperId: typeof meta?.paperId === 'string' ? meta.paperId : null,
     sourceRevisionId: typeof meta?.sourceRevisionId === 'string' ? meta.sourceRevisionId : null,
     generationId: typeof meta?.generationId === 'string' ? meta.generationId : null,
-    paperLockKey: `legacy:${input}`,
-    generationLockKey: `legacy:${input}`
+    paperLockKey: legacyStorageLockKey(input),
+    generationLockKey: legacyStorageLockKey(input)
   }
 }
 
@@ -310,6 +343,35 @@ export function resolveExplicitPackage(input, options = {}) {
     if (stats.isSymbolicLink() || !stats.isDirectory()) throw new LibraryLayoutError('LIBRARY_PATH_UNSAFE', 'Paper package path is unsafe.', 403)
     const canonical = fs.realpathSync(candidate)
     const layout = getLibraryLayout(options.libraryRoot)
+    if (fs.existsSync(layout.workspacesRoot)) {
+      const workspacesRoot = requireSafeDirectory(layout.workspacesRoot, layout.libraryRoot)
+      if (isContained(workspacesRoot, canonical)) {
+        const relative = path.relative(workspacesRoot, canonical).split(path.sep)
+        const workspaceDirectoryName = relative[0]
+        if (!WORKSPACE_ID_PATTERN.test(workspaceDirectoryName) && !workspaceDirectoryName.startsWith('.init-')) {
+          throw new LibraryLayoutError('WORKSPACE_REFERENCE_INVALID', 'Workspace reference is invalid.', 400)
+        }
+        const workspaceDir = path.join(workspacesRoot, workspaceDirectoryName)
+        const packageDir = path.join(workspaceDir, 'package')
+        if (canonical !== workspaceDir && canonical !== packageDir) throw new LibraryLayoutError('WORKSPACE_REFERENCE_INVALID', 'Workspace references must identify the workspace or its package.', 400)
+        const workspace = readJsonNoFollow(path.join(workspaceDir, 'workspace.json'), 'workspace.json', 1024 * 1024)
+        validateGenerationWorkspaceRecord(workspace, WORKSPACE_ID_PATTERN.test(workspaceDirectoryName) ? workspaceDirectoryName : null)
+        const workspaceId = workspace.workspaceId
+        const canonicalPackage = requireNoFollowDirectory(workspaceDir, packageDir, 'WORKSPACE_PACKAGE_MISSING')
+        return {
+          mode: 'generation_workspace_v1', readOnly: workspace.state === 'abandoned' || workspaceDirectoryName.startsWith('.init-'),
+          initializationResidue: workspaceDirectoryName.startsWith('.init-'),
+          libraryRoot: layout.libraryRoot, workspaceId, workspaceDir, packageDir: canonicalPackage, generationDir: canonicalPackage,
+          paperRoot: workspaceDir, overlayDir: null, routeSlug: workspace.routeSlug, paperKey: workspace.paperKey,
+          paperId: workspace.paperId, sourceRevisionId: workspace.sourceRevisionId, generationId: workspace.generationId,
+          paperLockKey: paperStorageLockKey(workspace.paperKey),
+          sourceLockKey: sourceStorageLockKey(workspace.paperKey, workspace.sourceRevisionId),
+          generationLockKey: generationStorageLockKey(workspace.paperKey, workspace.generationId),
+          workspaceLockKey: workspaceStorageLockKey(workspaceId),
+          workspace,
+        }
+      }
+    }
     if (fs.existsSync(layout.legacyPapersRoot)) {
       const legacyRoot = requireSafeDirectory(layout.legacyPapersRoot, layout.libraryRoot)
       if (isContained(legacyRoot, canonical)) {
@@ -329,8 +391,28 @@ export function resolveExplicitPackage(input, options = {}) {
           paperId: null,
           sourceRevisionId: null,
           generationId: null,
-          paperLockKey: `legacy:${routeSlug}`,
-          generationLockKey: `legacy:${routeSlug}`
+          paperLockKey: legacyStorageLockKey(routeSlug),
+          generationLockKey: legacyStorageLockKey(routeSlug)
+        }
+      }
+    }
+    if (fs.existsSync(layout.recordsRoot)) {
+      const recordsRoot = requireSafeDirectory(layout.recordsRoot, layout.storeRoot)
+      if (isContained(recordsRoot, canonical)) {
+        const match = listManagedRecords({ libraryRoot: layout.libraryRoot }).find(({ recordDir }) => isContained(fs.realpathSync(recordDir), canonical))
+        if (!match) throw new LibraryLayoutError('PAPER_GENERATION_NOT_FOUND', 'Managed generation does not belong to a valid paper record.', 404)
+        const canonicalRecordDir = requireNoFollowDirectory(recordsRoot, fs.realpathSync(match.recordDir))
+        const identity = readJsonNoFollow(path.join(canonical, '.codex-paper/paper-identity.json'), 'paper-identity.json')
+        return {
+          mode: 'managed_generation_v1', readOnly: true,
+          diagnostics: [{ code: 'PUBLISHED_GENERATION_READ_ONLY', message: 'Published generations are read-only; create or resume a generation workspace.' }],
+          libraryRoot: layout.libraryRoot, paperRoot: canonicalRecordDir, packageDir: canonical, generationDir: canonical,
+          overlayDir: path.join(canonicalRecordDir, 'overlay'), routeSlug: identity.slug, paperKey: match.record.paperKey,
+          paperId: match.record.primaryPaperId, sourceRevisionId: identity.sourceRevisionId, generationId: identity.generationId,
+          paperLockKey: paperStorageLockKey(match.record.paperKey),
+          sourceLockKey: sourceStorageLockKey(match.record.paperKey, identity.sourceRevisionId),
+          generationLockKey: generationStorageLockKey(match.record.paperKey, identity.generationId),
+          record: match.record, identity,
         }
       }
     }
@@ -364,26 +446,4 @@ export function ensureManagedStore(options = {}) {
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
   }
   return layout
-}
-
-export function writeFileAtomicNoFollow(filePath, content, mode = 0o600) {
-  const parent = requireSafeDirectory(path.dirname(filePath))
-  const temporary = path.join(parent, `.${path.basename(filePath)}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`)
-  let descriptor
-  try {
-    descriptor = fs.openSync(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), mode)
-    fs.writeFileSync(descriptor, content)
-    fs.fsyncSync(descriptor)
-    fs.closeSync(descriptor)
-    descriptor = undefined
-    if (fs.existsSync(filePath) && fs.lstatSync(filePath).isSymbolicLink()) throw new LibraryLayoutError('LIBRARY_PATH_UNSAFE', 'Writable record must not be a symlink.', 403)
-    fs.renameSync(temporary, filePath)
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor)
-    try { fs.unlinkSync(temporary) } catch {}
-  }
-}
-
-export function writeJsonAtomicNoFollow(filePath, value) {
-  writeFileAtomicNoFollow(filePath, `${JSON.stringify(value, null, 2)}\n`)
 }

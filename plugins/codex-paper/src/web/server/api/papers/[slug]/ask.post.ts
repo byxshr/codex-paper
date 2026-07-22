@@ -2,7 +2,8 @@ import { askCodexWorker } from '../../../utils/codexWorker'
 import { appendChatNote } from '../../../utils/chatNotes'
 import { requireWritablePaperAccess, resolvePublicFile, validateSlug } from '../../../utils/librarySecurity.mjs'
 import { withOperationLocks } from '../../../utils/operationLocks.mjs'
-import { renderSafeMarkdown } from '../../../utils/activeContentSecurity.mjs'
+import { renderSafeMarkdownForDelivery } from '../../../utils/activeContentSecurity.mjs'
+import { acquirePaperAskLease } from '../../../utils/askLeases.mjs'
 
 const MAX_QUESTION_LENGTH = 4_000
 const MAX_SELECTED_FILE_LENGTH = 500
@@ -116,52 +117,74 @@ export default defineEventHandler(async (event) => {
   const fallbackPrompt = buildPaperChatPrompt(paperDir, question, selectedFile)
   const safeFallbackPrompt = fallbackPrompt.split(paperDir).join('[local paper package]')
 
-  return withOperationLocks([descriptor.paperLockKey], async () => {
-    try {
-      const { answer } = await askCodexWorker({
-        slug: descriptor.generationLockKey,
-        paperDir,
-        prompt: fallbackPrompt
-      })
+  const releaseAskLease = acquirePaperAskLease(descriptor.paperLockKey)
+  try {
+    const { answer } = await askCodexWorker({
+      slug: descriptor.paperLockKey,
+      paperDir,
+      prompt: fallbackPrompt
+    })
 
-      if (!answer) {
-        throw createFallbackError(
-          502,
-          'Codex returned an empty answer',
-          safeFallbackPrompt
-        )
-      }
-
-      const forbiddenResidues = findForbiddenResidues(answer)
-      if (forbiddenResidues.length > 0) {
-        throw createFallbackError(
-          502,
-          'Codex answer contained internal extraction residue',
-          safeFallbackPrompt,
-          `Forbidden residues: ${forbiddenResidues.join(', ')}`
-        )
-      }
-
-      const savedNote = appendChatNote(
-        descriptor.overlayDir,
-        redactForbiddenResidues(question),
-        redactForbiddenResidues(answer),
-        selectedFile
-      )
-
-      return {
-        answer,
-        answerHtml: renderSafeMarkdown(answer, { slug, sourcePath: savedNote.savedTo }),
-        savedTo: savedNote.savedTo,
-        entryId: savedNote.entryId
-      }
-    } catch (e: any) {
-      if (e.statusCode) throw e
+    if (!answer) {
       throw createFallbackError(
         502,
-        'Failed to run Codex for this question',
+        'Codex returned an empty answer',
         safeFallbackPrompt
       )
     }
-  })
+
+    const forbiddenResidues = findForbiddenResidues(answer)
+    if (forbiddenResidues.length > 0) {
+      throw createFallbackError(
+        502,
+        'Codex answer contained internal extraction residue',
+        safeFallbackPrompt,
+        `Forbidden residues: ${forbiddenResidues.join(', ')}`
+      )
+    }
+
+    let savedNote: { savedTo: string; entryId: string } | null = null
+    let saveWarning: string | null = null
+    let completedNote: { savedTo: string; entryId: string } | null = null
+    try {
+      savedNote = await withOperationLocks([descriptor.paperLockKey], async () => (
+        completedNote = appendChatNote(
+          descriptor.overlayDir,
+          redactForbiddenResidues(question),
+          redactForbiddenResidues(answer),
+          selectedFile,
+          descriptor.paperLockKey
+        )
+      ), { timeoutMs: 3_000 })
+    } catch (saveError: any) {
+      savedNote = completedNote
+      saveWarning = completedNote
+        ? '回答已写入聊天记录，但保存确认遇到异常。请检查历史记录后再重试。'
+        : '回答已生成，但聊天记录暂未保存。请先复制回答，稍后重试。'
+    }
+
+    const renderedAnswer = renderSafeMarkdownForDelivery(answer, { slug, sourcePath: savedNote?.savedTo || 'chat-notes.md' })
+    if (renderedAnswer.degraded) {
+      const renderWarning = '回答已生成，但富文本渲染失败，已使用安全纯文本显示。'
+      saveWarning = saveWarning ? `${saveWarning} ${renderWarning}` : renderWarning
+    }
+
+    return {
+      answer,
+      answerHtml: renderedAnswer.html,
+      saved: Boolean(savedNote),
+      saveWarning,
+      savedTo: savedNote?.savedTo || null,
+      entryId: savedNote?.entryId || null
+    }
+  } catch (e: any) {
+    if (e.statusCode) throw e
+    throw createFallbackError(
+      502,
+      'Failed to run Codex for this question',
+      safeFallbackPrompt
+    )
+  } finally {
+    releaseAskLease()
+  }
 })

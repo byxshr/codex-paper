@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Hardened C2a after the seventh independent review: preserve generated Ask answers when rich Markdown rendering fails by returning escaped plain text, and move bounded stale initialization cleanup under the registry lock.
+- Hardened C2a after the sixth independent review: invalidate a paper thread when a successful reply is empty, compensate both report-write and final-state validation persistence failures, retain secondary compensation errors, and share workspace diagnostics plus the storage lock-timeout maximum.
+- Hardened C2a after the fifth independent review: invalidate only the affected paper thread after a failed Codex reply, compensate validation-report persistence failures with a bounded failed workspace diagnostic, remove disk-lock I/O from in-process Ask lease registration, and finish shared CAS/CLI mapping plus Guard mutation coverage.
+- Hardened C2a after the fourth independent review: closed managed-workspace migration bypasses, preserved every generated Ask answer across save failures while blocking concurrent Web deletion, classified `.init-*` crash residues as read-only/non-active, made validation report/state persistence one locked transaction, restored resolver Guard coverage, and consolidated CAS/lock-key predicates.
+- Hardened C2a after the third independent review: kept double-rename failure residues discoverable by exact workspace ID, allowed fresh retries after retained failures, isolated Ask request failures per paper, preserved generated answers on chat-note lock contention, normalized migration roots/locks, and made abandoned sandbox plans fail closed with structured diagnostics.
+
+- Added Generation Workspace 1.0 under `.codex-paper/workspaces-v1`: prepare now initializes private same-filesystem workspaces and does not create records, switch `current.json`, update the index, or expose partial packages before C2b.
+- Added hierarchical cross-process filesystem locks and one shared CAS/no-follow/fsync writer for workspace authoring, validation, Viewer overlays, chat, trash/index updates, sandbox reports, and explicit legacy migration.
+- Added explicit workspace list/inspect/write/tags/abandon commands, a dedicated storage test/CI gate, workspace-only mandatory regression authoring, and Repository Guard mutation coverage against early publication or writer bypass.
+- Hardened C2a after the second independent review: preserved failed initialized workspaces, made reclaim claims crash-recoverable, serialized same-paper Ask calls, bounded chat-note lock waits, reserved workspace routes, aligned legacy migration locks, and made sandbox approval/report targets portable and fail-closed before token issuance.
 - Added Paper Library Layout 1.0 with identity-keyed paper/source/generation storage, authoritative current records, stable alias-aware lock keys, and read-only flat-layout compatibility.
 - Moved tags and chat notes into a paper-level mutable overlay, added multi-generation prepare semantics and explicit identity reconciliation, and migrated Viewer/validator/sandbox/trash consumers to the shared no-follow resolver.
 - Hardened P0-C1b after independent review: fixed the third-tier route fallback to use the generation fingerprint value, and made explicit absolute paths into the legacy flat library remain read-only for every authoring and sandbox consumer.

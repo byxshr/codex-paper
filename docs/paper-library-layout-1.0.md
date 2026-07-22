@@ -6,11 +6,19 @@ Paper Library Layout 1.0 定义 Codex Paper 的物理存储、current resolution
 
 1. `paper.json` 钉住 paper record 的 primary `paperId`，并记录经显式 reconciliation 添加的 identity/route aliases。
 2. `current.json` 唯一决定默认读取的 source revision 和 generation。
-3. generation package 内的 PDF、机器数据、学习材料和 validation report 属于按 generation identity 隔离的生成层；P0-C2 的 publish/manifest sealing 完成前，现有 authoring 命令仍会写入该层，不能把 C1b 描述为已经强制“创建即不可变”。
+3. 已发布 generation package 内的 PDF、机器数据、学习材料和 validation report 属于按 generation identity 隔离的只读生成层。C2a 起，所有新生成与 authoring 只允许发生在私有 generation workspace；C2b 完成 gate 驱动发布与 manifest sealing 前，workspace 不能成为正式 generation。
 4. `overlay/state.json`、`overlay/chat-notes.md` 和 `overlay/files/` 属于用户可变层。
 5. `index.json`、`meta.json` 与 slug 都是兼容 projection；不得据此覆盖、重分组或选择“最新” generation。
 
 损坏、缺失、跨 paper 的 current 指针必须 fail closed，resolver 不得回退到目录排序或最新 mtime。
+
+## Generation workspace 与事务写入
+
+新生成位于 `PAPERS_DIR/.codex-paper/workspaces-v1/<workspaceId>/`，其中 `workspace.json` 记录有界生命周期状态，`package/` 承载尚未发布的产物。prepare 先在同文件系统的私有 `.init-*` 目录完成初始化，成功后原子 rename；后续步骤必须使用精确 workspace ID 或路径，不得隐式选择“最新” workspace。
+
+所有 workspace、overlay、trash、sandbox report 和 index projection 写入都使用 `PAPERS_DIR/.codex-paper/locks-v1/` 下的跨进程锁和共享 CAS writer。锁按 registry → paper → source → generation → workspace/trash → index 获取；Web 冲突立即失败，CLI 默认有界等待。共享 writer 强制 no-follow containment、锁所有权、absent-or-SHA 前置条件、同目录原子替换和 fsync。
+
+workspace 的 `validated` 只说明验证步骤已成功，不代表已发布。失败或中断 workspace 保留诊断；只有显式 abandon 会把状态原子标记为 `abandoned`，不会删除内容。
 
 ## Alias 与 reconciliation
 
@@ -30,6 +38,6 @@ Paper Library Layout 1.0 定义 Codex Paper 的物理存储、current resolution
 
 所有层级拒绝 symlink、越界 realpath、非普通关键文件和不符合 schema 的记录。所有进程内 paper 锁和 Ask thread key 使用 resolver 返回的稳定 paper/generation key，而不是用户提供的 alias。
 
-## 与 P0-C2 的边界
+## 与 P0-C2b 的边界
 
-C1b 保证 overlay mutation 不进入 generation package，并冻结 current resolution 与物理分层；它不提供 generation workspace、manifest sealing、发布 commit point 或发布后的 dirty/clone-on-write 检测。只有 P0-C2 完成 gate 驱动的原子发布后，正式 generation 才具备可强制验证的不可变语义。
+C1b 保证 overlay mutation 不进入 generation package，并冻结 current resolution 与物理分层；C2a 增加 workspace、跨进程锁和共享 writer，但不提供 manifest sealing、发布 commit point、reindex/recovery 或发布后的 dirty/clone-on-write 检测。只有 P0-C2b 完成 gate 驱动的原子发布后，新 workspace 才能成为正式 generation。

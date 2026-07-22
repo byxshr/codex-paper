@@ -172,6 +172,22 @@ cmd_layout_test() {
   "$NODE_BIN" --test "$REPO_ROOT/scripts/tests/library-layout.test.mjs"
 }
 
+cmd_storage_test() {
+  ensure_node
+  ensure_python
+  ensure_pymupdf
+
+  print_section "Generation Workspace and Storage Transactions 1.0"
+  "$NODE_BIN" --test "$REPO_ROOT/scripts/tests/storage-transaction.test.mjs"
+}
+
+cmd_workspace() {
+  ensure_node
+  local action="$1"
+  shift
+  "$NODE_BIN" "$WORKSPACE_CLI" "$action" "$@"
+}
+
 cmd_package_test() {
   ensure_node
 
@@ -353,6 +369,12 @@ Commands:
   validation-test Run Validation Report 1.0 and cross-artifact gate tests
   identity-test Run Paper Identity 1.0, fingerprint, reuse, and collision tests
   layout-test Run current-generation resolver, legacy read-only, and overlay tests
+  storage-test Run generation workspace, cross-process lock, and shared writer tests
+  workspace-list [--json] List exact generation workspaces
+  workspace-inspect <workspace> [--json] Inspect one exact workspace
+  workspace-write <workspace> <path> (--stdin|--from-file <path>) (--expect-absent|--expected-sha256 <sha>)
+  workspace-tags <workspace> --tag <tag> --tag <tag> Set pending publish tags
+  workspace-abandon <workspace> [--json] Mark a workspace abandoned without deleting it
   package-test Run package quality fixtures
   benchmark-all  Run mandatory PDF, optional parser, reasoning, and package benchmarks
   migrate      Migrate a v1 package to v2 evidence/reasoning draft files
@@ -410,6 +432,29 @@ case "$command_name" in
     ;;
   layout-test)
     cmd_layout_test
+    ;;
+  storage-test)
+    cmd_storage_test
+    ;;
+  workspace-list)
+    shift
+    cmd_workspace list "$@"
+    ;;
+  workspace-inspect)
+    shift
+    cmd_workspace inspect "$@"
+    ;;
+  workspace-write)
+    shift
+    cmd_workspace write "$@"
+    ;;
+  workspace-tags)
+    shift
+    cmd_workspace tags "$@"
+    ;;
+  workspace-abandon)
+    shift
+    cmd_workspace abandon "$@"
     ;;
   package-test)
     cmd_package_test

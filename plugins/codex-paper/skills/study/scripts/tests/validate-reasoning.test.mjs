@@ -250,7 +250,8 @@ test('validateReasoningPackage accepts a complete evidence-grounded reasoning fi
   try {
     const result = validateReasoningPackage(dir);
     assert.equal(result.report.status, 'pass', JSON.stringify(result.report, null, 2));
-    assert.equal(fs.existsSync(path.join(dir, '.codex-paper', 'validation-report.json')), true);
+    assert.equal(result.reportWritten, false);
+    assert.equal(fs.existsSync(path.join(dir, '.codex-paper', 'validation-report.json')), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

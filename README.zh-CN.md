@@ -196,7 +196,7 @@ Codex 将自动触发学习工作流程并：
 
 服务只绑定 IPv4 loopback。每次重启都会使旧 Viewer session 失效并生成新配对令牌。SPA 使用仅允许同源脚本的严格 CSP；Markdown 与模型回答统一在服务端渲染和净化。API/文件系统边界见 [`docs/local-viewer-security.md`](docs/local-viewer-security.md)，渲染边界见 [`docs/web-active-content-security.md`](docs/web-active-content-security.md)。
 
-Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-server` worker。网页查看器会为每篇论文保留独立的 Codex thread，因此同一论文的后续追问可以复用对话上下文，不再每次启动新的 `codex exec` 进程。回答仍然运行在只读 sandbox 中，并优先使用 `.codex-paper/answering-pack.md`；旧学习包没有该文件时，会回退到用户可见 Markdown 材料和本地证据文件。
+Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-server` worker。网页查看器会为每篇论文保留独立的 Codex thread 和请求队列，因此同一论文的后续追问可以复用对话上下文，不再每次启动新的 `codex exec` 进程。一次 reply 抛错或返回空内容，只会使当前论文缓存的 thread 失效；下一次请求可创建新 thread，不会重置其他论文或共享 worker。答案一旦生成，即使聊天笔记持久化、锁释放或富 Markdown 渲染失败也会返回；渲染失败时使用转义后的安全纯文本，并携带明确的已保存/未保存状态与警告。轻量的进程内 paper lease 会让进行中的 Ask 与 Web 删除产生可重试冲突，注册和外部调用均不获取或长期持有跨进程锁。回答仍然运行在只读 sandbox 中，并优先使用 `.codex-paper/answering-pack.md`；旧学习包没有该文件时，会回退到用户可见 Markdown 材料和本地证据文件。
 
 ---
 
@@ -206,6 +206,10 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 
 ```
 ~/codex-papers/
+├── .codex-paper/workspaces-v1/{workspaceId}/ # C2a 私有 authoring/validation workspace
+│   ├── workspace.json                        # 有界状态与 publish intent
+│   └── package/                              # C2b 发布前不对 Viewer 可见
+├── .codex-paper/locks-v1/                    # 跨进程锁 owner records
 ├── .codex-paper/store-v1/papers/{paperKey}/
 │   ├── paper.json                       # paper identity alias 与 reconciliation 审计
 │   ├── current.json                     # 当前 source/generation 的唯一权威指针
@@ -233,10 +237,21 @@ bash scripts/codex-paper.sh install
 bash scripts/codex-paper.sh test
 bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh layout-test
+bash scripts/codex-paper.sh storage-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh build
+```
+
+P0-C2a 中，新生成内容只进入私有 generation workspace；不会创建或修改 `paper.json`、`current.json`、正式 store 或 `index.json`，也不会提前出现在 Viewer。后续操作必须显式使用 prepare 返回的 workspace ID 或路径，不会自动选择“最新 workspace”。workspace authoring 通过共享 writer 与 CAS 完成：
+
+```bash
+bash scripts/codex-paper.sh workspace-list --json
+bash scripts/codex-paper.sh workspace-inspect <workspace-id-or-path> --json
+bash scripts/codex-paper.sh workspace-write <workspace> README.md --stdin --expect-absent
+bash scripts/codex-paper.sh workspace-tags <workspace> --tag <领域> --tag <方法>
+bash scripts/codex-paper.sh workspace-abandon <workspace> --json
 ```
 
 验证一个已完成的学习包：
@@ -274,6 +289,8 @@ bash scripts/codex-paper.sh migrate ~/codex-papers/papers/{paper-slug}
 ```bash
 bash scripts/codex-paper.sh migrate /path/to/package --external-path
 ```
+
+迁移只接受库内规范化的一层 legacy package，或显式指定的真正库外 package。即使传入 `--external-path`，managed workspace/store 路径、符号链接和库内嵌套路径仍会被拒绝。
 
 填写草稿推理分析前，可以先做一次迁移结果 sanity check：
 
@@ -340,7 +357,7 @@ codex-paper/
 1. **学习技能** - Codex 论文阅读和写作 agent，负责生成完整学习包
 2. **PDF 解析器** - 使用 `PyMuPDF` 优先、`pdf-parse` 回退的分层解析器，并稳定输出 JSON
 3. **图像提取器** - PDF 图表提取的 Python 脚本
-4. **准备链路** - 生成内部证据文件 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 和 `evidence-ledger.json`，并更新 `~/codex-papers/index.json`
+4. **准备链路** - 在私有 generation workspace 中生成 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 和 `evidence-ledger.json`；C2b 前不更新正式 index
 5. **研究推理验证** - 使用 `reasoning-analysis.json`、论文 profile 和 `validate-reasoning.js` 约束证据引用、source type、数字 grounding、推理 DAG 和批判性分析
 6. **网页查看器** - 带 Nitro API 的 Nuxt.js 应用，默认展示用户材料，隐藏机器 JSON，并展示证据审计和作者推理视图
 7. **Ask Codex API** - 复用长期运行的 Codex MCP worker 处理基于证据的追问，并将回答追加到 `chat-notes.md`

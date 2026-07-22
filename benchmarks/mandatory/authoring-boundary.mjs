@@ -1,13 +1,11 @@
-import fs from 'fs';
-import path from 'path';
+import { writeWorkspaceAuthoring } from '../../plugins/codex-paper/src/shared/generation-workspace.mjs';
 
-function write(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content);
+async function write(workspace, relativePath, content) {
+  return writeWorkspaceAuthoring(workspace, relativePath, content, { expectAbsent: true });
 }
 
-function writeJson(filePath, value) {
-  write(filePath, `${JSON.stringify(value, null, 2)}\n`);
+async function writeJson(workspace, relativePath, value) {
+  return write(workspace, relativePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function resolveEvidenceRefs(ledger, selectors) {
@@ -202,7 +200,7 @@ Advanced layout behavior remains outside this fixture.
 `;
 }
 
-export function writeAuthoringBoundary({ paperDir, fixtureId, gold, ledger }) {
+export async function writeAuthoringBoundary({ paperDir, fixtureId, gold, ledger }) {
   const selectors = gold.authoring.supportingEvidenceSelectors || [gold.authoring.primaryEvidenceSelector];
   const evidenceRefs = resolveEvidenceRefs(ledger, selectors);
   const reasoning = buildReasoning({ fixtureId, gold, evidenceRefs });
@@ -210,17 +208,17 @@ export function writeAuthoringBoundary({ paperDir, fixtureId, gold, ledger }) {
   const conflict = gold.authoring.visibleConflict;
   const conflictParagraph = conflict ? `\n\n${conflict} [paper p.1]` : '';
 
-  writeJson(path.join(paperDir, 'reasoning-analysis.json'), reasoning);
-  write(path.join(paperDir, 'README.md'), `# ${gold.requiredAssertions.title}\n\nThis deterministic package verifies the PDF-to-validation path. The primary result is ${primary}. [paper p.1]\n\nRead the summary, method, reflection, and Q&A in order.\n`);
-  write(path.join(paperDir, 'visual-assets.md'), '# Visual Assets\n\nNo useful high-value visual assets are present in this deliberately text-only synthetic fixture. The package uses a deterministic method diagram and table instead of paper figures.\n');
-  write(path.join(paperDir, 'summary.md'), `# Summary\n\n${gold.authoring.summary} [paper p.1]${conflictParagraph}\n\nThe conclusion is limited to the one-page synthetic benchmark.\n`);
-  write(path.join(paperDir, 'insights.md'), `# Insights\n\nThe paper claim is ${primary}. [paper p.1]\n\nAs an analysis inference, a first-number heuristic can confuse a year with the intended metric value.\n`);
-  write(path.join(paperDir, 'method.md'), `# Method\n\nThe pipeline reads the fixed PDF, locates the result-bearing evidence, and preserves the scoped claim.\n\n| Stage | Purpose |\n|---|---|\n| Source | Fixed synthetic PDF |\n| Evidence | Locate the metric and value |\n| Boundary | Author the scoped conclusion |\n\n## Minimal Reproduction\n\nSupport criteria: ${primary} remains attached to its page-one evidence. [paper p.1]\n\nFalsification criteria: a year or unrelated value replaces the metric result.\n`);
-  write(path.join(paperDir, 'mental-model.md'), '# Mental Model\n\nTreat each result as a link between a scoped statement, a metric value, and a source passage. The regression gate observes current defects without silently claiming they are fixed.\n');
-  write(path.join(paperDir, 'reflection.md'), `# Reflection\n\n## 最弱假设\nThe selected source passage is the intended result-bearing evidence.\n\n## 最强反例\nA first-number heuristic selects a nearby year instead of ${primary}.\n\n## 非增量后续研究\nReplace loose result values with typed evidence-linked claims rather than tuning the same heuristic.\n`);
-  write(path.join(paperDir, 'qa.md'), buildQa(primary, conflict));
-  write(path.join(paperDir, 'index.html'), '<!doctype html><html><body><h1>Method dashboard</h1><button type="button" onclick="document.getElementById(\'view\').textContent=\'Paper claims, analysis inferences, research speculations, weakest assumption, strongest counterexample\';">Toggle evidence audit</button><p id="view">Paper claims. Analysis inferences. Research speculations. Weakest assumption. Strongest counterexample.</p><script>function fixtureToggle(){return true}</script></body></html>');
-  write(path.join(paperDir, 'code/deterministic-contract-probe.py'), 'print("deterministic contract fixture; execution is not part of validation")\n');
+  await writeJson(paperDir, 'reasoning-analysis.json', reasoning);
+  await write(paperDir, 'README.md', `# ${gold.requiredAssertions.title}\n\nThis deterministic package verifies the PDF-to-validation path. The primary result is ${primary}. [paper p.1]\n\nRead the summary, method, reflection, and Q&A in order.\n`);
+  await write(paperDir, 'visual-assets.md', '# Visual Assets\n\nNo useful high-value visual assets are present in this deliberately text-only synthetic fixture. The package uses a deterministic method diagram and table instead of paper figures.\n');
+  await write(paperDir, 'summary.md', `# Summary\n\n${gold.authoring.summary} [paper p.1]${conflictParagraph}\n\nThe conclusion is limited to the one-page synthetic benchmark.\n`);
+  await write(paperDir, 'insights.md', `# Insights\n\nThe paper claim is ${primary}. [paper p.1]\n\nAs an analysis inference, a first-number heuristic can confuse a year with the intended metric value.\n`);
+  await write(paperDir, 'method.md', `# Method\n\nThe pipeline reads the fixed PDF, locates the result-bearing evidence, and preserves the scoped claim.\n\n| Stage | Purpose |\n|---|---|\n| Source | Fixed synthetic PDF |\n| Evidence | Locate the metric and value |\n| Boundary | Author the scoped conclusion |\n\n## Minimal Reproduction\n\nSupport criteria: ${primary} remains attached to its page-one evidence. [paper p.1]\n\nFalsification criteria: a year or unrelated value replaces the metric result.\n`);
+  await write(paperDir, 'mental-model.md', '# Mental Model\n\nTreat each result as a link between a scoped statement, a metric value, and a source passage. The regression gate observes current defects without silently claiming they are fixed.\n');
+  await write(paperDir, 'reflection.md', `# Reflection\n\n## 最弱假设\nThe selected source passage is the intended result-bearing evidence.\n\n## 最强反例\nA first-number heuristic selects a nearby year instead of ${primary}.\n\n## 非增量后续研究\nReplace loose result values with typed evidence-linked claims rather than tuning the same heuristic.\n`);
+  await write(paperDir, 'qa.md', buildQa(primary, conflict));
+  await write(paperDir, 'index.html', '<!doctype html><html><body><h1>Method dashboard</h1><button type="button" onclick="document.getElementById(\'view\').textContent=\'Paper claims, analysis inferences, research speculations, weakest assumption, strongest counterexample\';">Toggle evidence audit</button><p id="view">Paper claims. Analysis inferences. Research speculations. Weakest assumption. Strongest counterexample.</p><script>function fixtureToggle(){return true}</script></body></html>');
+  await write(paperDir, 'code/deterministic-contract-probe.py', 'print("deterministic contract fixture; execution is not part of validation")\n');
 
   return { evidenceRefs, reasoning };
 }

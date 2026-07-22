@@ -1,6 +1,6 @@
 {
   "name": "codex-paper",
-  "version": "2.0.0+codex.20260721114227",
+  "version": "2.0.0+codex.20260722090218",
   "description": "Turn research papers into structured study environments with generated notes, grounded follow-up Q&A, code demos, and a local web viewer.",
   "author": {
     "name": "byxshr",

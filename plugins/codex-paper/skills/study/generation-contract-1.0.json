@@ -3,6 +3,7 @@
   "common": [
     "skills/study/generation-contract-1.0.json",
     "skills/study/schemas/paper-identity-1.0.schema.json",
+    "skills/study/schemas/generation-workspace-1.0.schema.json",
     "skills/study/schemas/evidence-ledger.schema.json",
     "skills/study/schemas/facts-2.1.schema.json",
     "skills/study/scripts/paper-identity.js",
@@ -15,7 +16,10 @@
     "skills/study/scripts/build-evidence-ledger.js",
     "skills/study/scripts/evidence-utils.js",
     "skills/study/scripts/extract-facts.js",
-    "skills/study/scripts/build-analysis.js"
+    "skills/study/scripts/build-analysis.js",
+    "src/shared/generation-workspace.mjs",
+    "src/shared/storage-transaction.mjs",
+    "src/shared/workspace-writer.mjs"
   ],
   "workflows": {
     "study": [
@@ -34,6 +38,7 @@
       "skills/study/scripts/validate-reasoning.js",
       "skills/study/scripts/validate-study-package.js",
       "skills/study/scripts/validation-report.js",
+      "skills/study/scripts/workspace-cli.js",
       "skills/study/scripts/extract-images.py",
       "skills/study/schemas/reasoning-analysis.schema.json",
       "skills/study/schemas/validation-report-1.0.schema.json",

@@ -49,6 +49,9 @@ jobs:
       - name: Paper Library Layout 1.0
         run: bash scripts/codex-paper.sh layout-test
 
+      - name: Generation Workspace and Storage Transactions
+        run: bash scripts/codex-paper.sh storage-test
+
       - name: Validation Report 1.0
         run: bash scripts/codex-paper.sh validation-test
 

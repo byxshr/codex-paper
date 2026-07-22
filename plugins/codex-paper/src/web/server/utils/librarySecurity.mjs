@@ -1,14 +1,14 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { randomBytes } from 'node:crypto'
 import {
   assertWritableDescriptor,
   getLibraryLayout,
   readOverlayState,
   resolveLibraryPaper,
-  writeJsonAtomicNoFollow,
 } from '../../../shared/paper-library.mjs'
+import { atomicWriteFile as sharedAtomicWriteFile, fileWritePrecondition } from '../../../shared/storage-transaction.mjs'
+import { currentOperationLockHandle } from './operationLocks.mjs'
 
 export const LIMITS = Object.freeze({
   publicTextBytes: 16 * 1024 * 1024,
@@ -248,32 +248,22 @@ export function readLibraryIndex(options = {}) {
   return { raw, papers, isArray }
 }
 
-export function writeFileAtomic(filePath, content, mode = 0o600) {
+export function writeFileAtomic(filePath, content, mode = 0o600, requiredLock) {
+  if (!requiredLock) throw boundaryError(409, 'A required storage lock key must be specified')
   const parent = path.dirname(filePath)
-  if (fs.lstatSync(parent).isSymbolicLink()) throw boundaryError(403, 'Writable directory symlinks are not allowed')
-  const temporary = path.join(parent, `.${path.basename(filePath)}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`)
-  let descriptor
-  try {
-    const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0)
-    descriptor = fs.openSync(temporary, flags, mode)
-    fs.writeFileSync(descriptor, content)
-    fs.closeSync(descriptor)
-    descriptor = undefined
-    fs.renameSync(temporary, filePath)
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor)
-    try { fs.unlinkSync(temporary) } catch {}
-  }
+  const precondition = fileWritePrecondition(filePath, LIMITS.rawBytes)
+  return sharedAtomicWriteFile({ root: parent, relativePath: path.basename(filePath), data: content, mode,
+    lockHandle: currentOperationLockHandle(), requiredLock, maxBytes: LIMITS.rawBytes, ...precondition })
 }
 
-export function writeJsonAtomic(filePath, value) {
-  writeFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`)
+export function writeJsonAtomic(filePath, value, requiredLock) {
+  return writeFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`, 0o600, requiredLock)
 }
 
 export function writeLibraryIndex(indexState, papers, options = {}) {
   const { indexPath } = ensureLibraryLayout(options)
   const next = indexState.isArray ? papers : { ...indexState.raw, papers }
-  writeJsonAtomic(indexPath, next)
+  writeJsonAtomic(indexPath, next, 'index')
 }
 
 export function buildPublicFileTree(slug, options = {}) {
@@ -317,7 +307,7 @@ export function readPaperTags(slug, options = {}) {
 }
 
 export function writePaperOverlayState(descriptor, state) {
-  try { writeJsonAtomicNoFollow(path.join(assertWritableDescriptor(descriptor).overlayDir, 'state.json'), state) } catch (error) {
+  try { writeJsonAtomic(path.join(assertWritableDescriptor(descriptor).overlayDir, 'state.json'), state, descriptor.paperLockKey) } catch (error) {
     throw boundaryError(error?.statusCode || 500, error?.message || 'Failed to write paper overlay')
   }
 }

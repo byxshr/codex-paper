@@ -132,6 +132,12 @@ export function createDeleteConfirmation(sessionId, slug, now = Date.now()) {
   return { token, expiresAt }
 }
 
+export function validateDeleteConfirmation(token, sessionId, slug, now = Date.now()) {
+  purgeConfirmations(now)
+  const item = state().confirmations.get(token)
+  return Boolean(item && item.sessionId === sessionId && item.slug === slug && item.expiresAt > now)
+}
+
 export function consumeDeleteConfirmation(token, sessionId, slug, now = Date.now()) {
   purgeConfirmations(now)
   const confirmations = state().confirmations

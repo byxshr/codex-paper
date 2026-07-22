@@ -163,6 +163,18 @@ export function renderSafeMarkdown(markdown, options = {}) {
   })
 }
 
+export function renderSafePlainText(value) {
+  return `<pre class="raw-html"><code>${escapeHtml(value)}</code></pre>`
+}
+
+export function renderSafeMarkdownForDelivery(markdown, options = {}, renderer = renderSafeMarkdown) {
+  try {
+    return { html: renderer(markdown, options), degraded: false }
+  } catch {
+    return { html: renderSafePlainText(markdown), degraded: true }
+  }
+}
+
 function sanitizedPreviewBody(rawHtml) {
   return sanitizeHtml(String(rawHtml ?? ''), {
     allowedTags: [

@@ -11,10 +11,10 @@ Detect the user's language from the request and write every user-facing material
 
 ## Core Contract
 
-The final deliverable is a complete study package in the managed paper library. Treat the `paperDir` returned by `prepare-paper.js` as the only physical package path; never construct a path from the title slug:
+P0-C2a authors the complete study package inside a private generation workspace. Treat the exact `workspaceId`, `workspaceDir`, and `paperDir` returned by `prepare-paper.js` as authoritative; never construct a path from the title slug and never select a "latest" workspace:
 
 ```text
-{prepare-output.paperDir}/
+{prepare-output.workspaceDir}/package/
 ```
 
 Required user-visible files:
@@ -93,9 +93,9 @@ OUTPUT_LANG="zh"   # use en for an English request
 node ./scripts/prepare-paper.js "<user-input>" --workflow study --language "$OUTPUT_LANG" --context paper-only --profile auto
 ```
 
-Preparation is identity-aware. A byte-identical source with the same workflow/language/context/profile and generation contract is reused without writing. A changed fingerprint creates a new generation-addressed package; a changed source creates a new source revision. Paper-level mutable state remains in the overlay. Until P0-C2 introduces a sealed publication workspace, the later authoring steps continue writing inside that generation package, so do not describe it as immutable before the final gate. Use `--resume` only to require exact reuse, `--new-revision` only to require a different source under an existing paper identity, and `--reconcile-identity <route-slug>` only after the user explicitly approves alias reconciliation. `--replace` is intentionally rejected before P0-C2.
+Preparation is identity-aware and workspace-only. A new generation is initialized under `PAPERS_DIR/.codex-paper/workspaces-v1/`; it does not create or change `paper.json`, `current.json`, the formal store, or `index.json`, and it is not visible in the Viewer. If the same generation already has an active workspace, preparation fails with `WORKSPACE_EXISTS` and names the exact workspace ID; resume it with `--resume-workspace <workspaceId>` or explicitly abandon it before retrying. A retained `failed` workspace remains inspectable but does not block a fresh prepare retry. `--resume` remains reserved for exact reuse of an already published generation. A changed fingerprint creates a distinct workspace and a changed source creates a new source revision proposal. Use `--new-revision` and `--reconcile-identity <route-slug>` only with their explicit identity intent. `--replace` remains rejected until C2b publication exists.
 
-The script resolves URLs, parses the PDF, copies `paper.pdf`, refreshes the compatibility index, and returns the authoritative generation path as `paperDir`. It writes:
+The script resolves URLs, parses the PDF, copies `paper.pdf` into a private initialization directory, and atomically establishes the workspace. It returns the exact workspace and package paths and writes only inside that workspace:
 
 ```text
 {prepare-output.paperDir}/paper-data.json
@@ -140,6 +140,8 @@ Create the reasoning draft:
 node ./scripts/scaffold-reasoning-analysis.js "{prepare-output.paperDir}" --context paper-only --profile auto
 ```
 
+The scaffold uses the shared workspace writer and returns SHA-256 values for both managed drafts. Retain those hashes for the next CAS update. Never edit a workspace file directly.
+
 Then read the matching profile before filling any high-level analysis:
 
 ```text
@@ -158,7 +160,12 @@ Use the profile to decide the appropriate validation kinds and reproduction arti
 
 ## Step 4: Fill And Validate Reasoning
 
-Fill `reasoning-analysis.json` yourself after reading the evidence. Set `status` to `complete` only after all required analysis is real and evidence-grounded.
+Fill `reasoning-analysis.json` yourself after reading the evidence. Send the complete replacement through `workspace-cli.js write` using the scaffold's current SHA-256; do not use direct filesystem editing. Set `status` to `complete` only after all required analysis is real and evidence-grounded.
+
+```bash
+node ./scripts/workspace-cli.js write "{prepare-output.workspaceId}" reasoning-analysis.json \
+  --stdin --expected-sha256 "{scaffold-output.reasoningSha256}"
+```
 
 Required reasoning contents:
 
@@ -199,16 +206,15 @@ Infer exactly two semantic tags from the paper:
 * avoid generic tags such as `paper`, `research`, `ai`, `ml`
 * prefer one domain/problem tag and one method/core-idea tag
 
-Persist tags through the Viewer tags API (or the shared overlay writer). Tags belong to the paper-level mutable overlay and its index projection; never rewrite generation `meta.json` to save them:
+Persist the proposed tags in the exact workspace publish intent. C2a must not touch the formal overlay or index:
 
-```text
-{paper-record}/overlay/state.json
-~/codex-papers/index.json  # compatibility projection
+```bash
+node ./scripts/workspace-cli.js tags "{prepare-output.workspaceId}" --tag "<domain-tag>" --tag "<method-tag>"
 ```
 
 ## Step 6: Write The Complete Study Package
 
-Codex must author these files directly from `reasoning-analysis.json` and the cited paper evidence. Do not use `render-from-analysis.js` as the final generator. That script is only a quick-summary fallback for the separate quick summary flow.
+Codex must author these files from `reasoning-analysis.json` and the cited paper evidence, but every file creation or replacement must go through the shared workspace writer. Use `workspace-cli.js write <exact-workspace> <relative-path> --stdin --expect-absent` for a first write and `--expected-sha256` for replacement. Never edit `paperDir` directly. Do not use `render-from-analysis.js` as the final generator; it is only a workspace-scoped quick-summary fallback.
 
 Ground every claim in `reasoning-analysis.json`, `evidence-ledger.json`, `paper-data.json`, `facts.json`, `analysis.json`, or direct `rawText` reading. Do not invent metrics, datasets, model sizes, ablations, code links, training stages, or conclusions. When mentioning quantitative results, use a natural source note such as `论文 p.8，Table 3` or `paper p.8, Table 3`; do not expose evidence IDs.
 
@@ -417,13 +423,14 @@ Choose an interaction that fits the paper: architecture explorer, training-stage
 
 ## Step 9: Visual Assets
 
-Try to extract figures:
+Extract figures into a private external temporary directory, inspect them, then import only selected files through `workspace-cli.js write ... --from-file ... --expect-absent`. Never point `extract-images.py` at the workspace `images/` directory directly.
 
 ```bash
-mkdir -p "{prepare-output.paperDir}/images"
 python3 ./scripts/extract-images.py \
   "{prepare-output.paperDir}/paper.pdf" \
-  "{prepare-output.paperDir}/images"
+  "<private-temporary-output>"
+node ./scripts/workspace-cli.js write "{prepare-output.workspaceId}" "images/<selected-name>" \
+  --from-file "<private-temporary-output>/<selected-file>" --expect-absent
 ```
 
 If useful figures are found, rename the most important ones descriptively, for example:
@@ -503,7 +510,7 @@ Verify:
 * no Codex image generation, imagegen prompt, generated bitmap pipeline, cover, or poster appears in the package
 * `index.html` is self-contained, interactive, and contains a paper-grounded method overview
 
-Run the validation script after generating the package:
+Run the validation scripts against the exact workspace package after generating the package:
 
 ```bash
 node ./scripts/validate-reasoning.js "{paper-slug-or-dir}"
@@ -523,9 +530,11 @@ Only when the user explicitly asks to execute generated code:
 
 The CLI token proves plan integrity and single-use authorization; it does not authenticate a human. Human consent is a workflow boundary: stop after showing the plan and require a new, explicit user reply before running it. Never issue and consume a token in one uninterrupted turn. The token expires after five minutes and is single-use. If the plan does not issue a token, the supported Docker sandbox is unavailable or nonconformant; report that generated code was not executed. Never use Python, Node, a shell, `sandbox-exec`, bubblewrap, Podman, or another fallback directly on the host.
 
+After a successful standard complete validation, the workspace state may be `validated`, but it is still not published. P0-C2a has no publish command. Report the exact workspace ID and validation result, and explicitly state that C2b must recheck the gate before creating a manifest, switching `current.json`, or updating the Viewer/index.
+
 ## Step 12: Web UI
 
-The Web UI displays the generated files. It should not rely on facts or analysis cards as the default paper experience.
+The Web UI displays only published generations. A C2a workspace is intentionally absent from Viewer routes and must not be described as available there.
 
 `index.html` remains an interactive self-contained package artifact, but the current local Viewer deliberately does not execute its JavaScript or package CSS. The Viewer shows source by default and offers only an explicit scriptless static safe preview. Do not weaken that boundary or assume the Viewer is the execution environment for the interactive export.
 
@@ -535,7 +544,7 @@ The Web UI can ask follow-up questions through [paper-chat](../chat/SKILL.md). N
 
 ## Follow-Up Learning Loop
 
-If the user asks deeper questions later, add new files in the same paper folder, for example:
+If the user asks deeper questions later, create or resume an exact generation workspace and add files through `workspace-cli.js write`; never mutate a published generation folder directly. Example authoring paths include:
 
 ```text
 deep-dive-{topic}.md

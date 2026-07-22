@@ -107,7 +107,7 @@ test('unknown package version prevents renderer writes', () => {
     fs.writeFileSync(path.join(paperDir, 'facts.json'), JSON.stringify({ coreClaims: [], keyResults: [], limitations: [] }));
     fs.writeFileSync(path.join(paperDir, 'analysis.json'), JSON.stringify({}));
     const before = new Set(fs.readdirSync(paperDir));
-    assert.throws(() => renderMaterialsForPaper(paperDir), /PACKAGE_VERSION_UNSUPPORTED/);
+    assert.throws(() => renderMaterialsForPaper(paperDir), /PUBLISHED_GENERATION_READ_ONLY/);
     assert.deepEqual(new Set(fs.readdirSync(paperDir)), before);
   } finally {
     fs.rmSync(paperDir, { recursive: true, force: true });

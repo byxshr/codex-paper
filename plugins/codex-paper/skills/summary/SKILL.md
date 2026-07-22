@@ -50,15 +50,15 @@ OUTPUT_LANG="en"   # or zh, based on the user's request
 node ../study/scripts/prepare-paper.js "$USER_INPUT" --workflow summary --language "$OUTPUT_LANG" --context paper-only --profile auto
 ```
 
-The preparation identity includes the summary workflow and output language. An exact matching generation is reused without writes; a different fingerprint or source creates a separate managed generation/revision without overwriting existing output. Legacy flat packages remain read-only until explicit migration.
+The preparation identity includes the summary workflow and output language. In C2a, a new run creates a private generation workspace and returns its exact `workspaceId`, `workspaceDir`, and package `paperDir`; it does not update `paper.json`, `current.json`, or `index.json`, and it is not visible in the Viewer. An already published exact generation may still be reused read-only with `--resume`. Legacy flat packages remain read-only until explicit migration.
 
 Do not bypass this entrypoint with `curl`, `wget`, browser downloads, or in-process parsing. It enforces HTTPS redirect/SSRF checks, DNS pinning, bounded private staging, PDF magic, parser resource/page limits, and private quarantine for rejected inputs.
 
-The preparation step now writes `analysis.json` automatically. If it is missing or needs a refresh, rebuild it explicitly:
+The preparation step writes `analysis.json` inside the workspace automatically. If it is missing or needs a refresh, rebuild it by passing the exact workspace package path:
 
 ```bash
-PAPER_SLUG="<paper-slug>"
-node ../study/scripts/build-analysis.js "$PAPER_SLUG"
+PAPER_DIR="<prepare-output.paperDir>"
+node ../study/scripts/build-analysis.js "$PAPER_DIR"
 ```
 
 After preparation, treat these files as the only trusted inputs, in this order:
@@ -79,14 +79,14 @@ Reuse the preparation language for rendering:
 OUTPUT_LANG="en"   # or "zh"
 ```
 
-Read `paperDir` (or use the route slug through the shared resolver) from the JSON output of `prepare-paper.js`, then render the quick summary from `analysis.json`:
+Read the exact `paperDir` from the JSON output of `prepare-paper.js`, then render the quick summary from `analysis.json`:
 
 ```bash
 PAPER_DIR="<prepare-output.paperDir>"
 node ../study/scripts/render-from-analysis.js "$PAPER_DIR" summary "$OUTPUT_LANG"
 ```
 
-This creates `quick-summary.md` from the structured analysis layer. If you make any manual refinement afterward, preserve the same structure and do not add new facts.
+This creates `quick-summary.md` from the structured analysis layer through the shared workspace writer. Any manual refinement must use `workspace-write` with the current file SHA-256; never edit workspace files directly. Preserve the same structure and do not add new facts.
 
 If the user language differs from the paper language, use the rendered file as a scaffold and translate the prose sections into the user language while preserving technical terms, metric values, and `Source:` notes.
 
@@ -147,19 +147,11 @@ Additional constraints:
 
 ---
 
-# Step 3: Reuse the Prepared Metadata
+# Step 3: Keep the Result Private Until C2b
 
-`prepare-paper.js` already updates `meta.json`, copies the PDF, preserves the existing `~/codex-papers/index.json` root structure, and writes `analysis.json`.
+`prepare-paper.js` writes `meta.json`, the PDF, and `analysis.json` only in the private workspace package. Do not create or update formal paper records, `current.json`, or `index.json`, and do not claim the summary has been published.
 
----
-
-# Step 4: Relaunch Web UI
-
-After updating the paper library, invoke the sibling [paper-webui](../webui/SKILL.md) skill so the local viewer reflects the new paper.
-
----
-
-# Step 5: Present Summary to User
+# Step 4: Present Summary to User
 
 After generating the summary:
 
@@ -172,7 +164,7 @@ After generating the summary:
 
 3. **File location reminder:**
    - Summary saved to: `{prepare-output.paperDir}/quick-summary.md`
-   - Web UI available at: `http://localhost:5815`
+   - State clearly that the file is in a private generation workspace and is not available in the Viewer until the C2b publication flow exists.
 
 ---
 

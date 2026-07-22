@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { isContained, listManagedRecords, resolveExplicitPackage } from '../../plugins/codex-paper/src/shared/paper-library.mjs'
 
 import {
   SandboxError,
@@ -27,18 +28,30 @@ chmodSync(FAKE_DOCKER, 0o755)
 
 function fixture() {
   const root = mkdtempSync(path.join(os.tmpdir(), 'codex-paper-sandbox-test-'))
-  const paper = path.join(root, 'paper')
+  const workspaceId = 'ws-aaaaaaaaaaaa-bbbbbbbbbbbb-cccccccccccccccccccccccccccccccc'
+  const workspaceDir = path.join(root, '.codex-paper', 'workspaces-v1', workspaceId)
+  const paper = path.join(workspaceDir, 'package')
   mkdirSync(path.join(paper, 'code'), { recursive: true })
+  const sourceRevisionId = `sha256:${'1'.repeat(64)}`
+  const generationId = `gen:sha256:${'2'.repeat(64)}`
+  writeFileSync(path.join(workspaceDir, 'workspace.json'), `${JSON.stringify({
+    schemaVersion: '1.0.0', workspaceId, state: 'authoring', paperKey: `p-${'3'.repeat(64)}`,
+    paperId: `source:${sourceRevisionId}`, sourceRevisionId, generationId,
+    targetPackageRelativePath: `sources/sha256-${'1'.repeat(64)}/generations/gen-sha256-${'2'.repeat(64)}/package`,
+    routeSlug: 'paper', createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(),
+    lastSuccessfulStep: 'initialized', diagnostics: [], publishIntent: { paperRecord: {}, reconciliation: null, tags: [] },
+  }, null, 2)}\n`)
   writeFileSync(path.join(paper, 'code', 'demo.py'), 'print("safe")\n')
   const env = {
     ...process.env,
+    PAPERS_DIR: root,
     CODEX_PAPER_DOCKER_BIN: FAKE_DOCKER,
     CODEX_PAPER_SANDBOX_STATE_DIR: path.join(root, 'state'),
     CODEX_PAPER_SANDBOX_APPROVAL_DIR: path.join(root, 'approvals'),
     FAKE_DOCKER_POLICY_HASH: sandboxPolicyFingerprint(),
     FAKE_DOCKER_IMAGE_ID: 'sha256:fake-sandbox-image',
   }
-  return { root, paper, env, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  return { root, paper, workspaceDir, env, cleanup: () => rmSync(root, { recursive: true, force: true }) }
 }
 
 function writeConformanceStamp(env, overrides = {}) {
@@ -56,6 +69,31 @@ function writeConformanceStamp(env, overrides = {}) {
   const file = path.join(env.CODEX_PAPER_SANDBOX_STATE_DIR, 'conformance.json')
   writeFileSync(file, JSON.stringify(stamp), { mode: 0o600 })
   chmodSync(file, 0o600)
+}
+
+function createPublishedGeneration(item, { createOverlay = false } = {}) {
+  const paperKey = `p-${'4'.repeat(64)}`
+  const paperId = `source:sha256:${'5'.repeat(64)}`
+  const sourceRevisionId = `sha256:${'6'.repeat(64)}`
+  const generationId = `gen:sha256:${'7'.repeat(64)}`
+  const relative = `sources/sha256-${'6'.repeat(64)}/generations/gen-sha256-${'7'.repeat(64)}/package`
+  const recordDir = path.join(item.root, '.codex-paper', 'store-v1', 'papers', paperKey)
+  const packageDir = path.join(recordDir, ...relative.split('/'))
+  mkdirSync(path.join(packageDir, 'code'), { recursive: true })
+  if (createOverlay) mkdirSync(path.join(recordDir, 'overlay'), { recursive: true })
+  writeFileSync(path.join(packageDir, 'code', 'demo.py'), 'print("published")\n')
+  writeFileSync(path.join(recordDir, 'paper.json'), JSON.stringify({
+    schemaVersion: '1.0.0', paperKey, primaryPaperId: paperId, paperIdAliases: [paperId],
+    routeAliases: ['published-paper'], createdAt: new Date(0).toISOString(), reconciliations: [],
+  }))
+  writeFileSync(path.join(recordDir, 'current.json'), JSON.stringify({
+    schemaVersion: '1.0.0', paperKey, paperId, sourceRevisionId, generationId, packageRelativePath: relative,
+  }))
+  mkdirSync(path.join(packageDir, '.codex-paper'))
+  writeFileSync(path.join(packageDir, '.codex-paper', 'paper-identity.json'), JSON.stringify({
+    paperId, sourceRevisionId, generationId, slug: 'published-paper',
+  }))
+  return { packageDir, overlayDir: path.join(recordDir, 'overlay') }
 }
 
 test('legacy validator execution flags fail with exit 2 and never execute code', () => {
@@ -104,6 +142,55 @@ test('matching conformance stamp enables one-time approval and report', async ()
     const snapshotPath = mount.match(/source=([^,]+),target=/)[1]
     assert.equal(lstatSafe(snapshotPath), null)
     await assert.rejects(() => executeApprovedPlan(item.paper, plan.approval.token, { env: item.env }), /already been used/)
+  } finally { item.cleanup() }
+})
+
+test('an explicit managed generation path executes with reports in its mutable overlay', async () => {
+  const item = fixture()
+  try {
+    writeConformanceStamp(item.env)
+    const published = createPublishedGeneration(item)
+    const records = listManagedRecords({ libraryRoot: item.root })
+    assert.equal(records.length, 1)
+    assert.match(path.relative(records[0].recordDir, published.packageDir), /^sources\//)
+    assert.equal(isContained(records[0].recordDir, published.packageDir), true)
+    assert.equal(resolveExplicitPackage(published.packageDir, { libraryRoot: item.root }).mode, 'managed_generation_v1')
+    const plan = buildExecutionPlan(published.packageDir, { env: item.env })
+    assert.equal(plan.capability.status, 'ready')
+    assert.match(plan.approval.token, /^[a-f0-9]{64}$/)
+    const result = await executeApprovedPlan(published.packageDir, plan.approval.token, { env: item.env })
+    assert.equal(result.exitCode, 0)
+    assert.match(path.relative(realpathSync(published.overlayDir), result.reportPath), /^execution-reports\//)
+    assert.match(path.relative(realpathSync(published.overlayDir), result.reportPath), /gen-sha256-[a-f0-9]{64}/)
+    assert.doesNotMatch(path.relative(realpathSync(published.overlayDir), result.reportPath), /:/)
+  } finally { item.cleanup() }
+})
+
+test('explicit paths without a managed report target never receive approval', () => {
+  const item = fixture()
+  try {
+    writeConformanceStamp(item.env)
+    const explicit = path.join(item.root, 'explicit-paper')
+    mkdirSync(path.join(explicit, 'code'), { recursive: true })
+    writeFileSync(path.join(explicit, 'code', 'demo.py'), 'print("explicit")\n')
+    const plan = buildExecutionPlan(explicit, { env: item.env })
+    assert.equal(plan.capability.status, 'nonconformant')
+    assert.equal(plan.approval, null)
+    assert.match(plan.capability.reason, /generation workspace or managed published generation/)
+  } finally { item.cleanup() }
+})
+
+test('abandoned workspace plans fail closed with a structured nonconformant capability', () => {
+  const item = fixture()
+  try {
+    writeConformanceStamp(item.env)
+    const recordPath = path.join(item.workspaceDir, 'workspace.json')
+    const record = JSON.parse(readFileSync(recordPath, 'utf8'))
+    writeFileSync(recordPath, `${JSON.stringify({ ...record, state: 'abandoned' }, null, 2)}\n`)
+    const plan = buildExecutionPlan(item.paper, { env: item.env })
+    assert.equal(plan.capability.status, 'nonconformant')
+    assert.equal(plan.approval, null)
+    assert.match(plan.capability.reason, /Abandoned generation workspaces are read-only/)
   } finally { item.cleanup() }
 })
 

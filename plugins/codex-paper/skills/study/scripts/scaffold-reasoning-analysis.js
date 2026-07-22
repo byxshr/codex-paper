@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { assertWritablePackage, classifyPackageCompatibility, isLegacyMigrationSourceVersion } from '../../../src/shared/package-compatibility.mjs';
-import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
+import { assertWritablePackage, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
+import { fileSha256, replaceWorkspaceFile, withWorkspaceMutationSync } from '../../../src/shared/workspace-writer.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REVIEW_TEMPLATE = `# Reasoning Review
+export const REVIEW_TEMPLATE = `# Reasoning Review
 
 - [ ] 核心主张与贡献、结果已区分
 - [ ] 每个 paper_claim 都有论文证据
@@ -70,14 +69,6 @@ function parseArgs(argv) {
   }
 
   return args;
-}
-
-function resolvePaperDir(input) {
-  const descriptor = resolveExplicitPackage(input.replace(/^~(?=$|\/)/, os.homedir()), {
-    libraryRoot: process.env.PAPERS_DIR
-  });
-  if (descriptor.readOnly) throw new Error('LEGACY_LAYOUT_READ_ONLY: migrate the flat-layout package explicitly before scaffolding reasoning.');
-  return descriptor.packageDir;
 }
 
 function readJson(filePath) {
@@ -160,7 +151,8 @@ export function buildReasoningSkeleton({ paperDir, contextMode = 'paper-only', p
 }
 
 export function scaffoldReasoningAnalysis(input, options = {}) {
-  const paperDir = resolvePaperDir(input);
+  return withWorkspaceMutationSync(input, ({ descriptor, lockHandle }) => {
+  const paperDir = descriptor.packageDir;
   if (!fs.existsSync(paperDir) || !fs.statSync(paperDir).isDirectory()) {
     throw new Error(`Paper directory not found: ${paperDir}`);
   }
@@ -175,9 +167,7 @@ export function scaffoldReasoningAnalysis(input, options = {}) {
   const meta = readJson(path.join(paperDir, 'meta.json'));
   const ledger = readJson(path.join(paperDir, 'evidence-ledger.json'));
   const compatibility = classifyPackageCompatibility({ meta, ledger });
-  const explicitV2Migration = options.explicitV2Migration === true
-    && (compatibility.mode === 'compatible_2_0' || isLegacyMigrationSourceVersion(meta.packageVersion));
-  if (!explicitV2Migration) assertWritablePackage(compatibility);
+  assertWritablePackage(compatibility);
 
   const outputPath = path.join(paperDir, 'reasoning-analysis.json');
   if (fs.existsSync(outputPath) && !options.force) {
@@ -190,21 +180,24 @@ export function scaffoldReasoningAnalysis(input, options = {}) {
     profile: options.profile || 'auto'
   });
 
-  fs.writeFileSync(outputPath, `${JSON.stringify(skeleton, null, 2)}\n`);
+  const reasoningWrite = replaceWorkspaceFile({ descriptor, lockHandle, relativePath: 'reasoning-analysis.json', data: `${JSON.stringify(skeleton, null, 2)}\n`, policy: 'reasoning_scaffold' });
 
   const codexDir = path.join(paperDir, '.codex-paper');
-  fs.mkdirSync(codexDir, { recursive: true });
   const reviewPath = path.join(codexDir, 'reasoning-review.md');
+  let reviewWrite = null;
   if (!fs.existsSync(reviewPath) || options.force) {
-    fs.writeFileSync(reviewPath, REVIEW_TEMPLATE);
+    reviewWrite = replaceWorkspaceFile({ descriptor, lockHandle, relativePath: '.codex-paper/reasoning-review.md', data: REVIEW_TEMPLATE, policy: 'reasoning_scaffold' });
   }
 
   return {
     paperDir,
     outputPath,
     reviewPath,
-    skeleton
+    skeleton,
+    reasoningSha256: reasoningWrite.sha256,
+    reviewSha256: reviewWrite?.sha256 || fileSha256(reviewPath)
   };
+  }, options);
 }
 
 async function runCli() {
@@ -215,6 +208,8 @@ async function runCli() {
       paperDir: result.paperDir,
       reasoningPath: result.outputPath,
       reviewPath: result.reviewPath,
+      reasoningSha256: result.reasoningSha256,
+      reviewSha256: result.reviewSha256,
       status: result.skeleton.status,
       paperType: result.skeleton.paperType,
       contextMode: result.skeleton.contextMode,

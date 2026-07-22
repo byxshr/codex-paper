@@ -24,6 +24,7 @@ const FACTS_SCHEMA = 'plugins/codex-paper/skills/study/schemas/facts-2.1.schema.
 const FACTS_EXTRACTOR = 'plugins/codex-paper/skills/study/scripts/extract-facts.js'
 const PACKAGE_COMPATIBILITY = 'plugins/codex-paper/src/shared/package-compatibility.mjs'
 const STUDY_VALIDATOR = 'plugins/codex-paper/skills/study/scripts/validate-study-package.js'
+const REASONING_VALIDATOR = 'plugins/codex-paper/skills/study/scripts/validate-reasoning.js'
 const MIGRATION_SCRIPT = 'plugins/codex-paper/skills/study/scripts/migrate-package.js'
 const VIEWER_COMPATIBILITY = 'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs'
 const VALIDATION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json'
@@ -38,6 +39,13 @@ const CURRENT_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-current-1
 const PAPER_RECORD_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-record-1.0.schema.json'
 const OVERLAY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-overlay-1.0.schema.json'
 const LAYOUT_TEST = 'scripts/tests/library-layout.test.mjs'
+const WORKSPACE_SCHEMA = 'plugins/codex-paper/skills/study/schemas/generation-workspace-1.0.schema.json'
+const WORKSPACE_ENGINE = 'plugins/codex-paper/src/shared/generation-workspace.mjs'
+const STORAGE_ENGINE = 'plugins/codex-paper/src/shared/storage-transaction.mjs'
+const WORKSPACE_WRITER = 'plugins/codex-paper/src/shared/workspace-writer.mjs'
+const WORKSPACE_CLI = 'plugins/codex-paper/skills/study/scripts/workspace-cli.js'
+const STORAGE_TEST = 'scripts/tests/storage-transaction.test.mjs'
+const LIBRARY_SECURITY = 'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs'
 const STUDY_SKILL = 'plugins/codex-paper/skills/study/SKILL.md'
 const SUMMARY_SKILL = 'plugins/codex-paper/skills/summary/SKILL.md'
 const MANDATORY_SENTINELS = [
@@ -100,6 +108,13 @@ const SENTINELS = [
   PAPER_RECORD_SCHEMA,
   OVERLAY_SCHEMA,
   LAYOUT_TEST,
+  WORKSPACE_SCHEMA,
+  WORKSPACE_ENGINE,
+  STORAGE_ENGINE,
+  WORKSPACE_WRITER,
+  WORKSPACE_CLI,
+  STORAGE_TEST,
+  LIBRARY_SECURITY,
   SUMMARY_SKILL,
   'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
@@ -419,6 +434,7 @@ export function checkRepository({
       errors.push(`${ROOT_SCRIPT} must expose identity-test`)
     }
     if (!rootScript.includes('layout-test') || !rootScript.includes('library-layout.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose layout-test`)
+    if (!rootScript.includes('storage-test') || !rootScript.includes('storage-transaction.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose storage-test`)
   }
   if (existsSync(join(root, CI_WORKFLOW))) {
     const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
@@ -437,6 +453,10 @@ export function checkRepository({
     if (layoutIndex < 0 || layoutIndex > validationIndex || layoutIndex > mandatoryIndex) {
       errors.push(`${CI_WORKFLOW} must run layout-test before validation-test and benchmark-mandatory`)
     }
+    const storageIndex = workflow.indexOf('storage-test')
+    if (storageIndex < 0 || storageIndex < layoutIndex || storageIndex > validationIndex || storageIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run storage-test after layout-test and before validation-test and benchmark-mandatory`)
+    }
   }
 
   if (existsSync(join(root, LIBRARY_RESOLVER))) {
@@ -447,9 +467,7 @@ export function checkRepository({
   }
   for (const consumer of [
     PREPARE_SCRIPT,
-    'plugins/codex-paper/skills/study/scripts/build-analysis.js',
-    'plugins/codex-paper/skills/study/scripts/render-from-analysis.js',
-    'plugins/codex-paper/skills/study/scripts/scaffold-reasoning-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/migrate-package.js',
     'plugins/codex-paper/skills/study/scripts/validate-reasoning.js',
     'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
     'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
@@ -458,6 +476,15 @@ export function checkRepository({
     if (!existsSync(join(root, consumer))) continue
     const source = readFileSync(join(root, consumer), 'utf8')
     if (!source.includes('paper-library.mjs')) errors.push(`${consumer} must use the shared paper library resolver`)
+  }
+  for (const consumer of [
+    'plugins/codex-paper/skills/study/scripts/build-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/render-from-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/scaffold-reasoning-analysis.js',
+  ]) {
+    if (existsSync(join(root, consumer)) && !readFileSync(join(root, consumer), 'utf8').includes('workspace-writer.mjs')) {
+      errors.push(`${consumer} must use the shared workspace writer`)
+    }
   }
 
   if (existsSync(join(root, GENERATION_CONTRACT))) {
@@ -520,11 +547,61 @@ export function checkRepository({
   }
   if (existsSync(join(root, PREPARE_SCRIPT))) {
     const source = readFileSync(join(root, PREPARE_SCRIPT), 'utf8')
-    for (const required of ['resolvePreparationAction', 'PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'RESUME_GENERATION_NOT_FOUND', 'COPYFILE_EXCL', 'IDENTITY_RELATIVE_PATH']) {
+    for (const required of ['resolvePreparationAction', 'PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'RESUME_GENERATION_NOT_FOUND', 'createGenerationWorkspace', 'isActiveGenerationWorkspace', 'resumeWorkspace', 'IDENTITY_RELATIVE_PATH']) {
       if (!source.includes(required)) errors.push(`${PREPARE_SCRIPT} must preserve fail-closed identity boundary ${required}`)
+    }
+    if (/writeLibraryIndex|writeCurrentRecord|writePaperRecord|writeJsonAtomicNoFollow|writeIndexPreserveShape|\bwriteFileSync\b|\bwriteFile\s*\(|['"](?:index|current|paper)\.json['"]/.test(source)) {
+      errors.push(`${PREPARE_SCRIPT} must not publish current, record, or index during C2a`)
     }
     if (/--force\b|force\s*:\s*true|copyFileSync\([^\n]*COPYFILE_FICLONE_FORCE/.test(source)) {
       errors.push(`${PREPARE_SCRIPT} must not restore overwrite or force preparation`)
+    }
+  }
+  const migrationScript = 'plugins/codex-paper/skills/study/scripts/migrate-package.js'
+  if (existsSync(join(root, migrationScript))) {
+    const source = readFileSync(join(root, migrationScript), 'utf8')
+    for (const required of ['getLibraryLayout', 'resolveExplicitPackage', 'generation_workspace_v1', 'MANAGED_LAYOUT_MIGRATION_REFUSED']) {
+      if (!source.includes(required)) errors.push(`${migrationScript} must reject managed generations and workspaces through the shared resolver boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, WORKSPACE_SCHEMA))) {
+    const schema = readJson(join(root, WORKSPACE_SCHEMA), errors, WORKSPACE_SCHEMA)
+    for (const state of ['authoring', 'validating', 'validated', 'failed', 'abandoned']) {
+      if (!schema?.properties?.state?.enum?.includes(state)) errors.push(`${WORKSPACE_SCHEMA} must preserve workspace state ${state}`)
+    }
+  }
+  if (existsSync(join(root, STORAGE_ENGINE))) {
+    const source = readFileSync(join(root, STORAGE_ENGINE), 'utf8')
+    for (const required of ['registry', 'paper', 'source', 'generation', 'workspace', 'trash', 'index', 'O_NOFOLLOW', 'expectedSha256', 'fileWritePrecondition', 'storageCliExitCode', 'MAX_LOCK_TIMEOUT_MS', 'fsyncSync', 'hostname', 'heartbeatAt', 'reclaimGuard', 'releaseAcquired']) {
+      if (!source.includes(required)) errors.push(`${STORAGE_ENGINE} must preserve storage boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, LIBRARY_SECURITY)) && !readFileSync(join(root, LIBRARY_SECURITY), 'utf8').includes('fileWritePrecondition')) {
+    errors.push(`${LIBRARY_SECURITY} must use the shared CAS precondition helper`)
+  }
+  for (const cli of [PREPARE_SCRIPT, WORKSPACE_CLI]) {
+    if (!existsSync(join(root, cli))) continue
+    const source = readFileSync(join(root, cli), 'utf8')
+    if (!source.includes('storageCliExitCode')) errors.push(`${cli} must use the shared storage CLI exit mapping`)
+    if (!source.includes('MAX_LOCK_TIMEOUT_MS')) errors.push(`${cli} must use the shared storage lock timeout maximum`)
+  }
+  if (existsSync(join(root, WORKSPACE_ENGINE))) {
+    const source = readFileSync(join(root, WORKSPACE_ENGINE), 'utf8')
+    for (const required of ['SHARED_WORKSPACES_RELATIVE_PATH', '.init-', 'WORKSPACE_EXISTS', 'resolveGenerationWorkspace', 'createWorkspaceDiagnostic', 'abandoned', 'writeWorkspaceAuthoring']) {
+      if (!source.includes(required)) errors.push(`${WORKSPACE_ENGINE} must preserve workspace boundary ${required}`)
+    }
+    if (/latest workspace|selectLatest|most recent workspace/i.test(source)) errors.push(`${WORKSPACE_ENGINE} must not select an implicit latest workspace`)
+    const lockIndex = source.indexOf('return withStorageLocks(keys')
+    const cleanupIndex = source.indexOf('cleanupInitDirectories(layout)')
+    if (cleanupIndex < 0 || lockIndex < 0 || cleanupIndex < lockIndex) {
+      errors.push(`${WORKSPACE_ENGINE} must clean initialization residues while holding the registry lock`)
+    }
+  }
+  const authoringBoundary = 'benchmarks/mandatory/authoring-boundary.mjs'
+  if (existsSync(join(root, MANDATORY_WORKER)) && existsSync(join(root, authoringBoundary))) {
+    const authoring = readFileSync(join(root, authoringBoundary), 'utf8')
+    if (!authoring.includes('writeWorkspaceAuthoring') || /writeFileSync|writeFile\(/.test(authoring)) {
+      errors.push(`${authoringBoundary} must author through the shared workspace writer`)
     }
   }
   for (const [skillPath, workflow] of [[STUDY_SKILL, 'study'], [SUMMARY_SKILL, 'summary']]) {
@@ -685,12 +762,25 @@ export function checkRepository({
     if (!source.includes('LEGACY_PACKAGE_REQUIRES_LEGACY_OK')) errors.push(`${STUDY_VALIDATOR} must preserve explicit read-only legacy validation`)
     if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${STUDY_VALIDATOR} must diagnose corrupt compatibility artifacts`)
   }
+  for (const validator of [REASONING_VALIDATOR, STUDY_VALIDATOR]) {
+    if (!existsSync(join(root, validator))) continue
+    const source = readFileSync(join(root, validator), 'utf8')
+    if (!source.includes('persistWorkspaceValidationReport') || source.includes('updateWorkspaceRecordSync') || source.includes('writeValidationReportAtomic')) {
+      errors.push(`${validator} must persist validation state and report through one atomic workspace transaction`)
+    }
+  }
   if (existsSync(join(root, MIGRATION_SCRIPT))) {
     const source = readFileSync(join(root, MIGRATION_SCRIPT), 'utf8')
     if (!source.includes('MIGRATION_SOURCE_VERSION_UNSUPPORTED')) errors.push(`${MIGRATION_SCRIPT} must reject unsupported versions before migration writes`)
     if (!source.includes('isLegacyMigrationSourceVersion')) errors.push(`${MIGRATION_SCRIPT} must preserve explicit 1.x migration without partial writes`)
     if (!source.includes('classifyPackageCompatibility({ reasoning: existingReasoning, ledger: existingLedger })')) errors.push(`${MIGRATION_SCRIPT} must preflight ancillary artifact versions before migration writes`)
     if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${MIGRATION_SCRIPT} must diagnose corrupt migration inputs before writes`)
+    if (!source.includes('withStorageLocks([lockKey]') || !source.includes('`legacy:${legacyRelative}`')) {
+      errors.push(`${MIGRATION_SCRIPT} must hold the shared legacy paper lock for the complete migration`)
+    }
+    if (!source.includes('!fs.existsSync(reviewPath) || options.force')) {
+      errors.push(`${MIGRATION_SCRIPT} must preserve an existing reasoning review unless force is explicit`)
+    }
   }
   if (existsSync(join(root, VIEWER_COMPATIBILITY))) {
     const source = readFileSync(join(root, VIEWER_COMPATIBILITY), 'utf8')
@@ -700,7 +790,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, VALIDATION_ENGINE))) {
     const source = readFileSync(join(root, VALIDATION_ENGINE), 'utf8')
-    for (const required of ['pass_with_warnings', 'allow_authoring', 'allow_publish', 'reportHash', 'writeValidationReportAtomic', 'RESULT_VALUE_CONFLICT', 'PARSER_FRONT_MATTER_CONTAMINATION']) {
+    for (const required of ['pass_with_warnings', 'allow_authoring', 'allow_publish', 'reportHash', 'writeValidationReportAtomic', 'persistWorkspaceValidationReport', 'updateWorkspaceRecordLocked', 'createWorkspaceDiagnostic', 'validation_report_write_failed', 'validation_state_update_failed', 'preservationError', 'RESULT_VALUE_CONFLICT', 'PARSER_FRONT_MATTER_CONTAMINATION']) {
       if (!source.includes(required)) errors.push(`${VALIDATION_ENGINE} must preserve Validation Report 1.0 contract ${required}`)
     }
     if (source.includes('validation-report-v2') || source.includes('validation-report-1.0.json')) errors.push(`${VALIDATION_ENGINE} must write only .codex-paper/validation-report.json`)

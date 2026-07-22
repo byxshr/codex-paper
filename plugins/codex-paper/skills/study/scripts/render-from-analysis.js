@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { assertWritablePackage, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
-import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
+import { replaceWorkspaceFile, withWorkspaceMutationSync } from '../../../src/shared/workspace-writer.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -108,18 +108,6 @@ function pickLanguage(value) {
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function resolvePaperDir(input) {
-  if (!input) {
-    throw new Error('Paper slug or directory is required');
-  }
-
-  const descriptor = resolveExplicitPackage(input.replace(/^~(?=$|\/)/, process.env.HOME || ''), {
-    libraryRoot: process.env.PAPERS_DIR
-  });
-  if (descriptor.readOnly) throw new Error('LEGACY_LAYOUT_READ_ONLY: migrate the flat-layout package explicitly before rendering.');
-  return descriptor.packageDir;
 }
 
 function evidenceMap(facts) {
@@ -519,12 +507,9 @@ function renderInsights(paperData, analysis, facts, lang) {
   return `${lines.join('\n')}\n`;
 }
 
-function writeFile(filePath, content) {
-  fs.writeFileSync(filePath, content);
-}
-
 export function renderMaterialsForPaper(input, profile = 'all', lang = 'en') {
-  const paperDir = resolvePaperDir(input);
+  return withWorkspaceMutationSync(input, ({ descriptor, lockHandle }) => {
+  const paperDir = descriptor.packageDir;
   const language = pickLanguage(lang);
   const metaPath = path.join(paperDir, 'meta.json');
   const ledgerPath = path.join(paperDir, 'evidence-ledger.json');
@@ -540,7 +525,7 @@ export function renderMaterialsForPaper(input, profile = 'all', lang = 'en') {
 
   if (profile === 'summary' || profile === 'all') {
     const quickSummaryPath = path.join(paperDir, 'quick-summary.md');
-    writeFile(quickSummaryPath, renderQuickSummary(paperData, analysis, facts, language));
+    replaceWorkspaceFile({ descriptor, lockHandle, relativePath: 'quick-summary.md', data: renderQuickSummary(paperData, analysis, facts, language), policy: 'rendering' });
     writtenFiles.push(quickSummaryPath);
   }
 
@@ -548,9 +533,9 @@ export function renderMaterialsForPaper(input, profile = 'all', lang = 'en') {
     const readmePath = path.join(paperDir, 'README.md');
     const summaryPath = path.join(paperDir, 'summary.md');
     const insightsPath = path.join(paperDir, 'insights.md');
-    writeFile(readmePath, renderReadme(paperData, analysis, facts, language));
-    writeFile(summaryPath, renderStructuredSummary(paperData, analysis, facts, language));
-    writeFile(insightsPath, renderInsights(paperData, analysis, facts, language));
+    replaceWorkspaceFile({ descriptor, lockHandle, relativePath: 'README.md', data: renderReadme(paperData, analysis, facts, language), policy: 'rendering' });
+    replaceWorkspaceFile({ descriptor, lockHandle, relativePath: 'summary.md', data: renderStructuredSummary(paperData, analysis, facts, language), policy: 'rendering' });
+    replaceWorkspaceFile({ descriptor, lockHandle, relativePath: 'insights.md', data: renderInsights(paperData, analysis, facts, language), policy: 'rendering' });
     writtenFiles.push(readmePath, summaryPath, insightsPath);
   }
 
@@ -562,6 +547,7 @@ export function renderMaterialsForPaper(input, profile = 'all', lang = 'en') {
     compatibility,
     writtenFiles
   };
+  });
 }
 
 async function runCli() {

@@ -164,16 +164,17 @@ What is the key difference between self-attention and recurrent sequence modelin
 ```
 
 Codex will automatically trigger the study workflow and:
-1. Parse the PDF and prepare metadata, text, facts, analysis, and the evidence ledger
+1. Parse the PDF and prepare metadata, text, facts, analysis, and the evidence ledger in a private generation workspace
 2. Infer the paper profile, scaffold `reasoning-analysis.json`, and read the relevant profile contract
-3. Fill research reasoning from paper evidence, then run strict semantic validation before authoring visible materials
-4. Author complete study materials from evidence instead of directly rendering machine JSON
+3. Fill research reasoning from paper evidence through the CAS-protected workspace writer, then run the reasoning gate before visible authoring
+4. Author complete study materials through the same shared writer instead of directly editing package files
 5. Generate a self-contained interactive `index.html`
 6. Create at least one independently runnable code demonstration
 7. Copy the original `paper.pdf`, curate useful visual assets, and avoid dumping low-value extracted fragments into the reading flow
 8. Create a hidden answering pack for future grounded follow-up questions
-9. Update the global search index
-10. Refresh the library index so the web viewer can show the package; start it with `$paper-webui` when needed
+9. Run the complete Validation Report gate and retain the validated workspace for P0-C2b publication
+
+P0-C2a intentionally does not publish new workspaces: it does not create `paper.json`/`current.json`, update `index.json`, or expose incomplete work in the Viewer. Use the exact returned workspace ID or path; there is no implicit "latest workspace" selection.
 
 ### Launch Web Viewer
 
@@ -196,7 +197,7 @@ In the Viewer you can:
 
 The service binds only to IPv4 loopback. Every restart invalidates existing Viewer sessions and creates a new pairing token. The SPA runs with a self-only script CSP; Markdown and model answers are rendered and sanitized on the server. See [`docs/local-viewer-security.md`](docs/local-viewer-security.md) for the API/filesystem boundary and [`docs/web-active-content-security.md`](docs/web-active-content-security.md) for the rendering boundary.
 
-Ask Codex lazily starts one long-running `codex mcp-server` worker the first time a web question is asked. The web viewer keeps a separate Codex thread per paper, so follow-up questions for the same paper reuse conversation context without starting a new `codex exec` process each time. Answers still run with a read-only sandbox and use `.codex-paper/answering-pack.md` when available, falling back to visible Markdown materials and local evidence files for older packages.
+Ask Codex lazily starts one long-running `codex mcp-server` worker the first time a web question is asked. The web viewer keeps a separate Codex thread and request queue per paper, so follow-up questions for the same paper reuse conversation context without starting a new `codex exec` process each time. A failed or empty reply invalidates only that paper's cached thread, allowing its next request to start fresh without resetting unrelated papers or the shared worker. Once an answer exists it is always returned, even if chat-note persistence, lock release, or rich Markdown rendering fails; rendering failure falls back to escaped plain text and the response carries an explicit saved/unsaved result and warning. A lightweight in-process paper lease makes Web deletion fail with a retryable conflict while an Ask is active, without acquiring or holding a cross-process lock for the external call. Answers still run with a read-only sandbox and use `.codex-paper/answering-pack.md` when available, falling back to visible Markdown materials and local evidence files for older packages.
 
 ---
 
@@ -206,6 +207,10 @@ New packages use Paper Library Layout 1.0. Route slugs are index aliases only; e
 
 ```
 ~/codex-papers/
+├── .codex-paper/workspaces-v1/{workspaceId}/ # Private C2a authoring/validation workspace
+│   ├── workspace.json                        # Bounded state and publish intent
+│   └── package/                              # Not Viewer-visible before C2b
+├── .codex-paper/locks-v1/                    # Cross-process lock ownership records
 ├── .codex-paper/store-v1/papers/{paperKey}/
 │   ├── paper.json                       # Paper identity aliases and reconciliation audit
 │   ├── current.json                     # Authoritative current source/generation pointer
@@ -233,10 +238,21 @@ bash scripts/codex-paper.sh install
 bash scripts/codex-paper.sh test
 bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh layout-test
+bash scripts/codex-paper.sh storage-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh build
+```
+
+Workspace operations are explicit and CAS-protected:
+
+```bash
+bash scripts/codex-paper.sh workspace-list --json
+bash scripts/codex-paper.sh workspace-inspect <workspace-id-or-path> --json
+bash scripts/codex-paper.sh workspace-write <workspace> README.md --stdin --expect-absent
+bash scripts/codex-paper.sh workspace-tags <workspace> --tag <domain> --tag <method>
+bash scripts/codex-paper.sh workspace-abandon <workspace> --json
 ```
 
 Validate one completed study package:
@@ -274,6 +290,8 @@ Out-of-library package directories must be migrated explicitly:
 ```bash
 bash scripts/codex-paper.sh migrate /path/to/package --external-path
 ```
+
+Migration accepts only a canonical one-level legacy package in the library or an explicitly external package. Managed workspace/store paths, symlinks, and nested in-library paths are rejected even when `--external-path` is present.
 
 Before filling the draft reasoning analysis, you can sanity-check the migrated package:
 

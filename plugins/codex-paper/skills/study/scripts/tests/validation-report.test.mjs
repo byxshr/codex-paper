@@ -10,6 +10,7 @@ import {
   createValidationReport,
   inspectPackageArtifacts,
   makeFinding,
+  persistWorkspaceValidationReport,
   validateReport,
   writeValidationReportAtomic
 } from '../validation-report.js';
@@ -31,6 +32,32 @@ function warning(code = 'TEST_WARNING') {
 
 function writeJson(dir, name, value) {
   fs.writeFileSync(path.join(dir, name), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writableWorkspaceFixture(prefix = 'codex-paper-validation-workspace-') {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const workspaceId = 'ws-aaaaaaaaaaaa-bbbbbbbbbbbb-cccccccccccccccccccccccccccccccc';
+  const workspaceDir = path.join(root, '.codex-paper', 'workspaces-v1', workspaceId);
+  const packageDir = path.join(workspaceDir, 'package');
+  fs.mkdirSync(packageDir, { recursive: true });
+  writeJson(workspaceDir, 'workspace.json', {
+    schemaVersion: '1.0.0', workspaceId, state: 'authoring', paperKey: `p-${'3'.repeat(64)}`,
+    paperId: `source:sha256:${'1'.repeat(64)}`, sourceRevisionId: `sha256:${'1'.repeat(64)}`,
+    generationId: `gen:sha256:${'2'.repeat(64)}`,
+    targetPackageRelativePath: `sources/sha256-${'1'.repeat(64)}/generations/gen-sha256-${'2'.repeat(64)}/package`,
+    routeSlug: 'validation-fixture', createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(),
+    lastSuccessfulStep: 'initialized', diagnostics: [], publishIntent: { paperRecord: {}, reconciliation: null, tags: [] }
+  });
+  return { root, workspaceDir, packageDir };
+}
+
+function withLibraryRoot(libraryRoot, operation) {
+  const previous = process.env.PAPERS_DIR;
+  process.env.PAPERS_DIR = libraryRoot;
+  try { return operation(); } finally {
+    if (previous === undefined) delete process.env.PAPERS_DIR;
+    else process.env.PAPERS_DIR = previous;
+  }
 }
 
 function makePackage({ reasoningDisclose = true, visibleDisclose = true } = {}) {
@@ -309,32 +336,117 @@ test('section numbers and evidence-id suffixes are not metric values', () => {
 });
 
 test('atomic report writer refuses a symlinked report target', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-validation-write-'));
-  const outside = path.join(dir, 'outside.json');
+  const fixture = writableWorkspaceFixture('codex-paper-validation-write-');
+  const dir = fixture.packageDir;
+  const outside = path.join(fixture.root, 'outside.json');
   const codexDir = path.join(dir, '.codex-paper');
   fs.mkdirSync(codexDir);
   fs.writeFileSync(outside, '{}');
   fs.symlinkSync(outside, path.join(codexDir, 'validation-report.json'));
   try {
-    assert.throws(() => writeValidationReportAtomic(dir, createValidationReport({ phase: 'draft' })), /symlinks are not allowed/);
+    assert.throws(() => withLibraryRoot(fixture.root, () => writeValidationReportAtomic(dir, createValidationReport({ phase: 'draft' }))), /symlink|unsafe/i);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(fixture.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
   }
 });
 
 test('report writer refuses a symlinked .codex-paper directory', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-validation-dir-link-'));
+  const fixture = writableWorkspaceFixture('codex-paper-validation-dir-link-');
+  const dir = fixture.packageDir;
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-validation-outside-'));
   fs.symlinkSync(outside, path.join(dir, '.codex-paper'));
   try {
     assert.throws(
-      () => writeValidationReportAtomic(dir, createValidationReport({ phase: 'draft' })),
-      /non-symlink directory/
+      () => withLibraryRoot(fixture.root, () => writeValidationReportAtomic(dir, createValidationReport({ phase: 'draft' }))),
+      /non-symlink directory|unsafe/
     );
     assert.deepEqual(fs.readdirSync(outside), []);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(fixture.root, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('workspace validation records a bounded failed state when report persistence fails', () => {
+  const fixture = writableWorkspaceFixture('codex-paper-validation-persist-failure-');
+  const codexDir = path.join(fixture.packageDir, '.codex-paper');
+  const outside = path.join(fixture.root, 'outside-report.json');
+  fs.mkdirSync(codexDir);
+  fs.writeFileSync(outside, 'unchanged');
+  fs.symlinkSync(outside, path.join(codexDir, 'validation-report.json'));
+  try {
+    assert.throws(
+      () => withLibraryRoot(fixture.root, () => persistWorkspaceValidationReport(fixture.packageDir, createValidationReport({ phase: 'draft' }))),
+      /unsafe|symlink/i
+    );
+    const workspace = JSON.parse(fs.readFileSync(path.join(fixture.workspaceDir, 'workspace.json'), 'utf8'));
+    assert.equal(workspace.state, 'failed');
+    assert.equal(workspace.lastSuccessfulStep, 'validation_report_write_failed');
+    assert.equal(workspace.diagnostics.length, 1);
+    assert.match(workspace.diagnostics[0].code, /^STORAGE_/);
+    assert.doesNotMatch(workspace.diagnostics[0].message, new RegExp(fixture.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(fs.readFileSync(outside, 'utf8'), 'unchanged');
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('workspace validation compensates when the final state update fails after report persistence', () => {
+  const fixture = writableWorkspaceFixture('codex-paper-validation-final-state-failure-');
+  const workspacePath = fs.realpathSync(path.join(fixture.workspaceDir, 'workspace.json'));
+  const originalRename = fs.renameSync;
+  let workspaceRenames = 0;
+  fs.renameSync = (source, destination) => {
+    if (destination === workspacePath && ++workspaceRenames === 2) {
+      throw Object.assign(new Error(`simulated state failure at ${fixture.root}`), { code: 'EIO' });
+    }
+    return originalRename(source, destination);
+  };
+  try {
+    assert.throws(
+      () => withLibraryRoot(fixture.root, () => persistWorkspaceValidationReport(fixture.packageDir, createValidationReport({ phase: 'complete' }))),
+      /simulated state failure/
+    );
+    const workspace = JSON.parse(fs.readFileSync(workspacePath, 'utf8'));
+    assert.equal(workspace.state, 'failed');
+    assert.equal(workspace.lastSuccessfulStep, 'validation_state_update_failed');
+    assert.equal(workspace.diagnostics.length, 1);
+    assert.equal(workspace.diagnostics[0].code, 'EIO');
+    assert.doesNotMatch(workspace.diagnostics[0].message, new RegExp(fixture.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(fs.existsSync(path.join(fixture.packageDir, '.codex-paper', 'validation-report.json')), true);
+  } finally {
+    fs.renameSync = originalRename;
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('workspace validation exposes a secondary compensation failure without replacing the primary error', () => {
+  const fixture = writableWorkspaceFixture('codex-paper-validation-compensation-failure-');
+  const workspacePath = fs.realpathSync(path.join(fixture.workspaceDir, 'workspace.json'));
+  const originalRename = fs.renameSync;
+  let workspaceRenames = 0;
+  fs.renameSync = (source, destination) => {
+    if (destination === workspacePath && ++workspaceRenames >= 2) {
+      const label = workspaceRenames === 2 ? 'primary state failure' : 'secondary compensation failure';
+      throw Object.assign(new Error(label), { code: 'EIO' });
+    }
+    return originalRename(source, destination);
+  };
+  let thrown;
+  try {
+    assert.throws(
+      () => withLibraryRoot(fixture.root, () => persistWorkspaceValidationReport(fixture.packageDir, createValidationReport({ phase: 'complete' }))),
+      (error) => {
+        thrown = error;
+        return /primary state failure/.test(error.message);
+      }
+    );
+    assert.match(thrown.preservationError?.message || '', /secondary compensation failure/);
+    const workspace = JSON.parse(fs.readFileSync(workspacePath, 'utf8'));
+    assert.equal(workspace.state, 'validating');
+  } finally {
+    fs.renameSync = originalRename;
+    fs.rmSync(fixture.root, { recursive: true, force: true });
   }
 });
 
@@ -401,7 +513,8 @@ test('identity validation is conditional, fail-closed, and does not affect legac
 });
 
 test('concurrent atomic writers leave one complete schema-valid report', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-validation-concurrent-'));
+  const fixture = writableWorkspaceFixture('codex-paper-validation-concurrent-');
+  const dir = fixture.packageDir;
   const engineUrl = pathToFileURL(path.resolve(path.dirname(new URL(import.meta.url).pathname), '../validation-report.js')).href;
   const childScript = `
     import { createValidationReport, writeValidationReportAtomic } from ${JSON.stringify(engineUrl)};
@@ -415,7 +528,7 @@ test('concurrent atomic writers leave one complete schema-valid report', async (
   try {
     await Promise.all(Array.from({ length: 6 }, (_, index) => new Promise((resolve, reject) => {
       const child = spawn(process.execPath, ['--input-type=module', '-e', childScript, dir, new Date(1_000 + index).toISOString()], {
-        stdio: 'pipe'
+        stdio: 'pipe', env: { ...process.env, PAPERS_DIR: fixture.root }
       });
       let error = '';
       child.stderr.on('data', (chunk) => { error += chunk; });
@@ -429,6 +542,6 @@ test('concurrent atomic writers leave one complete schema-valid report', async (
       ['validation-report.json']
     );
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(fixture.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
   }
 });

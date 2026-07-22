@@ -39,39 +39,37 @@ function snapshot(root) {
   return result;
 }
 
-test('prepare creates managed identity, reuses without writes, and keeps multiple generations', () => {
+test('prepare creates private workspaces, resumes exactly, and keeps multiple generations unpublished', () => {
   const library = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-prepare-identity-'));
   try {
     const created = runPrepare(library);
     assert.equal(created.status, 0, created.stderr);
     const output = JSON.parse(created.stdout);
-    assert.equal(output.action, 'created');
+    assert.equal(output.action, 'workspace_created');
+    assert.match(output.workspaceId, /^ws-/);
     assert.match(output.identity.paperId, /^source:sha256:/);
     const paperDir = output.paperDir;
     const identity = JSON.parse(fs.readFileSync(path.join(paperDir, '.codex-paper/paper-identity.json')));
     const indexPath = path.join(library, 'index.json');
-    const paperRoot = path.resolve(paperDir, '../../../../..');
-    const overlayPath = path.join(paperRoot, 'overlay/state.json');
-    const overlay = JSON.parse(fs.readFileSync(overlayPath));
-    const index = JSON.parse(fs.readFileSync(indexPath));
-    overlay.tags = ['preserved'];
-    index[0].tags = ['preserved'];
-    fs.writeFileSync(overlayPath, `${JSON.stringify(overlay, null, 2)}\n`);
-    fs.writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`);
+    assert.equal(fs.existsSync(indexPath), false);
+    assert.equal(fs.existsSync(path.join(library, '.codex-paper/store-v1')), false);
+    const originalFactsHash = hashFile(path.join(paperDir, 'facts.json'));
     const beforeReuse = snapshot(library);
 
-    const reused = runPrepare(library);
+    const duplicate = runPrepare(library);
+    assert.equal(duplicate.status, 3);
+    assert.match(duplicate.stderr, /\[WORKSPACE_EXISTS\]/);
+    const reused = runPrepare(library, fixturePdf, ['--resume-workspace', output.workspaceId]);
     assert.equal(reused.status, 0, reused.stderr);
-    assert.equal(JSON.parse(reused.stdout).action, 'reused');
+    assert.equal(JSON.parse(reused.stdout).action, 'workspace_resumed');
     assert.deepEqual(snapshot(library), beforeReuse);
 
     const differentLanguage = runPrepare(library, fixturePdf, ['--language', 'zh']);
     assert.equal(differentLanguage.status, 0, differentLanguage.stderr);
     const second = JSON.parse(differentLanguage.stdout);
-    assert.equal(second.action, 'created');
+    assert.equal(second.action, 'workspace_created');
     assert.notEqual(second.paperDir, paperDir);
-    assert.deepEqual(JSON.parse(fs.readFileSync(overlayPath)).tags, ['preserved']);
-    assert.equal(hashFile(path.join(paperDir, 'facts.json')), beforeReuse[path.relative(library, path.join(paperDir, 'facts.json'))].sha256);
+    assert.equal(hashFile(path.join(paperDir, 'facts.json')), originalFactsHash);
 
     const alteredPdf = path.join(library, 'same-title-different-source.pdf');
     fs.copyFileSync(fixturePdf, alteredPdf);
@@ -79,16 +77,11 @@ test('prepare creates managed identity, reuses without writes, and keeps multipl
     const differentSource = runPrepare(library, alteredPdf);
     assert.equal(differentSource.status, 0, differentSource.stderr);
     const differentOutput = JSON.parse(differentSource.stdout);
-    assert.equal(differentOutput.action, 'created');
-    assert.notEqual(differentOutput.paperSlug, output.paperSlug);
+    assert.equal(differentOutput.action, 'workspace_created');
+    assert.notEqual(differentOutput.identity.sourceRevisionId, output.identity.sourceRevisionId);
     assert.notEqual(differentOutput.paperDir, paperDir);
 
-    const staleIndex = JSON.parse(fs.readFileSync(indexPath));
-    fs.writeFileSync(indexPath, '[]\n');
-    const stale = runPrepare(library);
-    assert.equal(stale.status, 0, stale.stderr);
-    assert.equal(JSON.parse(stale.stdout).action, 'reused');
-    fs.writeFileSync(indexPath, `${JSON.stringify(staleIndex, null, 2)}\n`);
+    assert.equal(fs.existsSync(indexPath), false);
   } finally {
     fs.rmSync(library, { recursive: true, force: true });
   }
@@ -176,7 +169,7 @@ test('prepare refuses read-only reuse when a managed artifact is missing', () =>
     const output = JSON.parse(created.stdout);
     fs.rmSync(path.join(output.paperDir, 'facts.json'));
     const before = snapshot(library);
-    const result = runPrepare(library);
+    const result = runPrepare(library, fixturePdf, ['--resume-workspace', output.workspaceId]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /\[IDENTITY_STATE_INCOMPLETE\]/);
     assert.deepEqual(snapshot(library), before);
@@ -218,16 +211,17 @@ test('prepare flags make resume and revision intent explicit', () => {
 
     const created = runPrepare(library);
     assert.equal(created.status, 0, created.stderr);
-    const exactResume = runPrepare(library, fixturePdf, ['--resume']);
+    const createdOutput = JSON.parse(created.stdout);
+    const exactResume = runPrepare(library, fixturePdf, ['--resume-workspace', createdOutput.workspaceId]);
     assert.equal(exactResume.status, 0, exactResume.stderr);
-    assert.equal(JSON.parse(exactResume.stdout).action, 'reused');
+    assert.equal(JSON.parse(exactResume.stdout).action, 'workspace_resumed');
 
-    const wrongGeneration = runPrepare(library, fixturePdf, ['--language', 'zh', '--resume']);
-    assert.equal(wrongGeneration.status, 1);
-    assert.match(wrongGeneration.stderr, /\[RESUME_GENERATION_NOT_FOUND\]/);
+    const wrongGeneration = runPrepare(library, fixturePdf, ['--language', 'zh', '--resume-workspace', createdOutput.workspaceId]);
+    assert.equal(wrongGeneration.status, 3);
+    assert.match(wrongGeneration.stderr, /\[WORKSPACE_IDENTITY_MISMATCH\]/);
     const sameRevision = runPrepare(library, fixturePdf, ['--new-revision']);
     assert.equal(sameRevision.status, 1);
-    assert.match(sameRevision.stderr, /\[NEW_REVISION_REQUIRED\]/);
+    assert.match(sameRevision.stderr, /\[NEW_REVISION_PAPER_NOT_FOUND\]/);
   } finally {
     fs.rmSync(library, { recursive: true, force: true });
   }
