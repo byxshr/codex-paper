@@ -65,7 +65,7 @@ P0-C2b closes the publication half of the P0-C lifecycle. Review should concentr
 
 ## Delivery state
 
-Implementation is `Review 完成 / 未推送`. Both review rounds and the final independent re-review have passed. No C2b files have been committed or pushed yet. M2 remains open until the stage commit passes remote CI.
+Implementation is `Review 完成 / 已推送`. Stage commit `68e53d6` passed [remote CI run 30268158984](https://github.com/byxshr/codex-paper/actions/runs/30268158984), including Docker conformance and every required repository, security, publication, validation, benchmark, build, and smoke gate. P0-C2 and M2 are closed.
 
 ## Second review disposition
 
