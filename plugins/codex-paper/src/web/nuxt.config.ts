@@ -13,7 +13,7 @@ export default defineNuxtConfig({
 
   nitro: {
     externals: {
-      inline: [/package-compatibility\.mjs$/, /paper-library\.mjs$/, /storage-transaction\.mjs$/]
+      inline: [/package-compatibility\.mjs$/, /paper-library\.mjs$/, /generation-manifest\.mjs$/, /storage-transaction\.mjs$/]
     }
   },
 

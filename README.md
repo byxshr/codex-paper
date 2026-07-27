@@ -172,9 +172,10 @@ Codex will automatically trigger the study workflow and:
 6. Create at least one independently runnable code demonstration
 7. Copy the original `paper.pdf`, curate useful visual assets, and avoid dumping low-value extracted fragments into the reading flow
 8. Create a hidden answering pack for future grounded follow-up questions
-9. Run the complete Validation Report gate and retain the validated workspace for P0-C2b publication
+9. Run the complete standard Validation Report gate
+10. Seal a Generation Manifest, atomically commit the current generation, and rebuild the index cache
 
-P0-C2a intentionally does not publish new workspaces: it does not create `paper.json`/`current.json`, update `index.json`, or expose incomplete work in the Viewer. Use the exact returned workspace ID or path; there is no implicit "latest workspace" selection.
+Preparation intentionally does not publish new workspaces. Publication is a separate exact-workspace command after the complete standard gate; it seals immutable package bytes and makes the generation visible only when `current.json` is committed. There is no implicit "latest workspace" selection.
 
 ### Launch Web Viewer
 
@@ -207,9 +208,10 @@ New packages use Paper Library Layout 1.0. Route slugs are index aliases only; e
 
 ```
 ~/codex-papers/
-├── .codex-paper/workspaces-v1/{workspaceId}/ # Private C2a authoring/validation workspace
+├── .codex-paper/workspaces-v1/{workspaceId}/ # Private authoring/validation or publication journal
 │   ├── workspace.json                        # Bounded state and publish intent
-│   └── package/                              # Not Viewer-visible before C2b
+│   ├── publication.json                      # Bounded idempotent recovery journal after sealing
+│   └── package/                              # Present until publication atomically moves it
 ├── .codex-paper/locks-v1/                    # Cross-process lock ownership records
 ├── .codex-paper/store-v1/papers/{paperKey}/
 │   ├── paper.json                       # Paper identity aliases and reconciliation audit
@@ -223,7 +225,7 @@ New packages use Paper Library Layout 1.0. Route slugs are index aliases only; e
 │       ├── paper.pdf, images/, code/, index.html
 │       ├── paper-data.json, evidence-ledger.json, facts.json, analysis.json
 │       ├── reasoning-analysis.json, meta.json
-│       └── .codex-paper/                 # Identity, answering, review, and validation records
+│       └── .codex-paper/                 # Identity, validation, answering, and sealed generation manifest
 ├── papers/{legacy-slug}/                 # Existing flat 2.0/2.1 packages; read-only until migration
 ├── index.json                            # Compatibility/search projection, not identity authority
 └── .trash/{trashId}/{tombstone,payload}  # Recoverable lifecycle envelope
@@ -239,6 +241,7 @@ bash scripts/codex-paper.sh test
 bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh layout-test
 bash scripts/codex-paper.sh storage-test
+bash scripts/codex-paper.sh publication-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
@@ -253,7 +256,12 @@ bash scripts/codex-paper.sh workspace-inspect <workspace-id-or-path> --json
 bash scripts/codex-paper.sh workspace-write <workspace> README.md --stdin --expect-absent
 bash scripts/codex-paper.sh workspace-tags <workspace> --tag <domain> --tag <method>
 bash scripts/codex-paper.sh workspace-abandon <workspace> --json
+bash scripts/codex-paper.sh publish-workspace <validated-workspace> --json
+bash scripts/codex-paper.sh publication-recover --json
+bash scripts/codex-paper.sh reindex --json
 ```
+
+Only a complete, intrinsically publishable Validation Report with the standard `allow_publish` gate can be published. `current.json` is the visibility commit point; `index.json` is a rebuildable projection. Every sealed generation is verified against its manifest during authoritative resolution, while older unsealed managed generations remain readable for compatibility.
 
 Validate one completed study package:
 

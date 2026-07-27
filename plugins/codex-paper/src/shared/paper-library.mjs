@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { verifyGenerationManifest } from './generation-manifest.mjs'
 
 export const LIBRARY_LAYOUT_VERSION = '1.0.0'
 export const STORE_RELATIVE_PATH = '.codex-paper/store-v1'
@@ -204,10 +205,20 @@ export function validatePaperRecord(record, expectedPaperKey = null) {
 
 export function validateCurrentRecord(current, paperRecord) {
   const expectedRelativePath = buildPackageRelativePath(current?.sourceRevisionId, current?.generationId)
+  const hasManifestBinding = ['manifestId', 'manifestHash', 'manifestFileSha256', 'validationReportHash', 'publishedAt']
+    .some((field) => current?.[field] !== undefined)
+  const validManifestBinding = !hasManifestBinding || (
+    /^gm-sha256-[a-f0-9]{64}$/.test(String(current?.manifestId || ''))
+    && /^[a-f0-9]{64}$/.test(String(current?.manifestHash || ''))
+    && /^[a-f0-9]{64}$/.test(String(current?.manifestFileSha256 || ''))
+    && /^[a-f0-9]{64}$/.test(String(current?.validationReportHash || ''))
+    && !Number.isNaN(Date.parse(current?.publishedAt))
+  )
   if (current?.schemaVersion !== LIBRARY_LAYOUT_VERSION
     || current?.paperKey !== paperRecord.paperKey
     || !paperRecord.paperIdAliases.includes(current?.paperId)
-    || current?.packageRelativePath !== expectedRelativePath) {
+    || current?.packageRelativePath !== expectedRelativePath
+    || !validManifestBinding) {
     throw new LibraryLayoutError('CURRENT_RECORD_INVALID', 'Current generation record is invalid.')
   }
   return current
@@ -234,6 +245,10 @@ export function listManagedRecords(options = {}) {
   const routeOwners = new Map()
   for (const entry of fs.readdirSync(layout.recordsRoot, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (entry.isSymbolicLink()) throw new LibraryLayoutError('LIBRARY_REGISTRY_CONFLICT', 'Paper registry contains a symlink.', 403)
+    if (/^\.publish-pub-[a-f0-9]{32}-p-[a-f0-9]{64}$/.test(entry.name)) {
+      if (!entry.isDirectory()) throw new LibraryLayoutError('LIBRARY_REGISTRY_CONFLICT', 'Publication staging residue is unsafe.', 403)
+      continue
+    }
     if (!entry.isDirectory()) throw new LibraryLayoutError('LIBRARY_REGISTRY_CONFLICT', 'Paper registry contains an unexpected entry.')
     const recordDir = path.join(layout.recordsRoot, entry.name)
     const record = readPaperRecord(recordDir)
@@ -270,6 +285,16 @@ export function descriptorForRecord(recordDir, record, options = {}) {
     || !record.routeAliases.includes(identity.slug)) {
     throw new LibraryLayoutError('CURRENT_IDENTITY_MISMATCH', 'Current record does not match the generation identity.')
   }
+  const integrity = current.manifestId ? verifyGenerationManifest(canonicalPackage, {
+    manifestId: current.manifestId,
+    manifestHash: current.manifestHash,
+    manifestFileSha256: current.manifestFileSha256,
+    paperKey: record.paperKey,
+    generationId: current.generationId,
+  }) : null
+  if (integrity && integrity.manifest.validation.reportHash !== current.validationReportHash) {
+    throw new LibraryLayoutError('CURRENT_MANIFEST_MISMATCH', 'Current record validation binding is invalid.')
+  }
   const overlayDir = path.join(canonicalRecordDir, 'overlay')
   const canonicalOverlay = fs.existsSync(overlayDir) ? requireNoFollowDirectory(canonicalRecordDir, overlayDir) : overlayDir
   return {
@@ -291,7 +316,9 @@ export function descriptorForRecord(recordDir, record, options = {}) {
     generationLockKey: generationStorageLockKey(record.paperKey, current.generationId),
     record,
     current,
-    identity
+    identity,
+    manifest: integrity?.manifest || null,
+    integrity: integrity ? { verified: true, manifestFileSha256: integrity.manifestFileSha256 } : null,
   }
 }
 
@@ -403,6 +430,10 @@ export function resolveExplicitPackage(input, options = {}) {
         if (!match) throw new LibraryLayoutError('PAPER_GENERATION_NOT_FOUND', 'Managed generation does not belong to a valid paper record.', 404)
         const canonicalRecordDir = requireNoFollowDirectory(recordsRoot, fs.realpathSync(match.recordDir))
         const identity = readJsonNoFollow(path.join(canonical, '.codex-paper/paper-identity.json'), 'paper-identity.json')
+        const manifestPath = path.join(canonical, '.codex-paper/generation-manifest.json')
+        const integrity = fs.existsSync(manifestPath)
+          ? verifyGenerationManifest(canonical, { paperKey: match.record.paperKey, generationId: identity.generationId })
+          : null
         return {
           mode: 'managed_generation_v1', readOnly: true,
           diagnostics: [{ code: 'PUBLISHED_GENERATION_READ_ONLY', message: 'Published generations are read-only; create or resume a generation workspace.' }],
@@ -412,7 +443,8 @@ export function resolveExplicitPackage(input, options = {}) {
           paperLockKey: paperStorageLockKey(match.record.paperKey),
           sourceLockKey: sourceStorageLockKey(match.record.paperKey, identity.sourceRevisionId),
           generationLockKey: generationStorageLockKey(match.record.paperKey, identity.generationId),
-          record: match.record, identity,
+          record: match.record, identity, manifest: integrity?.manifest || null,
+          integrity: integrity ? { verified: true, manifestFileSha256: integrity.manifestFileSha256 } : null,
         }
       }
     }

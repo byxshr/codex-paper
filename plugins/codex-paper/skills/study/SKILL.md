@@ -11,7 +11,7 @@ Detect the user's language from the request and write every user-facing material
 
 ## Core Contract
 
-P0-C2a authors the complete study package inside a private generation workspace. Treat the exact `workspaceId`, `workspaceDir`, and `paperDir` returned by `prepare-paper.js` as authoritative; never construct a path from the title slug and never select a "latest" workspace:
+Author the complete study package inside a private generation workspace, then publish that exact validated workspace through the C2b publication gate. Treat the exact `workspaceId`, `workspaceDir`, and `paperDir` returned by `prepare-paper.js` as authoritative; never construct a path from the title slug and never select a "latest" workspace:
 
 ```text
 {prepare-output.workspaceDir}/package/
@@ -93,7 +93,7 @@ OUTPUT_LANG="zh"   # use en for an English request
 node ./scripts/prepare-paper.js "<user-input>" --workflow study --language "$OUTPUT_LANG" --context paper-only --profile auto
 ```
 
-Preparation is identity-aware and workspace-only. A new generation is initialized under `PAPERS_DIR/.codex-paper/workspaces-v1/`; it does not create or change `paper.json`, `current.json`, the formal store, or `index.json`, and it is not visible in the Viewer. If the same generation already has an active workspace, preparation fails with `WORKSPACE_EXISTS` and names the exact workspace ID; resume it with `--resume-workspace <workspaceId>` or explicitly abandon it before retrying. A retained `failed` workspace remains inspectable but does not block a fresh prepare retry. `--resume` remains reserved for exact reuse of an already published generation. A changed fingerprint creates a distinct workspace and a changed source creates a new source revision proposal. Use `--new-revision` and `--reconcile-identity <route-slug>` only with their explicit identity intent. `--replace` remains rejected until C2b publication exists.
+Preparation is identity-aware and workspace-only. A new generation is initialized under `PAPERS_DIR/.codex-paper/workspaces-v1/`; preparation itself does not create or change `paper.json`, `current.json`, the formal store, or `index.json`, and it is not visible in the Viewer. If the same generation already has an active workspace, preparation fails with `WORKSPACE_EXISTS` and names the exact workspace ID; resume it with `--resume-workspace <workspaceId>` or explicitly abandon it before retrying. A retained `failed` workspace remains inspectable but does not block a fresh prepare retry. `--resume` remains reserved for exact reuse of an already published generation. A changed fingerprint creates a distinct workspace and a changed source creates a new source revision proposal. Use `--new-revision` and `--reconcile-identity <route-slug>` only with their explicit identity intent. `--replace` remains rejected; publication switches the authoritative current generation only after validation.
 
 The script resolves URLs, parses the PDF, copies `paper.pdf` into a private initialization directory, and atomically establishes the workspace. It returns the exact workspace and package paths and writes only inside that workspace:
 
@@ -530,11 +530,17 @@ Only when the user explicitly asks to execute generated code:
 
 The CLI token proves plan integrity and single-use authorization; it does not authenticate a human. Human consent is a workflow boundary: stop after showing the plan and require a new, explicit user reply before running it. Never issue and consume a token in one uninterrupted turn. The token expires after five minutes and is single-use. If the plan does not issue a token, the supported Docker sandbox is unavailable or nonconformant; report that generated code was not executed. Never use Python, Node, a shell, `sandbox-exec`, bubblewrap, Podman, or another fallback directly on the host.
 
-After a successful standard complete validation, the workspace state may be `validated`, but it is still not published. P0-C2a has no publish command. Report the exact workspace ID and validation result, and explicitly state that C2b must recheck the gate before creating a manifest, switching `current.json`, or updating the Viewer/index.
+After a successful standard complete validation, publish the exact workspace. Publication rechecks the report hash and standard `allow_publish` gate while holding the full storage lock hierarchy, seals a Generation Manifest 1.0, commits `current.json`, and rebuilds the index:
+
+```bash
+bash scripts/codex-paper.sh publish-workspace "{prepare-output.workspaceId}" --json
+```
+
+Do not publish a strict-blocked, draft, failed, abandoned, implicit, or different workspace. A successful command returns the manifest binding and route; only then describe the package as published or Viewer-visible. If publication is interrupted, preserve the workspace journal and run `publication-recover`; use `reindex` only to rebuild the non-authoritative index cache.
 
 ## Step 12: Web UI
 
-The Web UI displays only published generations. A C2a workspace is intentionally absent from Viewer routes and must not be described as available there.
+The Web UI displays only generations selected by an authoritative `current.json`. An unpublished workspace is intentionally absent from Viewer routes and must not be described as available there.
 
 `index.html` remains an interactive self-contained package artifact, but the current local Viewer deliberately does not execute its JavaScript or package CSS. The Viewer shows source by default and offers only an explicit scriptless static safe preview. Do not weaken that boundary or assume the Viewer is the execution environment for the interactive export.
 

@@ -10,6 +10,8 @@ import {
   validateValidationReportTarget
 } from './contract.mjs';
 import { PAPER_EVIDENCE_ID_PATTERN } from '../../plugins/codex-paper/src/shared/package-compatibility.mjs';
+import { publishGenerationWorkspace } from '../../plugins/codex-paper/src/shared/generation-publication.mjs';
+import { resolveLibraryPaper } from '../../plugins/codex-paper/src/shared/paper-library.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,7 +98,7 @@ function requiredChecks({ result, gold, license, pdfPath, validators, targetErro
     sourceHash: sha256File(pdfPath) === license.sha256,
     generationWorkspace1_0: result.action === 'workspace_created' && workspaceRecord.schemaVersion === '1.0.0'
       && result.paperDir === path.join(result.workspaceDir, 'package'),
-    unpublishedBeforeC2b: !fs.existsSync(formalPackage)
+    unpublishedBeforePublication: !fs.existsSync(formalPackage)
       && !fs.existsSync(path.join(process.env.PAPERS_DIR, '.codex-paper', 'store-v1', 'papers', workspaceRecord.paperKey, 'paper.json'))
       && !fs.existsSync(path.join(process.env.PAPERS_DIR, '.codex-paper', 'store-v1', 'papers', workspaceRecord.paperKey, 'current.json'))
       && fs.readFileSync(path.join(process.env.PAPERS_DIR, 'index.json'), 'utf8') === '[]\n',
@@ -147,6 +149,23 @@ async function main() {
     ];
     const validators = { reasoningDraft, studyStrict, studyStandard };
     const checks = requiredChecks({ result, gold, license, pdfPath, validators, targetErrors });
+    const publication = await publishGenerationWorkspace(result.workspaceId, {
+      libraryRoot: process.env.PAPERS_DIR,
+      lockTimeoutMs: 10_000
+    });
+    const published = resolveLibraryPaper(result.paperSlug, { libraryRoot: process.env.PAPERS_DIR });
+    checks.generationPublication1_0 = publication.published === true
+      && published.mode === 'managed_v1'
+      && published.integrity?.verified === true
+      && published.current?.manifestId === publication.manifestId
+      && published.manifest?.validation?.reportHash === standardReport?.reportHash?.value;
+    checks.viewerVisibilityAfterCurrent = published.packageDir === fs.realpathSync(path.join(
+      process.env.PAPERS_DIR,
+      '.codex-paper', 'store-v1', 'papers', published.paperKey,
+      ...published.current.packageRelativePath.split('/')
+    ));
+    checks.indexProjectionAfterPublication = JSON.parse(fs.readFileSync(path.join(process.env.PAPERS_DIR, 'index.json'), 'utf8'))
+      .some((entry) => entry.slug === result.paperSlug && entry.generationManifest?.manifestId === publication.manifestId);
     const failedChecks = Object.entries(checks).filter(([, pass]) => !pass).map(([name]) => name);
     const pass = failedChecks.length === 0;
 
@@ -159,11 +178,16 @@ async function main() {
       failedChecks,
       expectedFindingCodes: gold.requiredAssertions.validationReport1_0.expectedFindingCodes,
       observedFindingCodes: (standardReport?.findings || []).map((finding) => finding.code),
-      activeContractIds: ['paperIdentity1_0', 'generationWorkspace1_0', 'resultClaims2_1', 'validationReport1_0'],
+      activeContractIds: ['paperIdentity1_0', 'generationWorkspace1_0', 'resultClaims2_1', 'validationReport1_0', 'generationPublication1_0'],
       reservedTargetIds: [],
       packageVersion: result.meta?.packageVersion,
       factsSchemaVersion: result.facts?.schemaVersion,
       resultClaimCount: result.facts?.resultClaims?.length || 0,
+      publication: {
+        manifestId: publication.manifestId,
+        manifestHash: publication.manifestHash,
+        published: publication.published
+      },
       validators: {
         reasoningDraft: reasoningDraft.exitCode,
         studyStrict: studyStrict.exitCode,

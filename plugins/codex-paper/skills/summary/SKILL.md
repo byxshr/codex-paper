@@ -50,7 +50,7 @@ OUTPUT_LANG="en"   # or zh, based on the user's request
 node ../study/scripts/prepare-paper.js "$USER_INPUT" --workflow summary --language "$OUTPUT_LANG" --context paper-only --profile auto
 ```
 
-The preparation identity includes the summary workflow and output language. In C2a, a new run creates a private generation workspace and returns its exact `workspaceId`, `workspaceDir`, and package `paperDir`; it does not update `paper.json`, `current.json`, or `index.json`, and it is not visible in the Viewer. An already published exact generation may still be reused read-only with `--resume`. Legacy flat packages remain read-only until explicit migration.
+The preparation identity includes the summary workflow and output language. A new run creates a private generation workspace and returns its exact `workspaceId`, `workspaceDir`, and package `paperDir`; preparation does not update `paper.json`, `current.json`, or `index.json`, and it is not visible in the Viewer. An already published exact generation may still be reused read-only with `--resume`. Legacy flat packages remain read-only until explicit migration.
 
 Do not bypass this entrypoint with `curl`, `wget`, browser downloads, or in-process parsing. It enforces HTTPS redirect/SSRF checks, DNS pinning, bounded private staging, PDF magic, parser resource/page limits, and private quarantine for rejected inputs.
 
@@ -147,9 +147,9 @@ Additional constraints:
 
 ---
 
-# Step 3: Keep the Result Private Until C2b
+# Step 3: Keep the Quick Summary Private
 
-`prepare-paper.js` writes `meta.json`, the PDF, and `analysis.json` only in the private workspace package. Do not create or update formal paper records, `current.json`, or `index.json`, and do not claim the summary has been published.
+`prepare-paper.js` writes `meta.json`, the PDF, and `analysis.json` only in the private workspace package. Do not create or update formal paper records, `current.json`, or `index.json`, and do not claim the summary has been published. C2b intentionally accepts only a complete standard study-package Validation Report; a quick-summary-only workspace remains private unless it is completed through `$paper-study` and passes that gate.
 
 # Step 4: Present Summary to User
 
@@ -164,7 +164,7 @@ After generating the summary:
 
 3. **File location reminder:**
    - Summary saved to: `{prepare-output.paperDir}/quick-summary.md`
-   - State clearly that the file is in a private generation workspace and is not available in the Viewer until the C2b publication flow exists.
+   - State clearly that the quick-summary-only file remains in a private generation workspace and is not available in the Viewer unless completed and published through `$paper-study`.
 
 ---
 

@@ -40,4 +40,4 @@ workspace 的 `validated` 只说明验证步骤已成功，不代表已发布。
 
 ## 与 P0-C2b 的边界
 
-C1b 保证 overlay mutation 不进入 generation package，并冻结 current resolution 与物理分层；C2a 增加 workspace、跨进程锁和共享 writer，但不提供 manifest sealing、发布 commit point、reindex/recovery 或发布后的 dirty/clone-on-write 检测。只有 P0-C2b 完成 gate 驱动的原子发布后，新 workspace 才能成为正式 generation。
+C1b 保证 overlay mutation 不进入 generation package，并冻结 current resolution 与物理分层；C2a 增加 workspace、跨进程锁和共享 writer。C2b 已在此边界上增加 manifest sealing、`current.json` 发布提交点、reindex/recovery 与发布后 dirty 检测；只有 complete standard gate 通过且显式发布成功的 workspace 才能成为正式 generation。完整 migration、revision 浏览和 clone-on-write 仍后置。

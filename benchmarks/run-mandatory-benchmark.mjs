@@ -17,6 +17,16 @@ function writeReport(report) {
   fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 }
 
+function makeTreeRemovable(root) {
+  if (!fs.existsSync(root)) return;
+  const stats = fs.lstatSync(root);
+  if (stats.isSymbolicLink()) return;
+  if (stats.isDirectory()) {
+    fs.chmodSync(root, 0o700);
+    for (const entry of fs.readdirSync(root)) makeTreeRemovable(path.join(root, entry));
+  } else if (stats.isFile()) fs.chmodSync(root, 0o600);
+}
+
 function configurationFailure(errors) {
   const report = {
     schemaVersion: '1.0.0',
@@ -74,6 +84,7 @@ for (const fixture of validated.fixtures) {
     }
     fixtureResults.push(result);
   } finally {
+    makeTreeRemovable(libraryRoot);
     fs.rmSync(libraryRoot, { recursive: true, force: true });
   }
 }

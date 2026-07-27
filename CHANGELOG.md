@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added Generation Publication 1.0 with standard Validation-gated sealing, immutable file manifests, authoritative current commits, rebuildable index projection, retained recovery journals, and idempotent crash recovery.
+- Added exact publish/recover/reindex commands, authoritative manifest verification in readers, a dedicated publication CI gate, and mandatory PDF regression coverage through Viewer-visible publication.
 - Hardened C2a after the seventh independent review: preserve generated Ask answers when rich Markdown rendering fails by returning escaped plain text, and move bounded stale initialization cleanup under the registry lock.
 - Hardened C2a after the sixth independent review: invalidate a paper thread when a successful reply is empty, compensate both report-write and final-state validation persistence failures, retain secondary compensation errors, and share workspace diagnostics plus the storage lock-timeout maximum.
 - Hardened C2a after the fifth independent review: invalidate only the affected paper thread after a failed Codex reply, compensate validation-report persistence failures with a bounded failed workspace diagnostic, remove disk-lock I/O from in-process Ask lease registration, and finish shared CAS/CLI mapping plus Guard mutation coverage.

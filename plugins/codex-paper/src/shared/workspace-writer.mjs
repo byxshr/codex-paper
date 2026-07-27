@@ -24,6 +24,12 @@ export function requireWritableWorkspace(input, options = {}) {
     error.statusCode = 409
     throw error
   }
+  if (descriptor.mode === 'generation_workspace_v1' && descriptor.publicationResidue) {
+    const error = new Error('WORKSPACE_PUBLICATION_IN_PROGRESS: publication residues are read-only and must be recovered.')
+    error.code = 'WORKSPACE_PUBLICATION_IN_PROGRESS'
+    error.statusCode = 409
+    throw error
+  }
   if (descriptor.mode === 'generation_workspace_v1' && descriptor.workspace?.state === 'abandoned') {
     const error = new Error('WORKSPACE_ABANDONED: abandoned workspaces are read-only.')
     error.code = 'WORKSPACE_ABANDONED'

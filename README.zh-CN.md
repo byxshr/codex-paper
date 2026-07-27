@@ -206,9 +206,10 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 
 ```
 ~/codex-papers/
-├── .codex-paper/workspaces-v1/{workspaceId}/ # C2a 私有 authoring/validation workspace
+├── .codex-paper/workspaces-v1/{workspaceId}/ # 私有 authoring/validation 或发布 journal
 │   ├── workspace.json                        # 有界状态与 publish intent
-│   └── package/                              # C2b 发布前不对 Viewer 可见
+│   ├── publication.json                      # sealing 后的有界幂等恢复 journal
+│   └── package/                              # 发布原子移动前存在
 ├── .codex-paper/locks-v1/                    # 跨进程锁 owner records
 ├── .codex-paper/store-v1/papers/{paperKey}/
 │   ├── paper.json                       # paper identity alias 与 reconciliation 审计
@@ -222,7 +223,7 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 │       ├── paper.pdf、images/、code/、index.html
 │       ├── paper-data.json、evidence-ledger.json、facts.json、analysis.json
 │       ├── reasoning-analysis.json、meta.json
-│       └── .codex-paper/                 # identity、answering、review、validation 记录
+│       └── .codex-paper/                 # identity、validation、answering 与 sealed generation manifest
 ├── papers/{legacy-slug}/                 # 既有 flat 2.0/2.1 包；显式迁移前只读
 ├── index.json                            # 搜索/兼容投影，不是 identity 权威
 └── .trash/{trashId}/{tombstone,payload}  # 可恢复生命周期 envelope
@@ -238,13 +239,14 @@ bash scripts/codex-paper.sh test
 bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh layout-test
 bash scripts/codex-paper.sh storage-test
+bash scripts/codex-paper.sh publication-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh build
 ```
 
-P0-C2a 中，新生成内容只进入私有 generation workspace；不会创建或修改 `paper.json`、`current.json`、正式 store 或 `index.json`，也不会提前出现在 Viewer。后续操作必须显式使用 prepare 返回的 workspace ID 或路径，不会自动选择“最新 workspace”。workspace authoring 通过共享 writer 与 CAS 完成：
+prepare 阶段的新生成内容只进入私有 generation workspace；不会创建或修改 `paper.json`、`current.json`、正式 store 或 `index.json`，也不会提前出现在 Viewer。后续操作必须显式使用 prepare 返回的 workspace ID 或路径，不会自动选择“最新 workspace”。workspace authoring 通过共享 writer 与 CAS 完成：
 
 ```bash
 bash scripts/codex-paper.sh workspace-list --json
@@ -252,7 +254,12 @@ bash scripts/codex-paper.sh workspace-inspect <workspace-id-or-path> --json
 bash scripts/codex-paper.sh workspace-write <workspace> README.md --stdin --expect-absent
 bash scripts/codex-paper.sh workspace-tags <workspace> --tag <领域> --tag <方法>
 bash scripts/codex-paper.sh workspace-abandon <workspace> --json
+bash scripts/codex-paper.sh publish-workspace <validated-workspace> --json
+bash scripts/codex-paper.sh publication-recover --json
+bash scripts/codex-paper.sh reindex --json
 ```
+
+只有 `phase=complete`、intrinsic `publishable=true` 且标准策略为 `allow_publish` 的 Validation Report 才能发布。`current.json` 是 Viewer 可见性的提交点，`index.json` 只是可重建投影；正式 generation 每次权威解析都会核验 manifest，既有无 manifest 的 managed generation 继续按兼容模式只读。
 
 验证一个已完成的学习包：
 
@@ -357,7 +364,7 @@ codex-paper/
 1. **学习技能** - Codex 论文阅读和写作 agent，负责生成完整学习包
 2. **PDF 解析器** - 使用 `PyMuPDF` 优先、`pdf-parse` 回退的分层解析器，并稳定输出 JSON
 3. **图像提取器** - PDF 图表提取的 Python 脚本
-4. **准备链路** - 在私有 generation workspace 中生成 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 和 `evidence-ledger.json`；C2b 前不更新正式 index
+4. **准备链路** - 在私有 generation workspace 中生成 `paper-data.json`、`facts.json`、`analysis.json`、`meta.json` 和 `evidence-ledger.json`；只有完成标准 Validation gate 并显式发布后才更新 current/index
 5. **研究推理验证** - 使用 `reasoning-analysis.json`、论文 profile 和 `validate-reasoning.js` 约束证据引用、source type、数字 grounding、推理 DAG 和批判性分析
 6. **网页查看器** - 带 Nitro API 的 Nuxt.js 应用，默认展示用户材料，隐藏机器 JSON，并展示证据审计和作者推理视图
 7. **Ask Codex API** - 复用长期运行的 Codex MCP worker 处理基于证据的追问，并将回答追加到 `chat-notes.md`

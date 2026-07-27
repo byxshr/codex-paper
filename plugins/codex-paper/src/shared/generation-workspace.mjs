@@ -46,6 +46,7 @@ const AUTHORING_ROOT_FILES = new Set([
   'mental-model.md', 'reflection.md', 'qa.md', 'index.html', 'reasoning-analysis.json',
 ])
 const AUTHORING_CODEX_FILES = new Set(['.codex-paper/reasoning-review.md', '.codex-paper/answering-pack.md'])
+const PUBLICATION_STATES = new Set(['prepared', 'generation_committed', 'current_committed', 'index_committed', 'failed'])
 
 export class GenerationWorkspaceError extends StorageTransactionError {
   constructor(code, message, statusCode = 422, details = {}) {
@@ -120,7 +121,9 @@ export function isActiveWorkspaceState(state) {
 }
 
 export function isActiveGenerationWorkspace(item) {
-  return !item?.initializationResidue && isActiveWorkspaceState(item?.workspace?.state)
+  if (item?.initializationResidue) return false
+  if (item?.publicationResidue) return item.publicationState !== 'index_committed'
+  return isActiveWorkspaceState(item?.workspace?.state)
 }
 
 function isInitializationDirectory(name) {
@@ -144,12 +147,43 @@ function initializationWorkspaceById(layout, workspaceId) {
 }
 
 function descriptor(workspaceDir, record, libraryRoot) {
-  const packageDir = requireNoFollowDirectory(workspaceDir, path.join(workspaceDir, 'package'), 'WORKSPACE_PACKAGE_MISSING')
+  const packageCandidate = path.join(workspaceDir, 'package')
+  const publicationJournal = path.join(workspaceDir, 'publication.json')
+  let journalStats = null
+  try { journalStats = fs.lstatSync(publicationJournal) } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  const publicationResidue = journalStats !== null
+  const publicationDetached = publicationResidue && !fs.existsSync(packageCandidate)
+  let publicationState = null
+  let publicationInvalid = false
+  let publicationDiagnostic = null
+  const packageDir = publicationDetached ? null : requireNoFollowDirectory(workspaceDir, packageCandidate, 'WORKSPACE_PACKAGE_MISSING')
+  if (publicationResidue) {
+    try {
+      if (journalStats.isSymbolicLink() || !journalStats.isFile()) throw new GenerationWorkspaceError('WORKSPACE_PATH_UNSAFE', 'Publication journal must be a regular non-symlink file.', 403)
+      const parsed = JSON.parse(readFileNoFollowBounded(publicationJournal, 1024 * 1024).toString('utf8'))
+      if (!PUBLICATION_STATES.has(parsed?.state)) throw new GenerationWorkspaceError('PUBLICATION_JOURNAL_INVALID', 'Publication journal state is invalid.', 422)
+      publicationState = parsed.state
+    } catch (error) {
+      publicationState = 'invalid'
+      publicationInvalid = true
+      publicationDiagnostic = createWorkspaceDiagnostic(error, {
+        fallbackCode: 'PUBLICATION_JOURNAL_INVALID',
+        redactions: [getWorkspaceLayout(libraryRoot).libraryRoot, workspaceDir, publicationJournal],
+      })
+    }
+  }
   const initializationResidue = isInitializationDirectory(path.basename(workspaceDir))
   return {
     mode: 'generation_workspace_v1',
-    readOnly: record.state === 'abandoned' || initializationResidue,
+    readOnly: record.state === 'abandoned' || initializationResidue || publicationResidue,
     initializationResidue,
+    publicationResidue,
+    publicationDetached,
+    publicationState,
+    publicationInvalid,
+    publicationDiagnostic,
     libraryRoot: getWorkspaceLayout(libraryRoot).libraryRoot,
     workspaceId: record.workspaceId,
     workspaceDir,
@@ -333,6 +367,7 @@ export function updateWorkspaceRecordLocked(current, update, lockHandle, options
   const resolveOptions = { ...options, libraryRoot: current.libraryRoot }
   const refreshed = resolveGenerationWorkspace(current.workspaceId, resolveOptions)
   if (refreshed.workspace.state === 'abandoned') throw new GenerationWorkspaceError('WORKSPACE_ABANDONED', 'Abandoned workspaces are read-only.', 409)
+  if (refreshed.publicationResidue) throw new GenerationWorkspaceError('WORKSPACE_PUBLICATION_IN_PROGRESS', 'A sealed publication transaction is read-only and must be recovered.', 409)
   const previousBytes = readFileNoFollowBounded(path.join(refreshed.workspaceDir, 'workspace.json'), 1024 * 1024)
   const previousHash = crypto.createHash('sha256').update(previousBytes).digest('hex')
   const patch = typeof update === 'function' ? update(refreshed.workspace) : update
@@ -348,6 +383,7 @@ export function updateWorkspaceRecordLocked(current, update, lockHandle, options
 export function transitionWorkspaceToAuthoringLocked(current, lockHandle, options = {}) {
   const refreshed = resolveGenerationWorkspace(current.workspaceId, { ...options, libraryRoot: current.libraryRoot })
   if (refreshed.initializationResidue) throw new GenerationWorkspaceError('WORKSPACE_INITIALIZATION_INCOMPLETE', 'Initialization residues are read-only; inspect or abandon this workspace and run prepare again.', 409)
+  if (refreshed.publicationResidue) throw new GenerationWorkspaceError('WORKSPACE_PUBLICATION_IN_PROGRESS', 'A sealed publication transaction is read-only and must be recovered.', 409)
   if (refreshed.workspace.state === 'authoring') return refreshed
   return updateWorkspaceRecordLocked(refreshed, { state: 'authoring', lastSuccessfulStep: 'authoring_started' }, lockHandle, options)
 }
@@ -376,6 +412,7 @@ export async function writeWorkspaceAuthoring(input, relativePath, data, precond
   if (!isAuthoringPath(relativePath)) throw new GenerationWorkspaceError('WORKSPACE_WRITE_PATH_FORBIDDEN', 'The requested path is not an approved authoring artifact.', 403)
   const current = resolveGenerationWorkspace(input, options)
   if (current.initializationResidue) throw new GenerationWorkspaceError('WORKSPACE_INITIALIZATION_INCOMPLETE', 'Initialization residues are read-only; inspect or abandon this workspace and run prepare again.', 409)
+  if (current.publicationResidue) throw new GenerationWorkspaceError('WORKSPACE_PUBLICATION_IN_PROGRESS', 'A sealed publication transaction is read-only and must be recovered.', 409)
   if (current.workspace.state === 'abandoned') throw new GenerationWorkspaceError('WORKSPACE_ABANDONED', 'Abandoned workspaces are read-only.', 409)
   return withStorageLocks([current.paperLockKey, current.generationLockKey, current.workspaceLockKey], async (lockHandle) => {
     let refreshed = transitionWorkspaceToAuthoringLocked(current, lockHandle, options)

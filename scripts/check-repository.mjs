@@ -45,7 +45,14 @@ const STORAGE_ENGINE = 'plugins/codex-paper/src/shared/storage-transaction.mjs'
 const WORKSPACE_WRITER = 'plugins/codex-paper/src/shared/workspace-writer.mjs'
 const WORKSPACE_CLI = 'plugins/codex-paper/skills/study/scripts/workspace-cli.js'
 const STORAGE_TEST = 'scripts/tests/storage-transaction.test.mjs'
+const GENERATION_MANIFEST_SCHEMA = 'plugins/codex-paper/skills/study/schemas/generation-manifest-1.0.schema.json'
+const PUBLICATION_TRANSACTION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/publication-transaction-1.0.schema.json'
+const GENERATION_MANIFEST_ENGINE = 'plugins/codex-paper/src/shared/generation-manifest.mjs'
+const PUBLICATION_ENGINE = 'plugins/codex-paper/src/shared/generation-publication.mjs'
+const PUBLICATION_CLI = 'plugins/codex-paper/skills/study/scripts/publication-cli.js'
+const PUBLICATION_TEST = 'scripts/tests/generation-publication.test.mjs'
 const LIBRARY_SECURITY = 'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs'
+const WEB_CONFIG = 'plugins/codex-paper/src/web/nuxt.config.ts'
 const STUDY_SKILL = 'plugins/codex-paper/skills/study/SKILL.md'
 const SUMMARY_SKILL = 'plugins/codex-paper/skills/summary/SKILL.md'
 const MANDATORY_SENTINELS = [
@@ -114,7 +121,14 @@ const SENTINELS = [
   WORKSPACE_WRITER,
   WORKSPACE_CLI,
   STORAGE_TEST,
+  GENERATION_MANIFEST_SCHEMA,
+  PUBLICATION_TRANSACTION_SCHEMA,
+  GENERATION_MANIFEST_ENGINE,
+  PUBLICATION_ENGINE,
+  PUBLICATION_CLI,
+  PUBLICATION_TEST,
   LIBRARY_SECURITY,
+  WEB_CONFIG,
   SUMMARY_SKILL,
   'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
@@ -435,6 +449,10 @@ export function checkRepository({
     }
     if (!rootScript.includes('layout-test') || !rootScript.includes('library-layout.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose layout-test`)
     if (!rootScript.includes('storage-test') || !rootScript.includes('storage-transaction.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose storage-test`)
+    if (!rootScript.includes('publication-test') || !rootScript.includes('generation-publication.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose publication-test`)
+    for (const command of ['publish-workspace', 'publication-recover', 'reindex']) {
+      if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
+    }
   }
   if (existsSync(join(root, CI_WORKFLOW))) {
     const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
@@ -457,6 +475,10 @@ export function checkRepository({
     if (storageIndex < 0 || storageIndex < layoutIndex || storageIndex > validationIndex || storageIndex > mandatoryIndex) {
       errors.push(`${CI_WORKFLOW} must run storage-test after layout-test and before validation-test and benchmark-mandatory`)
     }
+    const publicationIndex = workflow.indexOf('publication-test')
+    if (publicationIndex < 0 || publicationIndex < storageIndex || publicationIndex > validationIndex || publicationIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run publication-test after storage-test and before validation-test and benchmark-mandatory`)
+    }
   }
 
   if (existsSync(join(root, LIBRARY_RESOLVER))) {
@@ -464,6 +486,10 @@ export function checkRepository({
     for (const required of ['managed_v1', 'legacy_flat', 'current.json', 'overlay', 'paperLockKey', 'generationLockKey']) {
       if (!resolver.includes(required)) errors.push(`${LIBRARY_RESOLVER} must implement ${required}`)
     }
+    if (!resolver.includes('verifyGenerationManifest')) errors.push(`${LIBRARY_RESOLVER} must verify sealed generations during authoritative resolution`)
+  }
+  if (existsSync(join(root, WEB_CONFIG)) && !readFileSync(join(root, WEB_CONFIG), 'utf8').includes('generation-manifest\\.mjs$')) {
+    errors.push(`${WEB_CONFIG} must inline generation-manifest.mjs with the shared paper resolver`)
   }
   for (const consumer of [
     PREPARE_SCRIPT,
@@ -587,7 +613,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, WORKSPACE_ENGINE))) {
     const source = readFileSync(join(root, WORKSPACE_ENGINE), 'utf8')
-    for (const required of ['SHARED_WORKSPACES_RELATIVE_PATH', '.init-', 'WORKSPACE_EXISTS', 'resolveGenerationWorkspace', 'createWorkspaceDiagnostic', 'abandoned', 'writeWorkspaceAuthoring']) {
+    for (const required of ['SHARED_WORKSPACES_RELATIVE_PATH', '.init-', 'WORKSPACE_EXISTS', 'resolveGenerationWorkspace', 'createWorkspaceDiagnostic', 'abandoned', 'writeWorkspaceAuthoring', 'publicationInvalid']) {
       if (!source.includes(required)) errors.push(`${WORKSPACE_ENGINE} must preserve workspace boundary ${required}`)
     }
     if (/latest workspace|selectLatest|most recent workspace/i.test(source)) errors.push(`${WORKSPACE_ENGINE} must not select an implicit latest workspace`)
@@ -596,6 +622,35 @@ export function checkRepository({
     if (cleanupIndex < 0 || lockIndex < 0 || cleanupIndex < lockIndex) {
       errors.push(`${WORKSPACE_ENGINE} must clean initialization residues while holding the registry lock`)
     }
+  }
+  if (existsSync(join(root, GENERATION_MANIFEST_SCHEMA))) {
+    const schema = readJson(join(root, GENERATION_MANIFEST_SCHEMA), errors, GENERATION_MANIFEST_SCHEMA)
+    for (const field of ['manifestId', 'transactionId', 'paperKey', 'generationId', 'validation', 'files', 'manifestHash']) {
+      if (!schema?.required?.includes(field)) errors.push(`${GENERATION_MANIFEST_SCHEMA} must require ${field}`)
+    }
+  }
+  if (existsSync(join(root, GENERATION_MANIFEST_ENGINE))) {
+    const source = readFileSync(join(root, GENERATION_MANIFEST_ENGINE), 'utf8')
+    for (const required of ['GENERATION_MANIFEST_RELATIVE_PATH', 'inventoryGenerationFiles', 'return files.sort', 'verifyGenerationManifestBinding', 'readManifestBoundFile', 'verifyGenerationManifest', 'unsealGenerationPackageForLifecycle', 'containmentRoot', 'GENERATION_MANIFEST_DIRTY', 'readFileNoFollowBounded']) {
+      if (!source.includes(required)) errors.push(`${GENERATION_MANIFEST_ENGINE} must preserve generation manifest boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, PUBLICATION_ENGINE))) {
+    const source = readFileSync(join(root, PUBLICATION_ENGINE), 'utf8')
+    for (const required of ['validateValidationReportForPublication', 'publication.json', 'generation_committed', 'current_committed', 'index_committed', 'after_new_payload_rename', 'after_existing_payload_rename', 'after_new_payload_staged', 'persistedJournal', 'indexDiagnostics', 'withStorageLocks', 'verifyGenerationManifestBinding', 'readManifestBoundFile', 'verifyGenerationManifest', 'rebuildLibraryIndex']) {
+      if (!source.includes(required)) errors.push(`${PUBLICATION_ENGINE} must preserve publication boundary ${required}`)
+    }
+    if (/rmSync\([^\n]*generation|rmSync\([^\n]*package/.test(source)) errors.push(`${PUBLICATION_ENGINE} must not delete committed generations or workspace packages`)
+  }
+  if (existsSync(join(root, PUBLICATION_CLI))) {
+    const source = readFileSync(join(root, PUBLICATION_CLI), 'utf8')
+    for (const required of ['publishGenerationWorkspace', 'recoverPublications', 'rebuildLibraryIndex', 'MAX_LOCK_TIMEOUT_MS']) {
+      if (!source.includes(required)) errors.push(`${PUBLICATION_CLI} must expose exact publication operation ${required}`)
+    }
+    if (/latest workspace|selectLatest|most recent workspace/i.test(source)) errors.push(`${PUBLICATION_CLI} must not select an implicit latest workspace`)
+  }
+  if (existsSync(join(root, MANDATORY_WORKER)) && !readFileSync(join(root, MANDATORY_WORKER), 'utf8').includes('publishGenerationWorkspace')) {
+    errors.push(`${MANDATORY_WORKER} must complete the mandatory pipeline through publication`)
   }
   const authoringBoundary = 'benchmarks/mandatory/authoring-boundary.mjs'
   if (existsSync(join(root, MANDATORY_WORKER)) && existsSync(join(root, authoringBoundary))) {

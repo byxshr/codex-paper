@@ -52,6 +52,9 @@ jobs:
       - name: Generation Workspace and Storage Transactions
         run: bash scripts/codex-paper.sh storage-test
 
+      - name: Generation Publication and Recovery
+        run: bash scripts/codex-paper.sh publication-test
+
       - name: Validation Report 1.0
         run: bash scripts/codex-paper.sh validation-test
 

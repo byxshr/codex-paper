@@ -44,6 +44,12 @@ const SENTINELS = [
   'plugins/codex-paper/src/shared/storage-transaction.mjs',
   'plugins/codex-paper/src/shared/workspace-writer.mjs',
   'plugins/codex-paper/skills/study/scripts/workspace-cli.js',
+  'plugins/codex-paper/skills/study/scripts/publication-cli.js',
+  'plugins/codex-paper/skills/study/schemas/generation-manifest-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/publication-transaction-1.0.schema.json',
+  'plugins/codex-paper/src/shared/generation-manifest.mjs',
+  'plugins/codex-paper/src/shared/generation-publication.mjs',
+  'plugins/codex-paper/src/web/nuxt.config.ts',
   'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs',
   'plugins/codex-paper/src/web/server/utils/packageCompatibility.mjs',
   'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs',
@@ -60,6 +66,7 @@ const SENTINELS = [
   'scripts/codex-paper.sh',
   'scripts/tests/library-layout.test.mjs',
   'scripts/tests/storage-transaction.test.mjs',
+  'scripts/tests/generation-publication.test.mjs',
   'benchmarks/run-mandatory-benchmark.mjs',
   'benchmarks/mandatory/run-fixture.mjs',
   'benchmarks/mandatory/contract.mjs',
@@ -438,6 +445,56 @@ test('CI cannot remove or reorder the storage transaction gate', () => withFixtu
   const workflow = readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh storage-test', 'true')
   writeFileSync(workflowPath, workflow)
   assert.match(errorsFor(fixture), /must run storage-test after layout-test/)
+}))
+
+test('CI cannot remove the generation publication gate', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh publication-test', 'true'))
+  assert.match(errorsFor(fixture), /must run publication-test after storage-test/)
+}))
+
+test('generation manifest, authoritative resolver, and mandatory publication boundaries are guarded', () => withFixture((fixture) => {
+  const resolver = join(fixture.root, 'plugins/codex-paper/src/shared/paper-library.mjs')
+  const worker = join(fixture.root, 'benchmarks/mandatory/run-fixture.mjs')
+  const manifest = join(fixture.root, 'plugins/codex-paper/src/shared/generation-manifest.mjs')
+  writeFileSync(resolver, readFileSync(resolver, 'utf8').replaceAll('verifyGenerationManifest', 'uncheckedManifest'))
+  writeFileSync(worker, readFileSync(worker, 'utf8').replaceAll('publishGenerationWorkspace', 'skipPublication'))
+  writeFileSync(manifest, readFileSync(manifest, 'utf8').replaceAll('GENERATION_MANIFEST_DIRTY', 'MANIFEST_CHANGED'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must verify sealed generations during authoritative resolution/)
+  assert.match(errors, /mandatory pipeline through publication/)
+  assert.match(errors, /generation manifest boundary GENERATION_MANIFEST_DIRTY/)
+}))
+
+test('publication recovery and index isolation fixes are guarded', () => withFixture((fixture) => {
+  const manifest = join(fixture.root, 'plugins/codex-paper/src/shared/generation-manifest.mjs')
+  const publication = join(fixture.root, 'plugins/codex-paper/src/shared/generation-publication.mjs')
+  const workspace = join(fixture.root, 'plugins/codex-paper/src/shared/generation-workspace.mjs')
+  writeFileSync(manifest, readFileSync(manifest, 'utf8')
+    .replace('return files.sort', 'return files')
+    .replaceAll('verifyGenerationManifestBinding', 'uncheckedManifestBinding')
+    .replaceAll('readManifestBoundFile', 'uncheckedManifestFile')
+    .replaceAll('unsealGenerationPackageForLifecycle', 'unsafeLifecycleCleanup')
+    .replaceAll('containmentRoot', 'uncheckedRoot'))
+  writeFileSync(publication, readFileSync(publication, 'utf8')
+    .replaceAll('after_new_payload_rename', 'newRenameRecoveryRemoved')
+    .replaceAll('after_existing_payload_rename', 'existingRenameRecoveryRemoved')
+    .replaceAll('after_new_payload_staged', 'stagingRecoveryRemoved')
+    .replaceAll('persistedJournal', 'staleJournal')
+    .replaceAll('indexDiagnostics', 'hiddenIndexFailures'))
+  writeFileSync(workspace, readFileSync(workspace, 'utf8').replaceAll('publicationInvalid', 'hiddenJournalInvalid'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /manifest boundary return files\.sort/)
+  assert.match(errors, /manifest boundary verifyGenerationManifestBinding/)
+  assert.match(errors, /manifest boundary readManifestBoundFile/)
+  assert.match(errors, /manifest boundary unsealGenerationPackageForLifecycle/)
+  assert.match(errors, /manifest boundary containmentRoot/)
+  assert.match(errors, /publication boundary after_new_payload_rename/)
+  assert.match(errors, /publication boundary after_existing_payload_rename/)
+  assert.match(errors, /publication boundary after_new_payload_staged/)
+  assert.match(errors, /publication boundary persistedJournal/)
+  assert.match(errors, /publication boundary indexDiagnostics/)
+  assert.match(errors, /workspace boundary publicationInvalid/)
 }))
 
 test('workspace schema, shared writer, and workspace-only prepare boundaries are required', () => withFixture((fixture) => {

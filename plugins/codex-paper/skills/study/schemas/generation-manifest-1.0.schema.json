@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-paper.local/schemas/generation-manifest-1.0.schema.json",
+  "title": "Codex Paper Generation Manifest 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "manifestId", "transactionState", "transactionId", "paperKey", "paperId", "sourceRevisionId", "generationId", "sourceSha256", "generationFingerprint", "validation", "sealedAt", "files", "manifestHash"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "manifestId": { "type": "string", "pattern": "^gm-sha256-[a-f0-9]{64}$" },
+    "transactionState": { "const": "sealed" },
+    "transactionId": { "type": "string", "pattern": "^pub-[a-f0-9]{32}$" },
+    "paperKey": { "type": "string", "pattern": "^p-[a-f0-9]{64}$" },
+    "paperId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "sourceRevisionId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "generationId": { "type": "string", "pattern": "^gen:sha256:[a-f0-9]{64}$" },
+    "sourceSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "generationFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "status", "reportHash"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "status": { "enum": ["pass", "pass_with_warnings"] },
+        "reportHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "sealedAt": { "type": "string", "format": "date-time" },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$", "maxLength": 512 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "bytes": { "type": "integer", "minimum": 0, "maximum": 536870912 }
+        }
+      }
+    },
+    "manifestHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

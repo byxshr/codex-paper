@@ -54,4 +54,4 @@ Published managed generations and legacy flat packages are generation-content re
 
 ## Publication boundary
 
-P0-C2a never creates or mutates the formal paper record, current pointer, or index for a new workspace. Viewer resolution remains based on published records only. P0-C2b must re-read the workspace, verify its Validation Report gate, build and seal a manifest, and commit formal record/current/index state as a recoverable transaction.
+Workspace preparation never creates or mutates the formal paper record, current pointer, or index. Viewer resolution remains based on published records only. Generation Publication 1.0 now re-reads the exact workspace, verifies its Validation Report gate, builds and seals a manifest, and commits formal record/current/index state as a recoverable transaction; see [generation-publication-1.0.md](generation-publication-1.0.md).

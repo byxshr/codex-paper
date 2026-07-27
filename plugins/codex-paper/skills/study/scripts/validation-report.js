@@ -254,6 +254,45 @@ export function createValidationReport({
   return report;
 }
 
+export function validateValidationReportForPublication(report) {
+  if (!validateReport(report)) {
+    const error = new Error('Validation Report 1.0 schema validation failed.');
+    error.code = 'PUBLICATION_VALIDATION_REPORT_INVALID';
+    error.statusCode = 422;
+    throw error;
+  }
+  const intrinsic = {
+    schemaVersion: report.schemaVersion,
+    status: report.status,
+    phase: report.phase,
+    publishable: report.publishable,
+    scope: report.scope,
+    validator: report.validator,
+    findings: report.findings,
+    referenceCoverage: report.referenceCoverage
+  };
+  const expectedHash = sha256(stableJson(intrinsic));
+  const projectedErrors = report.findings.filter((finding) => finding.severity === 'error');
+  const projectedWarnings = report.findings.filter((finding) => finding.severity === 'warning');
+  if (report.reportHash?.value !== expectedHash
+    || stableJson(report.errors) !== stableJson(projectedErrors)
+    || stableJson(report.warnings) !== stableJson(projectedWarnings)) {
+    const error = new Error('Validation Report intrinsic hash or compatibility projections are invalid.');
+    error.code = 'PUBLICATION_VALIDATION_REPORT_TAMPERED';
+    error.statusCode = 422;
+    throw error;
+  }
+  if (report.phase !== 'complete' || report.publishable !== true || report.status === 'fail'
+    || report.gate?.policy !== 'standard' || report.gate?.outcome !== 'allow_publish'
+    || report.gate?.blockingFindingCodes?.length !== 0 || projectedErrors.length !== 0) {
+    const error = new Error('Only a complete standard allow_publish Validation Report may be published.');
+    error.code = 'PUBLICATION_GATE_BLOCKED';
+    error.statusCode = 409;
+    throw error;
+  }
+  return report;
+}
+
 export function writeValidationReportAtomic(paperDir, report) {
   return withWorkspaceMutationSync(paperDir, ({ descriptor, lockHandle }) => {
     replaceWorkspaceJson({ descriptor, lockHandle, relativePath: '.codex-paper/validation-report.json', value: report, policy: 'validation_report' });
