@@ -80,6 +80,14 @@ Use source types precisely:
 
 ## Step 1: Prepare Evidence
 
+Before preparation, verify the repository-managed runtime:
+
+```bash
+bash ../../scripts/runtime-python.sh -c 'import fitz, platform; assert platform.python_version() == "3.11.15"; assert fitz.__version__ == "1.28.0"'
+```
+
+If it is unavailable, stop and ask the user to provide CPython 3.11.15 for the explicit `runtime-setup` command. Never install a system Python, use global PyMuPDF, or run an unpinned `pip install`.
+
 Inputs supported:
 
 * Local PDF path, for example `~/Downloads/paper.pdf`
@@ -426,7 +434,7 @@ Choose an interaction that fits the paper: architecture explorer, training-stage
 Extract figures into a private external temporary directory, inspect them, then import only selected files through `workspace-cli.js write ... --from-file ... --expect-absent`. Never point `extract-images.py` at the workspace `images/` directory directly.
 
 ```bash
-python3 ./scripts/extract-images.py \
+bash ../../scripts/runtime-python.sh ./scripts/extract-images.py \
   "{prepare-output.paperDir}/paper.pdf" \
   "<private-temporary-output>"
 node ./scripts/workspace-cli.js write "{prepare-output.workspaceId}" "images/<selected-name>" \

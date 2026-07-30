@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "1.0.0",
+  "policyVersion": "p1-3a-1.0.0",
+  "criticalPolicy": "block",
+  "highPolicy": "block_unless_exact_exception",
+  "exceptionMaximumDays": 45,
+  "peerDependencyRelaxations": [
+    {
+      "lockfile": "plugins/codex-paper/src/web/package-lock.json",
+      "flag": "--legacy-peer-deps",
+      "expiresOn": "2026-08-31",
+      "reason": "npm 10.9.8's strict peer resolver currently aborts while evaluating the reviewed Nuxt 4.5.1 dependency graph (edgesOut); the checked lockfile remains authoritative.",
+      "reachability": "This changes install-time peer resolution only. Runtime paper inputs cannot influence dependency selection, and lifecycle scripts remain disabled.",
+      "mitigations": [
+        "exact manifest versions",
+        "reviewed package-lock hash",
+        "ignore-scripts installation",
+        "post-install supply-chain verification"
+      ],
+      "decision": "remove_or_replace_in_p1-3b"
+    }
+  ],
+  "exceptions": [
+    {
+      "lockfile": "plugins/codex-paper/src/web/package-lock.json",
+      "expiresOn": "2026-08-31",
+      "packages": [
+        { "name": "@nuxt/nitro-server", "range": ">=3.20.0", "nodes": ["node_modules/@nuxt/nitro-server"] },
+        { "name": "@nuxt/vite-builder", "range": "3.20.0 - 3.21.10 || >=4.2.0", "nodes": ["node_modules/@nuxt/vite-builder"] },
+        { "name": "archiver", "range": "0.20.0 - 7.0.1", "nodes": ["node_modules/archiver"] },
+        { "name": "archiver-utils", "range": ">=0.2.0", "nodes": ["node_modules/archiver-utils"] },
+        { "name": "brace-expansion", "range": "<=5.0.7", "nodes": ["node_modules/archiver-utils/node_modules/brace-expansion", "node_modules/readdir-glob/node_modules/brace-expansion"] },
+        { "name": "glob", "range": "4.3.0 - 10.5.0", "nodes": ["node_modules/archiver-utils/node_modules/glob"] },
+        { "name": "minimatch", "range": "2.0.0 - 10.0.2", "nodes": ["node_modules/archiver-utils/node_modules/minimatch", "node_modules/readdir-glob/node_modules/minimatch"] },
+        { "name": "nitropack", "range": ">=0.1.0", "nodes": ["node_modules/nitropack"] },
+        { "name": "nuxt", "range": "3.20.0 - 3.21.10 || >=4.2.0", "nodes": ["node_modules/nuxt"] },
+        { "name": "picomatch", "range": "<=2.3.1", "nodes": ["node_modules/anymatch/node_modules/picomatch"] },
+        { "name": "readdir-glob", "range": "<=2.0.3", "nodes": ["node_modules/readdir-glob"] },
+        { "name": "zip-stream", "range": "0.8.0 - 6.0.1", "nodes": ["node_modules/zip-stream"] }
+      ],
+      "reachability": "Nuxt and Nitro serve only the loopback Viewer. Archive/glob chains process trusted repository build inputs and are not exposed to paper content.",
+      "mitigations": [
+        "loopback-only listener",
+        "Host/Origin/session/CSRF enforcement",
+        "strict CSP and active-content sanitization",
+        "SSR, DevTools and telemetry disabled",
+        "only static same-origin NuxtLink targets"
+      ],
+      "decision": "accept_temporarily_pending_upstream"
+    }
+  ]
+}

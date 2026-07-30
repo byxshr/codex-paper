@@ -114,7 +114,7 @@ export function validateMandatoryManifest({ repoRoot, manifest }) {
     if (license.origin !== 'original-synthetic') errors.push(`mandatory fixture ${entry.id} must be original-synthetic`);
     if (license.redistributable !== true) errors.push(`mandatory fixture ${entry.id} must be redistributable`);
     if (license.sha256 !== sha256File(pdfPath)) errors.push(`mandatory fixture ${entry.id} sha256 mismatch`);
-    const expectedGenerator = `python3 benchmarks/fixtures/generate-pdf-fixtures.py --fixture ${entry.id}`;
+    const expectedGenerator = `bash plugins/codex-paper/scripts/runtime-python.sh benchmarks/fixtures/generate-pdf-fixtures.py --fixture ${entry.id}`;
     if (license.generator !== expectedGenerator) errors.push(`mandatory fixture ${entry.id} generator mismatch`);
 
     if (gold.schemaVersion !== '1.2.0') errors.push(`mandatory fixture ${entry.id} gold schemaVersion must be 1.2.0`);

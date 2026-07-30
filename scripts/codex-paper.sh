@@ -6,23 +6,58 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 cmd_install() {
   ensure_node
   ensure_npm
+
+  print_section "Runtime Baseline"
+  "$NODE_BIN" "$REPO_ROOT/scripts/runtime-policy.mjs" setup
   ensure_python
 
   print_section "Plugin Dependencies"
-  (cd "$PLUGIN_ROOT" && "$NPM_BIN" install)
+  (cd "$PLUGIN_ROOT" && "$NPM_BIN" install --ignore-scripts --legacy-peer-deps)
 
   print_section "Web Dependencies"
-  (cd "$WEB_ROOT" && "$NPM_BIN" install)
+  (cd "$WEB_ROOT" && "$NPM_BIN" install --ignore-scripts --legacy-peer-deps)
 
   print_section "Paper Library"
   bash "$PLUGIN_ROOT/hooks/check-install.sh"
 
   print_section "PyMuPDF"
   ensure_pymupdf
-  echo "PyMuPDF is available."
+  echo "Managed CPython 3.11.15 / PyMuPDF 1.28.0 is available."
 
   print_section "Done"
   echo "Codex Paper dependencies are installed."
+}
+
+cmd_runtime_setup() {
+  ensure_node
+  ensure_npm
+  "$NODE_BIN" "$REPO_ROOT/scripts/runtime-policy.mjs" setup "$@"
+}
+
+cmd_runtime_status() {
+  if [ -z "${NODE_BIN:-}" ]; then
+    echo "Error: node is not available on PATH." >&2
+    exit 3
+  fi
+  "$NODE_BIN" "$REPO_ROOT/scripts/runtime-policy.mjs" status "$@"
+}
+
+cmd_dependency_audit() {
+  ensure_node
+  ensure_npm
+  "$NODE_BIN" "$REPO_ROOT/scripts/dependency-audit.mjs" "$@"
+}
+
+cmd_secret_scan() {
+  ensure_node
+  "$NODE_BIN" "$REPO_ROOT/scripts/secret-scan.mjs" "$@"
+}
+
+cmd_supply_chain_test() {
+  ensure_node
+  print_section "Supply-chain Policy"
+  "$NODE_BIN" "$REPO_ROOT/scripts/supply-chain-check.mjs"
+  "$NODE_BIN" --test "$REPO_ROOT/scripts/tests/supply-chain.test.mjs"
 }
 
 cmd_build() {
@@ -120,12 +155,49 @@ cmd_benchmark_mandatory() {
 
 cmd_test() {
   ensure_node
+  ensure_pymupdf
 
   print_section "Repository Guard Tests"
-  "$NODE_BIN" --test --test-concurrency=1 "$REPO_ROOT"/scripts/tests/*.test.mjs
+  run_counted_test_suite "repository-security" 204 \
+    --test-concurrency=1 "$REPO_ROOT"/scripts/tests/*.test.mjs
 
   print_section "Unit Tests"
-  "$NODE_BIN" --test "$PLUGIN_ROOT"/skills/study/scripts/tests/*.mjs
+  run_counted_test_suite "study" 87 \
+    "$PLUGIN_ROOT"/skills/study/scripts/tests/*.mjs
+}
+
+run_counted_test_suite() {
+  local label="$1"
+  local expected="$2"
+  shift 2
+  local output
+  local status
+  local actual
+  output="$(mktemp "${TMPDIR:-/tmp}/codex-paper-${label}-failure.tap.XXXXXX")"
+  if "$NODE_BIN" --test "$@" >"$output" 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
+  cat "$output"
+  actual="$(awk '/^# tests [0-9]+$/ { value=$3 } END { print value }' "$output")"
+  if [ "$status" -ne 0 ]; then
+    echo "Error: $label tests failed; preserved output: $output" >&2
+    return "$status"
+  fi
+  if [ "$actual" != "$expected" ]; then
+    echo "Error: $label executed ${actual:-0}/$expected expected tests; preserved output: $output" >&2
+    return 1
+  fi
+  rm -f "$output"
+}
+
+cmd_repo_test() {
+  ensure_node
+
+  print_section "Repository Guard Tests (Static)"
+  run_counted_test_suite "repository-guard-static" 77 \
+    --test-concurrency=1 "$REPO_ROOT/scripts/tests/check-repository.test.mjs"
 }
 
 cmd_repo_check() {
@@ -373,11 +445,17 @@ Usage:
 
 Commands:
   install      Install plugin, web, and Python dependencies
+  runtime-setup Create the hash-locked CPython 3.11.15 runtime
+  runtime-status [--json] Verify Node, npm, Python, and PyMuPDF baselines
+  dependency-audit [--json] Enforce reviewed npm vulnerability policy
+  secret-scan [--json] Scan tracked files without echoing secret values
+  supply-chain-test Verify dependency, secret, runtime, image, and CI policy
   build        Build the production web viewer
   start        Start the local web viewer
   stop         Stop the local web viewer
   status       Show build and viewer status
   repo-check   Verify the active plugin, contract baseline, and repository hygiene
+  repo-test    Run static Repository Guard mutation tests without Python
   benchmark    Run the optional parser benchmark against local paper examples
   benchmark-mandatory Run the non-skippable deterministic PDF regression
   test         Run deterministic unit tests
@@ -417,6 +495,25 @@ case "$command_name" in
   install)
     cmd_install
     ;;
+  runtime-setup)
+    shift
+    cmd_runtime_setup "$@"
+    ;;
+  runtime-status)
+    shift
+    cmd_runtime_status "$@"
+    ;;
+  dependency-audit)
+    shift
+    cmd_dependency_audit "$@"
+    ;;
+  secret-scan)
+    shift
+    cmd_secret_scan "$@"
+    ;;
+  supply-chain-test)
+    cmd_supply_chain_test
+    ;;
   build)
     cmd_build
     ;;
@@ -431,6 +528,9 @@ case "$command_name" in
     ;;
   repo-check)
     cmd_repo_check
+    ;;
+  repo-test)
+    cmd_repo_test
     ;;
   benchmark)
     cmd_benchmark

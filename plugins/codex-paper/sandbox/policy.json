@@ -5,6 +5,11 @@
   "executionReportVersion": "1.0.0",
   "imageTag": "codex-paper-sandbox:p0-a3-v1",
   "baseImage": "node:20.20.2-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+  "pythonBaseImage": "python:3.11.15-slim-bookworm@sha256:b18992999dbe963a45a8a4da40ac2b1975be1a776d939d098c647482bcad5cba",
+  "runtime": {
+    "node": "20.20.2",
+    "python": "3.11.15"
+  },
   "approvalTtlMs": 300000,
   "allowedExtensions": [".py", ".js", ".mjs"],
   "limits": {

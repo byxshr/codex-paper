@@ -52,7 +52,13 @@ try {
 const validated = validateMandatoryManifest({ repoRoot, manifest });
 if (validated.errors.length > 0) configurationFailure(validated.errors);
 
-const python = process.env.CODEX_PAPER_PYTHON_BIN || 'python3';
+const python = process.env.CODEX_PAPER_PYTHON_BIN || path.join(
+  process.env.CODEX_PAPER_RUNTIME_DIR
+    || path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'codex-paper', 'runtime-v1'),
+  'python-3.11.15',
+  'bin',
+  'python'
+);
 const generatorCheck = spawnSync(python, [generatorPath, '--check'], { cwd: repoRoot, encoding: 'utf8' });
 if (generatorCheck.status !== 0) {
   configurationFailure([String(generatorCheck.stdout || generatorCheck.stderr || 'deterministic fixture check failed').trim()]);

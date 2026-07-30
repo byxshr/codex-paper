@@ -102,7 +102,8 @@ test('mandatory CLI returns exit 2 and a report for an empty manifest', () => {
 });
 
 test('deterministic PDF generator reproduces committed fixtures byte-for-byte', () => {
-  const result = spawnSync('python3', [path.join(repoRoot, 'benchmarks/fixtures/generate-pdf-fixtures.py'), '--check'], {
+  const runtime = path.join(repoRoot, 'plugins/codex-paper/scripts/runtime-python.sh');
+  const result = spawnSync('bash', [runtime, path.join(repoRoot, 'benchmarks/fixtures/generate-pdf-fixtures.py'), '--check'], {
     cwd: repoRoot,
     encoding: 'utf8'
   });

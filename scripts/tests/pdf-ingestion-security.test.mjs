@@ -26,6 +26,14 @@ const {
   stagePdfInput,
   validateHttpsUrl,
 } = require('../../plugins/codex-paper/skills/study/scripts/download-pdf.cjs')
+const managedPython = process.env.CODEX_PAPER_PYTHON_BIN
+  || path.join(
+    process.env.CODEX_PAPER_RUNTIME_DIR
+      || path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'codex-paper', 'runtime-v1'),
+    'python-3.11.15',
+    'bin',
+    'python',
+  )
 
 function fakeRequest(responses, seen = []) {
   return (options, callback) => {
@@ -193,7 +201,7 @@ test('bounded parser rejects encrypted, over-page, and malformed PDFs into a tem
   try {
     const encrypted = path.join(root, 'encrypted.pdf')
     const overPages = path.join(root, 'over-pages.pdf')
-    const generated = spawnSync('python3', ['-c', [
+    const generated = spawnSync(managedPython, ['-I', '-B', '-c', [
       'import fitz, sys',
       'encrypted=fitz.open(); encrypted.new_page(); encrypted.save(sys.argv[1], encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw="owner", user_pw="user")',
       'many=fitz.open()',
@@ -221,7 +229,7 @@ test('bounded parser rejects encrypted, over-page, and malformed PDFs into a tem
 test('prepare workflow uses the safe staging snapshot and cleans it after success', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-prepare-security-test-'))
   const source = path.join(root, 'valid-source-without-extension')
-  const generated = spawnSync('python3', ['-c', [
+  const generated = spawnSync(managedPython, ['-I', '-B', '-c', [
     'import fitz, sys',
     'doc=fitz.open(); page=doc.new_page(); page.insert_text((72,72), "Secure Prepare Paper\\nA. Author\\nAbstract\\nA bounded parser fixture.\\n1 Introduction\\nSafe staging.\\n2 Conclusion\\nDone."); doc.save(sys.argv[1])',
   ].join('\n'), source], { encoding: 'utf8' })

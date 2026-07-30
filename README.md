@@ -110,17 +110,22 @@ For a quick summary:
 Use $paper-summary to summarize https://arxiv.org/abs/1706.03762
 ```
 
-**That's it!** The plugin will automatically:
-- Install all dependencies (Node.js packages plus `PyMuPDF` for PDF processing)
+The repository setup command will:
+- Verify Node.js/npm and create a private, hash-locked Python runtime
+- Install the two Node.js dependency trees without dependency lifecycle scripts
 - Create the papers directory at `~/codex-papers/`
 - Initialize the search index
 - Install web viewer dependencies
 
 ### System Requirements
 
-- **Node.js**: 18.0.0 or higher
-- **npm**: Comes with Node.js
+- **Node.js**: exactly 22.23.1
+- **npm**: exactly 10.9.8
+- **CPython**: exactly 3.11.15, used only to create the managed venv
 - **Codex**: Latest version with plugin support
+- **Native runtime inspection tools**:
+  - **macOS**: Xcode Command Line Tools (`xcode-select --install`) for `otool`, `install_name_tool`, and `codesign`
+  - **Linux**: `binutils` for `readelf`; the bootstrap must already use relocatable or system native-library references
 - **poppler-utils**: For PDF image extraction (install via system package manager)
   - **macOS**: `brew install poppler`
   - **Ubuntu/Debian**: `sudo apt-get install poppler-utils`
@@ -237,6 +242,10 @@ Run the full deterministic suite:
 
 ```bash
 bash scripts/codex-paper.sh install
+bash scripts/codex-paper.sh runtime-status
+bash scripts/codex-paper.sh dependency-audit
+bash scripts/codex-paper.sh secret-scan
+bash scripts/codex-paper.sh supply-chain-test
 bash scripts/codex-paper.sh test
 bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh layout-test
@@ -370,7 +379,7 @@ codex-paper/
 5. **Research Reasoning Validation** - Uses `reasoning-analysis.json`, paper profiles, and `validate-reasoning.js` to check evidence refs, source types, numeric grounding, reasoning DAGs, and critical analysis
 6. **Web Viewer** - Nuxt.js application with Nitro APIs that displays user materials by default, hides machine JSON, and shows evidence audit and reasoning views
 7. **Ask Codex API** - Reuses a long-running Codex MCP worker for grounded follow-up questions, then appends answers to `chat-notes.md`
-8. **Hooks System** - Automatic dependency installation and setup
+8. **Runtime and Supply-chain Policy** - Explicit runtime setup, dependency audit, secret scan, and immutable supply-chain review
 
 ---
 
@@ -386,6 +395,12 @@ bash scripts/codex-paper.sh build
 bash scripts/codex-paper.sh start
 bash scripts/codex-paper.sh stop
 bash scripts/codex-paper.sh status
+bash scripts/codex-paper.sh runtime-setup
+bash scripts/codex-paper.sh runtime-status
+bash scripts/codex-paper.sh dependency-audit
+bash scripts/codex-paper.sh secret-scan
+bash scripts/codex-paper.sh supply-chain-test
+bash scripts/codex-paper.sh repo-test
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark
@@ -398,6 +413,9 @@ This keeps the local workflow in one place while `scripts/common.sh` stays inter
 ### Running Tests
 
 ```bash
+# Run static Repository Guard mutation tests without a managed Python runtime
+bash scripts/codex-paper.sh repo-test
+
 # Test PDF parsing
 node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 

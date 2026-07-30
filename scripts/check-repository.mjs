@@ -53,6 +53,17 @@ const PUBLICATION_CLI = 'plugins/codex-paper/skills/study/scripts/publication-cl
 const PUBLICATION_TEST = 'scripts/tests/generation-publication.test.mjs'
 const LIBRARY_SECURITY = 'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs'
 const WEB_CONFIG = 'plugins/codex-paper/src/web/nuxt.config.ts'
+const RUNTIME_BASELINE = 'security/runtime-baseline.json'
+const DEPENDENCY_POLICY = 'security/dependency-policy.json'
+const SECRET_SCAN_POLICY = 'security/secret-scan-policy.json'
+const SUPPLY_CHAIN_REVIEW = 'security/supply-chain-review.json'
+const PYTHON_REQUIREMENTS = 'plugins/codex-paper/runtime/python/requirements.lock'
+const RUNTIME_POLICY_SCRIPT = 'scripts/runtime-policy.mjs'
+const DEPENDENCY_AUDIT_SCRIPT = 'scripts/dependency-audit.mjs'
+const SECRET_SCAN_SCRIPT = 'scripts/secret-scan.mjs'
+const SUPPLY_CHAIN_SCRIPT = 'scripts/supply-chain-check.mjs'
+const PARSER_COMPAT_TEST = 'plugins/codex-paper/skills/study/scripts/tests/parse-pdf-compat.test.mjs'
+const PARSER_TITLE_TEST = 'plugins/codex-paper/skills/study/scripts/tests/parse-pdf-title.test.mjs'
 const STUDY_SKILL = 'plugins/codex-paper/skills/study/SKILL.md'
 const SUMMARY_SKILL = 'plugins/codex-paper/skills/summary/SKILL.md'
 const MANDATORY_SENTINELS = [
@@ -97,6 +108,8 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
   'plugins/codex-paper/skills/study/scripts/download-pdf.cjs',
   'plugins/codex-paper/skills/study/scripts/parse-pdf.js',
+  PARSER_COMPAT_TEST,
+  PARSER_TITLE_TEST,
   FACTS_EXTRACTOR,
   FACTS_SCHEMA,
   PACKAGE_COMPATIBILITY,
@@ -129,6 +142,15 @@ const SENTINELS = [
   PUBLICATION_TEST,
   LIBRARY_SECURITY,
   WEB_CONFIG,
+  RUNTIME_BASELINE,
+  DEPENDENCY_POLICY,
+  SECRET_SCAN_POLICY,
+  SUPPLY_CHAIN_REVIEW,
+  PYTHON_REQUIREMENTS,
+  RUNTIME_POLICY_SCRIPT,
+  DEPENDENCY_AUDIT_SCRIPT,
+  SECRET_SCAN_SCRIPT,
+  SUPPLY_CHAIN_SCRIPT,
   SUMMARY_SKILL,
   'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
@@ -414,7 +436,7 @@ export function checkRepository({
         if (license?.id !== fixtureId || license?.origin !== 'original-synthetic' || license?.redistributable !== true) {
           errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must use its original-synthetic redistributable license manifest`)
         }
-        const expectedGenerator = `python3 ${FIXTURE_GENERATOR} --fixture ${fixtureId}`
+        const expectedGenerator = `bash plugins/codex-paper/scripts/runtime-python.sh ${FIXTURE_GENERATOR} --fixture ${fixtureId}`
         if (license?.generator !== expectedGenerator) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} generator mismatch`)
         if (license?.sha256 !== sha256(join(root, fixture.pdf))) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} sha256 mismatch`)
         if (gold?.schemaVersion !== '1.2.0' || gold?.fixtureId !== fixtureId) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold identity mismatch`)
@@ -713,11 +735,20 @@ export function checkRepository({
     if (!studySkill.includes('does not authenticate a human') || !studySkill.includes('Never issue and consume a token in one uninterrupted turn')) {
       errors.push(`${studySkillRelative} must preserve the explicit human-consent workflow boundary`)
     }
+    if (!studySkill.includes('bash ../../scripts/runtime-python.sh ./scripts/extract-images.py')) {
+      errors.push(`${studySkillRelative} must invoke image extraction through paths relative to the study skill directory`)
+    }
   }
   if (existsSync(join(root, sandboxRunnerRelative))) {
     const runnerSource = readFileSync(join(root, sandboxRunnerRelative), 'utf8')
     if (/\bshell\s*:\s*true\b|import\s*\{[^}]*\bexec(?:File)?(?:Sync)?\b[^}]*\}\s*from\s*['"](?:node:)?child_process['"]/.test(runnerSource)) {
       errors.push(`${sandboxRunnerRelative} must use argv-array process execution without a shell or exec fallback`)
+    }
+    if (!runnerSource.includes('import bz2, ctypes, hashlib, importlib.util, lzma')
+      || !runnerSource.includes('("pip", "setuptools", "wheel", "pkg_resources")')
+      || !runnerSource.includes('which("npm") is None')
+      || !runnerSource.includes('unexpected Node=\\${process.versions.node}')) {
+      errors.push(`${sandboxRunnerRelative} must verify complete package-manager-free Python and report the container Node version`)
     }
   }
   if (existsSync(join(root, sandboxDockerfileRelative))) {
@@ -725,15 +756,114 @@ export function checkRepository({
     if (!/^ARG BASE_IMAGE=[^\s]+@sha256:[a-f0-9]{64}$/m.test(dockerfile)) {
       errors.push(`${sandboxDockerfileRelative} base image must be pinned to an exact sha256 manifest digest`)
     }
-    if (/python3-minimal/.test(dockerfile) || !/apt-get install --yes --no-install-recommends python3(?:\s|\\)/.test(dockerfile)) {
-      errors.push(`${sandboxDockerfileRelative} must install the Python 3 standard library required by the trusted entrypoint and demos`)
+    if (!/^ARG PYTHON_BASE_IMAGE=python:3\.11\.15-slim-bookworm@sha256:[a-f0-9]{64}$/m.test(dockerfile)
+      || !/FROM \$\{BASE_IMAGE\} AS node-runtime/.test(dockerfile)
+      || !/FROM \$\{PYTHON_BASE_IMAGE\}/.test(dockerfile)
+      || !/COPY --from=node-runtime \/usr\/local\/bin\/node \/usr\/local\/bin\/node/.test(dockerfile)
+      || !/import bz2, ctypes, hashlib, lzma, readline, sqlite3, ssl, uuid, zlib/.test(dockerfile)
+      || !/\("pip", "setuptools", "wheel", "pkg_resources"\)/.test(dockerfile)
+      || !/which\("npm"\) is None/.test(dockerfile)
+      || /apt-get|apk add|yum install/.test(dockerfile)) {
+      errors.push(`${sandboxDockerfileRelative} must compose digest-pinned Node with the complete package-manager-free CPython 3.11.15 image`)
     }
   }
   if (existsSync(join(root, sandboxPolicyRelative))) {
     const policy = readJson(join(root, sandboxPolicyRelative), errors, sandboxPolicyRelative)
     if (!String(policy?.baseImage || '').match(/@sha256:[a-f0-9]{64}$/)) errors.push(`${sandboxPolicyRelative} baseImage must be digest-pinned`)
+    if (!String(policy?.pythonBaseImage || '').match(/^python:3\.11\.15-slim-bookworm@sha256:[a-f0-9]{64}$/)) errors.push(`${sandboxPolicyRelative} pythonBaseImage must pin CPython 3.11.15 by digest`)
+    if (policy?.runtime?.node !== '20.20.2' || policy?.runtime?.python !== '3.11.15') errors.push(`${sandboxPolicyRelative} must freeze sandbox Node 20.20.2 and Python 3.11.15`)
     if (policy?.policyVersion !== '1.0.0' || policy?.conformanceVersion !== '1.0.0') {
       errors.push(`${sandboxPolicyRelative} must declare P0-A3 policy and conformance version 1.0.0`)
+    }
+  }
+
+  if (existsSync(join(root, RUNTIME_BASELINE))) {
+    const runtime = readJson(join(root, RUNTIME_BASELINE), errors, RUNTIME_BASELINE)
+    const expected = { node: '22.23.1', npm: '10.9.8', python: '3.11.15', pyMuPDF: '1.28.0' }
+    for (const [field, value] of Object.entries(expected)) {
+      if (runtime?.host?.[field] !== value) errors.push(`${RUNTIME_BASELINE} host.${field} must be ${value}`)
+    }
+    if (runtime?.provenanceConsumer !== 'P1-4' || runtime?.retroactiveManifestRewrite !== false) {
+      errors.push(`${RUNTIME_BASELINE} must remain a non-retroactive P1-4 provenance input`)
+    }
+    const runtimeSites = [
+      ['scripts/common.sh', `python-${runtime?.host?.python}/bin/python`, 'managed Python path'],
+      ['scripts/common.sh', `NODE_REQUIRED="${runtime?.host?.node}"`, 'Node version'],
+      [`${activePath}/scripts/runtime-python.sh`, `python-${runtime?.host?.python}/bin/python`, 'managed Python path'],
+      [`${activePath}/scripts/start-webui.sh`, `NODE_REQUIRED="${runtime?.host?.node}"`, 'Node version'],
+      [`${activePath}/skills/study/scripts/parse-pdf.js`, `'python-${runtime?.host?.python}'`, 'managed Python path'],
+      ['benchmarks/run-mandatory-benchmark.mjs', `'python-${runtime?.host?.python}'`, 'managed Python path'],
+    ]
+    for (const [relativePath, required, boundary] of runtimeSites) {
+      if (existsSync(join(root, relativePath)) && !readFileSync(join(root, relativePath), 'utf8').includes(required)) {
+        errors.push(`${relativePath} ${boundary} must match ${RUNTIME_BASELINE}`)
+      }
+    }
+    const runtimePolicyPath = 'scripts/runtime-policy.mjs'
+    if (existsSync(join(root, runtimePolicyPath))) {
+      const source = readFileSync(join(root, runtimePolicyPath), 'utf8')
+      for (const required of [
+        '--copies',
+        'acquireSetupLock',
+        'publishPreparedRuntime',
+        'managedExecutableSha256',
+        'managedStdlibSha256',
+        'managedTreeSha256',
+        'managedRuntimeContained',
+        'nativeRuntimeSelfContained',
+        'sanitizeDiagnostic',
+        "name === '__pycache__'",
+        'rewriteMacNativeReferences',
+        'verifyNativeReferences',
+        'macRpaths',
+        "['-rpath', rpath, replacement",
+        'runtimeProbeEnvironment',
+        'info.mode & 0o777',
+        'import bz2, ctypes, hashlib, json, lzma, os, platform, readline, sqlite3, ssl',
+      ]) {
+        if (!source.includes(required)) errors.push(`${runtimePolicyPath} must preserve locked rollback-safe runtime replacement: ${required}`)
+      }
+      if ((source.match(/import bz2, ctypes, hashlib/g) || []).length < 2) {
+        errors.push(`${runtimePolicyPath} must reject a bootstrap that lacks required native extension modules before installation`)
+      }
+      if (!source.includes('if (!isSharedLibraryName(name)) continue')
+        || source.includes('command = ${path.join(target')) {
+        errors.push(`${runtimePolicyPath} must keep a minimal relocatable native runtime without fabricated venv provenance`)
+      }
+      const setupStart = source.indexOf('export function setupRuntime')
+      const publishCall = source.indexOf('publishPreparedRuntime(temporary', setupStart)
+      const setupBody = source.slice(setupStart, publishCall)
+      if (/rmSync\(target,\s*\{\s*recursive:\s*true/.test(setupBody)) {
+        errors.push(`${runtimePolicyPath} must not delete the active runtime before publishing its replacement`)
+      }
+    }
+  }
+  if (existsSync(join(root, PYTHON_REQUIREMENTS))) {
+    const requirements = readFileSync(join(root, PYTHON_REQUIREMENTS), 'utf8')
+    if (!/^PyMuPDF==1\.28\.0\b/m.test(requirements) || (requirements.match(/--hash=sha256:/g) || []).length !== 4) {
+      errors.push(`${PYTHON_REQUIREMENTS} must pin PyMuPDF 1.28.0 to four supported wheel hashes`)
+    }
+  }
+  if (existsSync(join(root, CI_WORKFLOW))) {
+    const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
+    for (const required of ['node-version: "22.23.1"', 'python-version: "3.11.15"', 'npm@10.9.8', 'codex-paper.sh secret-scan', 'codex-paper.sh supply-chain-test', 'codex-paper.sh dependency-audit', 'codex-paper.sh runtime-status']) {
+      if (!workflow.includes(required)) errors.push(`${CI_WORKFLOW} must preserve P1-3a gate ${required}`)
+    }
+    const supplyChainGates = [...workflow.matchAll(/codex-paper\.sh supply-chain-test/g)]
+    if (supplyChainGates.length < 2 || workflow.lastIndexOf('codex-paper.sh supply-chain-test') < workflow.indexOf('codex-paper.sh install')) {
+      errors.push(`${CI_WORKFLOW} must verify supply-chain policy again after dependency installation`)
+    }
+    for (const actionLine of workflow.matchAll(/^\s*uses:\s*([^\s#]+)/gm)) {
+      const reference = actionLine[1].replace(/^['"]|['"]$/g, '')
+      if (reference.startsWith('./.github/actions/')) continue
+      if (reference.startsWith('docker://')) {
+        if (!/@sha256:[a-f0-9]{64}$/.test(reference)) errors.push(`${CI_WORKFLOW} Docker action ${reference} must use a sha256 digest`)
+      } else {
+        const separator = reference.lastIndexOf('@')
+        if (separator <= 0 || !/^[a-f0-9]{40}$/.test(reference.slice(separator + 1))) {
+          errors.push(`${CI_WORKFLOW} action ${reference} must use a full commit SHA`)
+        }
+      }
     }
   }
 
@@ -767,8 +897,17 @@ export function checkRepository({
   }
   if (existsSync(join(root, parserRelative))) {
     const source = readFileSync(join(root, parserRelative), 'utf8')
-    for (const required of ['parserWallTimeMs', 'parserMemoryBytes', 'killParserGroup', 'copyPdfSnapshot', 'preflightPdfFile', 'quarantinePdf']) {
+    for (const required of ['parserWallTimeMs', 'parserMemoryBytes', 'killParserGroup', 'copyPdfSnapshot', 'preflightPdfFile', 'quarantinePdf', "process.env.CODEX_PAPER_PARSER_WORKER !== '1'", 'parserRuntimeProbeCache', 'MANAGED_VERSION_ROOT', 'pyvenv.cfg', 'basePrefix', 'runtime facts are outside the managed tree']) {
       if (!source.includes(required)) errors.push(`${parserRelative} must preserve bounded parser control ${required}`)
+    }
+    if (/CODEX_PAPER_ALLOW_TEST_PYTHON_OVERRIDE|CODEX_PAPER_FORCE_PYMUPDF_FAILURE|CANONICAL_PYTHON_PATH/.test(source)) {
+      errors.push(`${parserRelative} must not expose ambient test-only parser downgrade switches`)
+    }
+  }
+  if (existsSync(join(root, ROOT_SCRIPT))) {
+    const source = readFileSync(join(root, ROOT_SCRIPT), 'utf8')
+    for (const required of ['run_counted_test_suite', '"repository-security" 204', '"study" 87', '"repository-guard-static" 77', 'preserved output: $output']) {
+      if (!source.includes(required)) errors.push(`${ROOT_SCRIPT} must fail and preserve diagnostics when a regression test is silently not executed: ${required}`)
     }
   }
   if (existsSync(join(root, parserWorkerRelative))) {
@@ -779,8 +918,11 @@ export function checkRepository({
   }
   if (existsSync(join(root, parserLauncherRelative))) {
     const source = readFileSync(join(root, parserLauncherRelative), 'utf8')
-    for (const required of ['RLIMIT_CPU', 'RLIMIT_FSIZE', 'RLIMIT_NOFILE', 'os.execve']) {
+    for (const required of ['RLIMIT_CPU', 'RLIMIT_FSIZE', 'RLIMIT_NOFILE', 'os.execve', 'CODEX_PAPER_RUNTIME_DIR']) {
       if (!source.includes(required)) errors.push(`${parserLauncherRelative} must preserve hard parser resource limit ${required}`)
+    }
+    if (source.includes('CODEX_PAPER_MANAGED_PYTHON_BIN')) {
+      errors.push(`${parserLauncherRelative} must not trust a caller-movable canonical runtime anchor`)
     }
   }
   if (existsSync(join(root, prepareRelative))) {

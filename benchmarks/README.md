@@ -13,7 +13,7 @@ bash scripts/codex-paper.sh benchmark-mandatory
 Two original MIT-licensed PDFs under `fixtures/pdf/` exercise front-matter noise and conflicting result values. Every PDF has an adjacent license/hash/generator manifest and is reproducible with:
 
 ```bash
-python3 benchmarks/fixtures/generate-pdf-fixtures.py --check
+bash plugins/codex-paper/scripts/runtime-python.sh benchmarks/fixtures/generate-pdf-fixtures.py --check
 ```
 
 The suite uses the production bounded prepare pipeline, a fixed model-free authoring boundary, and both package validators. It has no skip mode: zero or partial execution is a failure. P0-B2 result/noise defects are now positive typed ResultClaim assertions; parser contamination and the missing conflict warning remain expected findings until P0-B3 supplies Validation Report 1.0.

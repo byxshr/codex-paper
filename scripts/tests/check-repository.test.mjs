@@ -18,6 +18,8 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
   'plugins/codex-paper/skills/study/scripts/download-pdf.cjs',
   'plugins/codex-paper/skills/study/scripts/parse-pdf.js',
+  'plugins/codex-paper/skills/study/scripts/tests/parse-pdf-compat.test.mjs',
+  'plugins/codex-paper/skills/study/scripts/tests/parse-pdf-title.test.mjs',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
   'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
   'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json',
@@ -50,12 +52,14 @@ const SENTINELS = [
   'plugins/codex-paper/src/shared/generation-manifest.mjs',
   'plugins/codex-paper/src/shared/generation-publication.mjs',
   'plugins/codex-paper/src/web/nuxt.config.ts',
+  'plugins/codex-paper/runtime/python/requirements.lock',
   'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs',
   'plugins/codex-paper/src/web/server/utils/packageCompatibility.mjs',
   'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs',
   'plugins/codex-paper/src/web/server/api/papers/[slug]/validation.get.ts',
   'plugins/codex-paper/sandbox/Dockerfile',
   'plugins/codex-paper/sandbox/policy.json',
+  'plugins/codex-paper/scripts/start-webui.sh',
   'plugins/codex-paper/src/web/package.json',
   'plugins/codex-paper/hooks/hooks.json',
   '.agents/plugins/marketplace.json',
@@ -63,7 +67,16 @@ const SENTINELS = [
   'README.md',
   'README.zh-CN.md',
   '.github/workflows/ci.yml',
+  'security/runtime-baseline.json',
+  'security/dependency-policy.json',
+  'security/secret-scan-policy.json',
+  'security/supply-chain-review.json',
   'scripts/codex-paper.sh',
+  'scripts/common.sh',
+  'scripts/runtime-policy.mjs',
+  'scripts/dependency-audit.mjs',
+  'scripts/secret-scan.mjs',
+  'scripts/supply-chain-check.mjs',
   'scripts/tests/library-layout.test.mjs',
   'scripts/tests/storage-transaction.test.mjs',
   'scripts/tests/generation-publication.test.mjs',
@@ -682,9 +695,24 @@ test('study instructions preserve the explicit human-consent workflow boundary',
   assert.match(errorsFor(fixture), /must preserve the explicit human-consent workflow boundary/)
 }))
 
+test('study image extraction paths remain relative to the study skill directory', () => withFixture((fixture) => {
+  const skill = join(fixture.root, 'plugins/codex-paper/skills/study/SKILL.md')
+  writeFileSync(skill, readFileSync(skill, 'utf8').replace(
+    'bash ../../scripts/runtime-python.sh ./scripts/extract-images.py',
+    'bash ./scripts/runtime-python.sh ./skills/study/scripts/extract-images.py',
+  ))
+  assert.match(errorsFor(fixture), /must invoke image extraction through paths relative to the study skill directory/)
+}))
+
 test('sandbox policy requires digest-pinned image and fixed contract versions', () => withFixture((fixture) => {
   const dockerfile = join(fixture.root, 'plugins/codex-paper/sandbox/Dockerfile')
-  writeFileSync(dockerfile, readFileSync(dockerfile, 'utf8').replace(/@sha256:[a-f0-9]{64}/, ''))
+  writeFileSync(
+    dockerfile,
+    readFileSync(dockerfile, 'utf8').replace(
+      /^(ARG BASE_IMAGE=[^@\n]+)@sha256:[a-f0-9]{64}$/m,
+      '$1',
+    ),
+  )
   const policyPath = join(fixture.root, 'plugins/codex-paper/sandbox/policy.json')
   const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
   policy.baseImage = 'node:20-bookworm-slim'
@@ -696,10 +724,102 @@ test('sandbox policy requires digest-pinned image and fixed contract versions', 
   assert.match(errors, /policy and conformance version 1\.0\.0/)
 }))
 
-test('sandbox image includes the Python standard library required by its trusted entrypoint', () => withFixture((fixture) => {
+test('sandbox image composes complete digest-pinned CPython without a mutable package manager', () => withFixture((fixture) => {
   const dockerfile = join(fixture.root, 'plugins/codex-paper/sandbox/Dockerfile')
-  writeFileSync(dockerfile, readFileSync(dockerfile, 'utf8').replace('python3 \\', 'python3-minimal \\'))
-  assert.match(errorsFor(fixture), /must install the Python 3 standard library/)
+  writeFileSync(dockerfile, readFileSync(dockerfile, 'utf8')
+    .replace('FROM ${PYTHON_BASE_IMAGE}', 'FROM ${BASE_IMAGE}')
+    .replace('import bz2, ctypes, hashlib, lzma, readline, sqlite3, ssl, uuid, zlib', 'import hashlib, ssl, zlib'))
+  assert.match(errorsFor(fixture), /complete package-manager-free CPython 3\.11\.15/)
+}))
+
+test('runtime baseline and Python wheel hashes are immutable repository contracts', () => withFixture((fixture) => {
+  const runtimePath = join(fixture.root, 'security/runtime-baseline.json')
+  const runtime = JSON.parse(readFileSync(runtimePath, 'utf8'))
+  runtime.host.node = 'latest'
+  runtime.retroactiveManifestRewrite = true
+  writeFileSync(runtimePath, JSON.stringify(runtime))
+  const requirements = join(fixture.root, 'plugins/codex-paper/runtime/python/requirements.lock')
+  writeFileSync(requirements, 'PyMuPDF>=1\n')
+  const errors = errorsFor(fixture)
+  assert.match(errors, /host\.node must be 22\.23\.1/)
+  assert.match(errors, /non-retroactive P1-4 provenance input/)
+  assert.match(errors, /four supported wheel hashes/)
+}))
+
+test('production Node and managed-runtime containment sites must follow the runtime baseline', () => withFixture((fixture) => {
+  const common = join(fixture.root, 'scripts/common.sh')
+  writeFileSync(common, readFileSync(common, 'utf8').replace('NODE_REQUIRED="22.23.1"', 'NODE_REQUIRED="22.24.0"'))
+  const launcher = join(fixture.root, 'plugins/codex-paper/scripts/start-webui.sh')
+  writeFileSync(launcher, readFileSync(launcher, 'utf8').replaceAll('22.23.1', '22.24.0'))
+  const runtimePolicy = join(fixture.root, 'scripts/runtime-policy.mjs')
+  writeFileSync(runtimePolicy, readFileSync(runtimePolicy, 'utf8')
+    .replaceAll('managedStdlibSha256', 'uncheckedStdlibSha256')
+    .replaceAll('managedTreeSha256', 'uncheckedTreeSha256')
+    .replaceAll('rewriteMacNativeReferences', 'skipMacNativeRelocation'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /scripts\/common\.sh Node version must match/)
+  assert.match(errors, /start-webui\.sh Node version must match/)
+  assert.match(errors, /locked rollback-safe runtime replacement: managedStdlibSha256/)
+  assert.match(errors, /locked rollback-safe runtime replacement: managedTreeSha256/)
+  assert.match(errors, /locked rollback-safe runtime replacement: rewriteMacNativeReferences/)
+}))
+
+test('host runtime must verify native imports, reject residual bootstrap references, and avoid fabricated provenance', () => withFixture((fixture) => {
+  const runtimePolicy = join(fixture.root, 'scripts/runtime-policy.mjs')
+  writeFileSync(runtimePolicy, readFileSync(runtimePolicy, 'utf8')
+    .replace('import bz2, ctypes, hashlib, json, lzma, os, platform, readline, sqlite3, ssl', 'import json, os, platform')
+    .replaceAll('verifyNativeReferences', 'skipNativeReferenceVerification')
+    .replace('if (!isSharedLibraryName(name)) continue', 'if (name === versionDirectory) continue')
+    .concat('\n// command = ${path.join(target\n'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /locked rollback-safe runtime replacement: verifyNativeReferences/)
+  assert.match(errors, /locked rollback-safe runtime replacement: import bz2/)
+  assert.match(errors, /minimal relocatable native runtime without fabricated venv provenance/)
+}))
+
+test('runtime publication cannot lose rpath inspection, sanitized loader probes, bootstrap imports, or mode attestation', () => withFixture((fixture) => {
+  const runtimePolicy = join(fixture.root, 'scripts/runtime-policy.mjs')
+  writeFileSync(runtimePolicy, readFileSync(runtimePolicy, 'utf8')
+    .replaceAll('macRpaths', 'skipMacRpathInspection')
+    .replaceAll('runtimeProbeEnvironment', 'inheritAmbientLoaderEnvironment')
+    .replaceAll('nativeRuntimeSelfContained', 'uncheckedNativeRuntime')
+    .replaceAll('info.mode & 0o777', '0o700')
+    .replace('import bz2, ctypes, hashlib, json, lzma, platform, readline, sqlite3, ssl', 'import json, platform'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /locked rollback-safe runtime replacement: macRpaths/)
+  assert.match(errors, /locked rollback-safe runtime replacement: runtimeProbeEnvironment/)
+  assert.match(errors, /locked rollback-safe runtime replacement: nativeRuntimeSelfContained/)
+  assert.match(errors, /locked rollback-safe runtime replacement: info\.mode & 0o777/)
+  assert.match(errors, /must reject a bootstrap that lacks required native extension modules/)
+}))
+
+test('runtime setup cannot delete the active target before replacement publication', () => withFixture((fixture) => {
+  const runtimePolicy = join(fixture.root, 'scripts/runtime-policy.mjs')
+  writeFileSync(runtimePolicy, readFileSync(runtimePolicy, 'utf8')
+    .replace('    publishPreparedRuntime(temporary, target, {', '    rmSync(target, { recursive: true })\n    publishPreparedRuntime(temporary, target, {'))
+  assert.match(errorsFor(fixture), /must not delete the active runtime before publishing its replacement/)
+}))
+
+test('CI cannot remove P1-3a supply-chain and runtime gates', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  const workflow = readFileSync(workflowPath, 'utf8')
+    .replace('bash scripts/codex-paper.sh secret-scan', 'true')
+    .replace('node-version: "22.23.1"', 'node-version: "latest"')
+  writeFileSync(workflowPath, workflow)
+  const errors = errorsFor(fixture)
+  assert.match(errors, /node-version: "22\.23\.1"/)
+  assert.match(errors, /codex-paper\.sh secret-scan/)
+}))
+
+test('CI requires immutable action forms and a post-install supply-chain gate', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  const workflow = readFileSync(workflowPath, 'utf8')
+    .replace(/actions\/checkout@[a-f0-9]{40}/, 'actions/checkout')
+    .replace('      - name: Verify lockfiles remain reviewed after install\n        run: bash scripts/codex-paper.sh supply-chain-test\n\n', '')
+  writeFileSync(workflowPath, workflow)
+  const errors = errorsFor(fixture)
+  assert.match(errors, /action actions\/checkout must use a full commit SHA/)
+  assert.match(errors, /verify supply-chain policy again after dependency installation/)
 }))
 
 test('sandbox runner cannot enable a shell or import exec helpers', () => withFixture((fixture) => {
@@ -744,6 +864,27 @@ test('PDF parser worker and launcher cannot lose supervisor and hard-limit gates
   assert.match(errors, /must preserve bounded parser control/)
   assert.match(errors, /must remain supervisor-only and output-bounded/)
   assert.match(errors, /must preserve hard parser resource limit/)
+}))
+
+test('PDF parser cannot trust a caller-movable canonical runtime anchor or ambient downgrade flags', () => withFixture((fixture) => {
+  const parser = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/parse-pdf.js')
+  writeFileSync(parser, readFileSync(parser, 'utf8')
+    .replace("process.env.CODEX_PAPER_PARSER_WORKER !== '1'", 'false')
+    .replaceAll('MANAGED_VERSION_ROOT', 'CALLER_SELECTED_ROOT')
+    .concat('\nconst unsafe = process.env.CODEX_PAPER_FORCE_PYMUPDF_FAILURE\n'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /bounded parser control process\.env\.CODEX_PAPER_PARSER_WORKER/)
+  assert.match(errors, /must not expose ambient test-only parser downgrade switches/)
+  assert.match(errors, /bounded parser control MANAGED_VERSION_ROOT/)
+}))
+
+test('repository and study suites keep explicit execution-count gates and failure diagnostics', () => withFixture((fixture) => {
+  const rootScript = join(fixture.root, 'scripts/codex-paper.sh')
+  writeFileSync(rootScript, readFileSync(rootScript, 'utf8')
+    .replace('"repository-security" 204', '"repository-security" 203')
+    .replace('"study" 87', '"study" 86')
+    .replace('preserved output: $output', 'test output was discarded'))
+  assert.match(errorsFor(fixture), /must fail and preserve diagnostics when a regression test is silently not executed/)
 }))
 
 test('modifying any frozen 2.0 schema fails', () => {

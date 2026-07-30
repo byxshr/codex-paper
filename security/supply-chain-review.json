@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "1.0.0",
+  "policyVersion": "p1-3a-1.0.0",
+  "reviewedAt": "2026-07-28",
+  "artifacts": [
+    {
+      "path": "plugins/codex-paper/package.json",
+      "sha256": "caa138360bf24970b782c3f440a7d75c180c3928b0fece84503425f0e794d7f0"
+    },
+    {
+      "path": "plugins/codex-paper/package-lock.json",
+      "sha256": "fb5d6754ee1a31b38b32239a11160abb74fa3c71105bd575ac5bd9b1ef6707b7"
+    },
+    {
+      "path": "plugins/codex-paper/src/web/package.json",
+      "sha256": "420bf93ef2da364ca3b2fcf229c1e210a6129135383e586a2f9845bc3ed559b2"
+    },
+    {
+      "path": "plugins/codex-paper/src/web/package-lock.json",
+      "sha256": "952f760ee3a00fc48a61365e91ec6f336c3d736c7152e24532604640711ed6c8"
+    },
+    {
+      "path": "plugins/codex-paper/runtime/python/requirements.lock",
+      "sha256": "da0f6b9dc98107c9040f6ca8c318fe1e789fb705cda897bee2b68637484eb5e7"
+    },
+    {
+      "path": "plugins/codex-paper/sandbox/Dockerfile",
+      "sha256": "3f904b5d8dd19e4963804d9e94bc5ac9c14c9649cfe1c912861dbd77606dd276"
+    },
+    {
+      "path": "plugins/codex-paper/sandbox/policy.json",
+      "sha256": "555feeb7b642f9913b2912536c96e06d3d4d25ef1fd0d5843232d4f26039aac6"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "05cfe1324973a642fcb7e01e47e01239bc4f0132ca523599b9acf17adca4b5b2"
+    },
+    {
+      "path": "security/runtime-baseline.json",
+      "sha256": "8985588070f9c3978995231d1037e2d303704674d4774987d56aa0a113219b18"
+    },
+    {
+      "path": "security/dependency-policy.json",
+      "sha256": "9b0ca43006615530f3225776aac89b5dfb577a3c697a89aeeafeeffd9510ba18"
+    },
+    {
+      "path": "security/secret-scan-policy.json",
+      "sha256": "42d43df7c5f7e30024f472cf3957fbcb21d86071d040b85c94651e733245b550"
+    },
+    {
+      "path": "scripts/runtime-policy.mjs",
+      "sha256": "7737b39b141c5bf6ff61fe04047b98db5f218bf3fe266582b2bece6a526d449f"
+    },
+    {
+      "path": "scripts/dependency-audit.mjs",
+      "sha256": "f3fae275aaa99ff1c302e521b86a1c72d32c56c1abdb8f092f0cb90ee84ffc9e"
+    },
+    {
+      "path": "scripts/secret-scan.mjs",
+      "sha256": "68a45347d3e4e9be90617615352c7cc7896e3f22f63093f3eea82ba4f6000b2d"
+    },
+    {
+      "path": "scripts/supply-chain-check.mjs",
+      "sha256": "e8cccdf219c579f64b469fd982ee694a9a077a617efe7a9f74e782f1f804d9b5"
+    },
+    {
+      "path": "plugins/codex-paper/scripts/start-webui.sh",
+      "sha256": "63d8ac9e03b4376d4bf810ca1f959b77b8af4e47a6848276158bd8703085463d"
+    },
+    {
+      "path": "scripts/common.sh",
+      "sha256": "91e2b895f6244d1c3e9ff7233343b6086424b9e577a96238db4ef561036826b6"
+    },
+    {
+      "path": "scripts/check-repository.mjs",
+      "sha256": "034477a57a598fd11c98a63d8e75014713a4177902512c6f3ed58832aea9538d"
+    },
+    {
+      "path": "scripts/tests/supply-chain.test.mjs",
+      "sha256": "525158ebd555f2de939f951186db9085f5676acbcebd7a743c16dba238328ebd"
+    }
+  ]
+}

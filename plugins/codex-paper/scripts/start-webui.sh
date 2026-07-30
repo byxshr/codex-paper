@@ -12,6 +12,7 @@ PORT="${PORT:-5815}"
 PAPERS_DIR="${PAPERS_DIR:-$HOME/codex-papers}"
 LAUNCH_LABEL="${LAUNCH_LABEL:-com.codex-paper.webui}"
 LAUNCH_PLIST="${LAUNCH_PLIST:-/tmp/codex-paper-webui.plist}"
+NODE_REQUIRED="22.23.1"
 
 NODE_BIN="$(command -v node || true)"
 if [ -z "$NODE_BIN" ] && [ -x /usr/local/bin/node ]; then
@@ -21,6 +22,11 @@ fi
 if [ -z "$NODE_BIN" ]; then
   echo "Error: node is not available on PATH." >&2
   exit 1
+fi
+NODE_VERSION="$("$NODE_BIN" -p 'process.versions.node')"
+if [ "$NODE_VERSION" != "$NODE_REQUIRED" ]; then
+  echo "Error: Node $NODE_REQUIRED is required; found $NODE_VERSION." >&2
+  exit 3
 fi
 
 if [ ! -f "$WEB_ROOT/.output/server/index.mjs" ]; then
@@ -52,7 +58,7 @@ PAIRING_TOKEN="$($NODE_BIN -e "process.stdout.write(require('crypto').randomByte
 printf '%s' "$PAIRING_TOKEN" > "$TOKEN_FILE"
 chmod 600 "$TOKEN_FILE"
 
-PLUGIN_VERSION="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$PLUGIN_ROOT/.codex-plugin/plugin.json")"
+PLUGIN_VERSION="$("$NODE_BIN" -e 'const fs=require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).version)' "$PLUGIN_ROOT/.codex-plugin/plugin.json")"
 printf '%s' "$PLUGIN_VERSION" > "$WEB_ROOT/.output/.build-version"
 
 start_with_launchctl() {

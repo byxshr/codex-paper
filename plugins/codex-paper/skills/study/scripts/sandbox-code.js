@@ -819,7 +819,11 @@ async function runConformance({ env = process.env } = {}) {
   mkdirSync(codeDir)
   try {
     writeFileSync(path.join(codeDir, 'conformance.py'), [
-      'import os, pathlib, socket',
+      'import bz2, ctypes, hashlib, importlib.util, lzma, os, pathlib, readline, shutil, socket, sqlite3, ssl, sys, uuid, zlib',
+      `assert sys.version.split()[0] == ${JSON.stringify(POLICY.runtime.python)}`,
+      'assert all(importlib.util.find_spec(name) is None for name in ("pip", "setuptools", "wheel", "pkg_resources"))',
+      'assert shutil.which("pip") is None',
+      'assert shutil.which("npm") is None',
       'assert os.environ == {"HOME":"/tmp/home","LANG":"C.UTF-8","PATH":"/usr/local/bin:/usr/bin:/bin"}',
       'assert not pathlib.Path("/var/run/docker.sock").exists()',
       'for target in (pathlib.Path("/workspace/blocked"), pathlib.Path("/etc/blocked")):',
@@ -834,6 +838,7 @@ async function runConformance({ env = process.env } = {}) {
     ].join('\n'))
     writeFileSync(path.join(codeDir, 'conformance.js'), [
       'const failures = []',
+      `if (process.versions.node !== ${JSON.stringify(POLICY.runtime.node)}) failures.push(\`unexpected Node=\${process.versions.node}\`)`,
       'if (process.env.HOME !== "/tmp/home") failures.push(`unexpected HOME=${JSON.stringify(process.env.HOME)}`)',
       'if (process.env.CODEX_PAPER_SECRET_CANARY) failures.push("host secret canary reached the container")',
       'if (failures.length) { console.error(`node conformance failed: ${failures.join("; ")}`); process.exit(3) }',
@@ -929,6 +934,7 @@ async function setupSandbox({ env = process.env } = {}) {
   const build = runSync(dockerBin(env), [
     'build', '--pull', '--tag', POLICY.imageTag,
     '--build-arg', `BASE_IMAGE=${POLICY.baseImage}`,
+    '--build-arg', `PYTHON_BASE_IMAGE=${POLICY.pythonBaseImage}`,
     '--build-arg', `CODEX_PAPER_POLICY_HASH=${fingerprint}`,
     SANDBOX_ROOT,
   ], { env, stdio: 'inherit' })

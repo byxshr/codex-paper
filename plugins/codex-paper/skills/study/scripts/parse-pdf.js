@@ -15,6 +15,17 @@ const PLUGIN_ROOT = path.resolve(__dirname, '../../..');
 const PLUGIN_MANIFEST_PATH = path.join(PLUGIN_ROOT, '.codex-plugin', 'plugin.json');
 const PARSER_LAUNCHER_PATH = path.join(__dirname, 'pdf-parser-launcher.py');
 const PARSER_WORKER_PATH = path.join(__dirname, 'pdf-parser-worker.js');
+const MANAGED_RUNTIME_ROOT = process.env.CODEX_PAPER_RUNTIME_DIR
+  || path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'codex-paper', 'runtime-v1');
+const MANAGED_VERSION_ROOT = path.resolve(MANAGED_RUNTIME_ROOT, 'python-3.11.15');
+const MANAGED_PYTHON_PATH = path.join(
+  MANAGED_VERSION_ROOT,
+  'bin',
+  'python'
+);
+const MAX_METADATA_TITLE_BLOCKS = 8;
+const MAX_FRONT_MATTER_BLOCKS = 16;
+const parserRuntimeProbeCache = new Set();
 const PARSER_VERSIONS = readParserVersions();
 const PARSER_VERSION = PARSER_VERSIONS.contractVersion;
 const PARSER_BUILD_VERSION = PARSER_VERSIONS.buildVersion;
@@ -173,7 +184,21 @@ function looksLikeAuthorBlock(block) {
 function buildTitleFromBlocks(blocks, metadataTitle, fallbackTitle) {
   const cleanedMetadataTitle = cleanTitlePunctuation(cleanLine(metadataTitle || ''));
   if (cleanedMetadataTitle && !rejectTitleLine(cleanedMetadataTitle)) {
-    const matchedIndex = blocks.findIndex((block) => normalizeForMatch(block) === normalizeForMatch(cleanedMetadataTitle));
+    const normalizedMetadataTitle = normalizeForMatch(cleanedMetadataTitle);
+    let matchedIndex = -1;
+    const frontMatterLimit = Math.min(blocks.length, MAX_FRONT_MATTER_BLOCKS);
+    for (let start = 0; start < frontMatterLimit && matchedIndex === -1; start += 1) {
+      const titleParts = [];
+      for (let end = start; end < Math.min(frontMatterLimit, start + MAX_METADATA_TITLE_BLOCKS); end += 1) {
+        titleParts.push(blocks[end]);
+        const normalizedCandidate = normalizeForMatch(titleParts.join(' '));
+        if (normalizedCandidate === normalizedMetadataTitle) {
+          matchedIndex = end;
+          break;
+        }
+        if (!normalizedMetadataTitle.startsWith(normalizedCandidate)) break;
+      }
+    }
     return {
       title: cleanedMetadataTitle,
       titleBlockEnd: matchedIndex,
@@ -361,7 +386,73 @@ function collectWarnings(...chunks) {
   );
 }
 
-function readWithPyMuPdf(pdfPath) {
+function resolveParserPython() {
+  const requested = process.env.CODEX_PAPER_PYTHON_BIN || MANAGED_PYTHON_PATH;
+  const requestedPath = path.resolve(requested);
+  const relative = path.relative(MANAGED_VERSION_ROOT, requestedPath);
+  if (requestedPath !== path.resolve(MANAGED_PYTHON_PATH)
+    || relative === '..'
+    || relative.startsWith(`..${path.sep}`)
+    || path.isAbsolute(relative)) {
+    throw new PdfSecurityError('Noncanonical parser runtime overrides are disabled.', 'parser_runtime_nonconformant');
+  }
+  let info;
+  let runtimeInputs;
+  try {
+    info = fs.lstatSync(requested);
+    if (info.isSymbolicLink() || !info.isFile()) {
+      throw new Error('managed interpreter must be an ordinary file');
+    }
+    if (fs.realpathSync(requested) !== requestedPath) throw new Error('managed interpreter path contains a symlink');
+    runtimeInputs = [
+      fs.readFileSync(path.join(MANAGED_VERSION_ROOT, 'pyvenv.cfg'), 'utf8'),
+      fs.readFileSync(path.join(MANAGED_VERSION_ROOT, '.codex-paper-runtime.json'), 'utf8'),
+    ].join('\0');
+  } catch (error) {
+    throw new PdfSecurityError(`Managed parser runtime is unavailable: ${error.message}`, 'parser_runtime_nonconformant');
+  }
+  const probeKey = `${requestedPath}:${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${runtimeInputs}`;
+  if (parserRuntimeProbeCache.has(probeKey)) return requested;
+  const probe = spawnSync(requested, [
+    '-I', '-B', '-c',
+    'import bz2,ctypes,fitz,hashlib,json,lzma,os,platform,readline,sqlite3,ssl,sys,sysconfig,uuid,zlib; print(json.dumps({"implementation":platform.python_implementation(),"version":platform.python_version(),"pymupdf":fitz.__version__,"basePrefix":sys.base_prefix,"stdlib":sysconfig.get_path("stdlib"),"osModule":os.__file__}))'
+  ], { encoding: 'utf8', timeout: 5000, maxBuffer: 64 * 1024 });
+  if (probe.error || probe.status === null) {
+    throw new PdfSecurityError(`Managed parser runtime probe could not run: ${probe.error?.code || 'unknown_error'}.`, 'parser_runtime_unavailable');
+  }
+  if (probe.status !== 0) {
+    throw new PdfSecurityError('Managed parser runtime must be CPython 3.11.15 with PyMuPDF 1.28.0.', 'parser_runtime_nonconformant');
+  }
+  let facts;
+  try {
+    facts = JSON.parse(probe.stdout);
+    const rootReal = fs.realpathSync(MANAGED_VERSION_ROOT);
+    const contained = (candidate) => {
+      const candidateRelative = path.relative(rootReal, fs.realpathSync(candidate));
+      return candidateRelative === ''
+        || (candidateRelative !== '..'
+          && !candidateRelative.startsWith(`..${path.sep}`)
+          && !path.isAbsolute(candidateRelative));
+    };
+    if (facts.implementation !== 'CPython'
+      || facts.version !== '3.11.15'
+      || facts.pymupdf !== '1.28.0'
+      || !contained(facts.basePrefix)
+      || !contained(facts.stdlib)
+      || !contained(facts.osModule)) {
+      throw new Error('runtime facts are outside the managed tree');
+    }
+  } catch {
+    throw new PdfSecurityError('Managed parser runtime failed version or containment verification.', 'parser_runtime_nonconformant');
+  }
+  parserRuntimeProbeCache.add(probeKey);
+  return requested;
+}
+
+function readWithPyMuPdf(pdfPath, { forceFailureForTest = false } = {}) {
+  if (forceFailureForTest) {
+    throw new Error('forced PyMuPDF failure for compatibility testing');
+  }
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-parser-'));
   const outputPath = path.join(tempDir, 'raw.json');
   const script = `
@@ -437,7 +528,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as handle:
     json.dump(payload, handle, ensure_ascii=False)
 `;
 
-  const result = spawnSync(process.env.CODEX_PAPER_PYTHON_BIN || 'python3', ['-I', '-B', '-c', script, pdfPath, outputPath], {
+  const result = spawnSync(resolveParserPython(), ['-I', '-B', '-c', script, pdfPath, outputPath], {
     encoding: 'utf8',
     timeout: PDF_SECURITY_POLICY.parserWallTimeMs - 5000,
     maxBuffer: PDF_SECURITY_POLICY.parserStderrBytes
@@ -496,7 +587,10 @@ async function capturePdfParseOutput(dataBuffer) {
   });
 
   try {
-    const result = await pdf(dataBuffer);
+    // pdf-parse 1.1.4 bundles an older PDF.js whose Node 22 Buffer handling
+    // can misread valid xref offsets. A plain Uint8Array preserves the public
+    // byte contract without exposing the parser to mutable input.
+    const result = await pdf(new Uint8Array(dataBuffer));
     return {
       result,
       capturedStdout,
@@ -508,12 +602,12 @@ async function capturePdfParseOutput(dataBuffer) {
   }
 }
 
-async function extractRawPdfData(pdfPath) {
+async function extractRawPdfData(pdfPath, options = {}) {
   const dataBuffer = fs.readFileSync(pdfPath);
   const parserWarnings = [];
 
   try {
-    const { raw, warnings } = readWithPyMuPdf(pdfPath);
+    const { raw, warnings } = readWithPyMuPdf(pdfPath, options);
     let offset = 0;
     const pages = (raw.pages || []).map((page, index) => {
       const text = String(page.text || '');
@@ -604,7 +698,7 @@ function buildOffsetTextSource(pages) {
   return pages.map((page) => typeof page === 'string' ? page : page.text || '').join('\n\n');
 }
 
-export async function parsePdfDetailedWorkerInternal(pdfPath, { sourceFilename } = {}) {
+export async function parsePdfDetailedWorkerInternal(pdfPath, { sourceFilename, forcePyMuPdfFailureForTest = false } = {}) {
   if (process.env.CODEX_PAPER_PARSER_WORKER !== '1') {
     throw new PdfSecurityError('In-process PDF parsing is disabled; use the bounded parser supervisor.', 'parser_isolation_required');
   }
@@ -612,7 +706,7 @@ export async function parsePdfDetailedWorkerInternal(pdfPath, { sourceFilename }
     throw new Error('PDF path is required');
   }
 
-  const source = await extractRawPdfData(pdfPath);
+  const source = await extractRawPdfData(pdfPath, { forceFailureForTest: forcePyMuPdfFailureForTest });
   const rawText = buildFactsTextSource(source.pages);
   const firstPageBlocks = source.firstPageBlocks.map(cleanLine).filter(Boolean);
   const firstPageLines = uniq([
@@ -717,7 +811,13 @@ function parserGroupRssBytes(pid) {
 
 function runBoundedParser(inputPath, outputPath, tempDir, sourceFilename) {
   return new Promise((resolve, reject) => {
-    const python = process.env.CODEX_PAPER_PYTHON_BIN || 'python3';
+    let python;
+    try {
+      python = resolveParserPython();
+    } catch (error) {
+      reject(error);
+      return;
+    }
     const child = spawn(python, [
       '-I', '-B', PARSER_LAUNCHER_PATH,
       String(PDF_SECURITY_POLICY.parserCpuSeconds),
@@ -736,7 +836,8 @@ function runBoundedParser(inputPath, outputPath, tempDir, sourceFilename) {
         HOME: tempDir,
         LANG: process.env.LANG || 'C.UTF-8',
         PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
-        CODEX_PAPER_PYTHON_BIN: python
+        CODEX_PAPER_PYTHON_BIN: python,
+        CODEX_PAPER_RUNTIME_DIR: path.resolve(MANAGED_RUNTIME_ROOT)
       },
       stdio: ['ignore', 'pipe', 'pipe']
     });

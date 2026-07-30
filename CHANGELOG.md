@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added the P1-3a runtime and supply-chain baseline: exact Node/npm/CPython/PyMuPDF versions, a private hash-locked Python venv, Nuxt 4, digest-pinned sandbox Python, expiring dependency exceptions, secret scanning, and reviewed artifact hashes.
+- Added runtime, dependency-audit, secret-scan, and supply-chain commands plus dedicated CI and Repository Guard enforcement; existing generations and manifests remain untouched for P1-4 provenance integration.
+- Hardened the P1-3a baseline after review: runtime replacement is locked and rollback-safe, parser overrides are version checked, fixture provenance uses the managed interpreter, and the Docker sandbox keeps a complete package-manager-free Python standard library.
+- Closed the second P1-3a review round: the managed CPython runtime now contains and hashes its own standard library, parser callers cannot move the canonical interpreter anchor, diagnostics redact fixed ephemeral roots, audit engines validate their own policies, stale runtime locks have bounded recovery, and static Repository Guard tests have a Python-free entry point.
+- Closed the third P1-3a review round: the host runtime now dereferences every copied entry, relocates and verifies native dependencies, hashes its complete tree, imports extension-backed modules at setup/status/use time, and remains usable without its bootstrap; parser suites have exact execution-count gates and caller-controlled worker flags cannot restore a movable interpreter anchor.
+- Closed the fourth P1-3a review round: macOS relocation now covers `LC_RPATH`, Linux explicitly requires a relocatable bootstrap, loader overrides are removed from native probes, tree attestation includes modes, bootstrap discovery checks native modules early, and all repository/study test suites enforce exact counts while preserving failed TAP output.
 - Added Generation Publication 1.0 with standard Validation-gated sealing, immutable file manifests, authoritative current commits, rebuildable index projection, retained recovery journals, and idempotent crash recovery.
 - Added exact publish/recover/reindex commands, authoritative manifest verification in readers, a dedicated publication CI gate, and mandatory PDF regression coverage through Viewer-visible publication.
 - Hardened C2a after the seventh independent review: preserve generated Ask answers when rich Markdown rendering fails by returning escaped plain text, and move bounded stale initialization cleanup under the registry lock.

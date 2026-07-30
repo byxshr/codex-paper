@@ -110,17 +110,22 @@ enabled = true
 请使用 $paper-summary 快速总结 https://arxiv.org/abs/1706.03762
 ```
 
-**就这样！** 插件将自动：
-- 安装所有依赖项（Node.js 依赖和用于 PDF 处理的 `PyMuPDF`）
+仓库安装命令会：
+- 校验 Node.js/npm，并创建私有、hash 锁定的 Python runtime
+- 在禁止依赖生命周期脚本的前提下安装两套 Node.js 依赖
 - 在 `~/codex-papers/` 创建论文目录
 - 初始化搜索索引
 - 安装网页查看器依赖项
 
 ### 系统要求
 
-- **Node.js**: 18.0.0 或更高版本
-- **npm**: 随 Node.js 一起安装
+- **Node.js**: 固定为 22.23.1
+- **npm**: 固定为 10.9.8
+- **CPython**: 固定为 3.11.15，仅用于创建受管 venv
 - **Codex**: 支持插件的最新版本
+- **原生运行时检查工具**:
+  - **macOS**: 安装 Xcode Command Line Tools（`xcode-select --install`），提供 `otool`、`install_name_tool` 和 `codesign`
+  - **Linux**: 安装提供 `readelf` 的 `binutils`；bootstrap 必须已经使用可重定位或系统原生库引用
 - **poppler-utils**: 用于 PDF 图像提取（通过系统包管理器安装）
   - **macOS**: `brew install poppler`
   - **Ubuntu/Debian**: `sudo apt-get install poppler-utils`
@@ -235,6 +240,10 @@ Ask Codex 会在网页首次提问时懒启动一个长期运行的 `codex mcp-s
 
 ```bash
 bash scripts/codex-paper.sh install
+bash scripts/codex-paper.sh runtime-status
+bash scripts/codex-paper.sh dependency-audit
+bash scripts/codex-paper.sh secret-scan
+bash scripts/codex-paper.sh supply-chain-test
 bash scripts/codex-paper.sh test
 bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh layout-test
@@ -368,7 +377,7 @@ codex-paper/
 5. **研究推理验证** - 使用 `reasoning-analysis.json`、论文 profile 和 `validate-reasoning.js` 约束证据引用、source type、数字 grounding、推理 DAG 和批判性分析
 6. **网页查看器** - 带 Nitro API 的 Nuxt.js 应用，默认展示用户材料，隐藏机器 JSON，并展示证据审计和作者推理视图
 7. **Ask Codex API** - 复用长期运行的 Codex MCP worker 处理基于证据的追问，并将回答追加到 `chat-notes.md`
-8. **钩子系统** - 自动依赖安装和设置
+8. **Runtime 与供应链策略** - 显式 runtime setup、依赖审计、secret scan 和不可变供应链复核
 
 ---
 
@@ -384,6 +393,12 @@ bash scripts/codex-paper.sh build
 bash scripts/codex-paper.sh start
 bash scripts/codex-paper.sh stop
 bash scripts/codex-paper.sh status
+bash scripts/codex-paper.sh runtime-setup
+bash scripts/codex-paper.sh runtime-status
+bash scripts/codex-paper.sh dependency-audit
+bash scripts/codex-paper.sh secret-scan
+bash scripts/codex-paper.sh supply-chain-test
+bash scripts/codex-paper.sh repo-test
 bash scripts/codex-paper.sh smoke-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark
@@ -396,6 +411,9 @@ bash scripts/codex-paper.sh benchmark-report
 ### 运行测试
 
 ```bash
+# 无需受管 Python，单独运行静态 Repository Guard mutation tests
+bash scripts/codex-paper.sh repo-test
+
 # 测试 PDF 解析
 node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 

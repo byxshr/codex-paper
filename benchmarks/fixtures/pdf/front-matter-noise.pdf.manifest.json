@@ -7,5 +7,5 @@
   "license": "MIT License",
   "redistributable": true,
   "sha256": "ea54025987ee36aea88fdcc2a03f8dc623f9a7fa17414ac1e5fac586b84c9e6c",
-  "generator": "python3 benchmarks/fixtures/generate-pdf-fixtures.py --fixture front-matter-noise"
+  "generator": "bash plugins/codex-paper/scripts/runtime-python.sh benchmarks/fixtures/generate-pdf-fixtures.py --fixture front-matter-noise"
 }
