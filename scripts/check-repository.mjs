@@ -846,7 +846,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, CI_WORKFLOW))) {
     const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
-    for (const required of ['node-version: "22.23.1"', 'python-version: "3.11.15"', 'npm@10.9.8', 'CODEX_PAPER_BOOTSTRAP_PYTHON: ${{ env.pythonLocation }}/bin/python', 'codex-paper.sh secret-scan', 'codex-paper.sh supply-chain-test', 'codex-paper.sh dependency-audit', 'codex-paper.sh runtime-status']) {
+    for (const required of ['node-version: "22.23.1"', 'python-version: "3.11.15"', 'npm@10.9.8', 'sudo chmod go-w "$pythonLocation" "$python_stdlib"', 'CODEX_PAPER_BOOTSTRAP_PYTHON: ${{ env.pythonLocation }}/bin/python', 'codex-paper.sh secret-scan', 'codex-paper.sh supply-chain-test', 'codex-paper.sh dependency-audit', 'codex-paper.sh runtime-status']) {
       if (!workflow.includes(required)) errors.push(`${CI_WORKFLOW} must preserve P1-3a gate ${required}`)
     }
     const supplyChainGates = [...workflow.matchAll(/codex-paper\.sh supply-chain-test/g)]

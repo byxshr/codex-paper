@@ -37,6 +37,11 @@ jobs:
         with:
           python-version: "3.11.15"
 
+      - name: Harden Python bootstrap source
+        run: |
+          python_stdlib="$(python -I -B -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"
+          sudo chmod go-w "$pythonLocation" "$python_stdlib"
+
       - name: Install dependencies
         env:
           CODEX_PAPER_BOOTSTRAP_PYTHON: ${{ env.pythonLocation }}/bin/python

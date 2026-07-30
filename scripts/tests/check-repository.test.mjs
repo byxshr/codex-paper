@@ -805,11 +805,13 @@ test('CI cannot remove P1-3a supply-chain and runtime gates', () => withFixture(
   const workflow = readFileSync(workflowPath, 'utf8')
     .replace('bash scripts/codex-paper.sh secret-scan', 'true')
     .replace('node-version: "22.23.1"', 'node-version: "latest"')
+    .replace('sudo chmod go-w "$pythonLocation" "$python_stdlib"', 'true')
     .replace('CODEX_PAPER_BOOTSTRAP_PYTHON: ${{ env.pythonLocation }}/bin/python', 'CODEX_PAPER_BOOTSTRAP_PYTHON: python')
   writeFileSync(workflowPath, workflow)
   const errors = errorsFor(fixture)
   assert.match(errors, /node-version: "22\.23\.1"/)
   assert.match(errors, /codex-paper\.sh secret-scan/)
+  assert.match(errors, /sudo chmod go-w/)
   assert.match(errors, /CODEX_PAPER_BOOTSTRAP_PYTHON/)
 }))
 
