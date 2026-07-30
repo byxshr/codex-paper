@@ -38,6 +38,8 @@ jobs:
           python-version: "3.11.15"
 
       - name: Install dependencies
+        env:
+          CODEX_PAPER_BOOTSTRAP_PYTHON: ${{ env.pythonLocation }}/bin/python
         run: bash scripts/codex-paper.sh install
 
       - name: Verify lockfiles remain reviewed after install

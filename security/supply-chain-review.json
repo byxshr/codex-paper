@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "05cfe1324973a642fcb7e01e47e01239bc4f0132ca523599b9acf17adca4b5b2"
+      "sha256": "05080f8cc47a35d19b120bbf22f1af21b53be63f92e9ffb8c7e8b241cad15fb3"
     },
     {
       "path": "security/runtime-baseline.json",
@@ -73,7 +73,7 @@
     },
     {
       "path": "scripts/check-repository.mjs",
-      "sha256": "034477a57a598fd11c98a63d8e75014713a4177902512c6f3ed58832aea9538d"
+      "sha256": "50f87542eb9bcd6adb8cd63dbbf07a1ed45c6226825711ac04853658ccefe44d"
     },
     {
       "path": "scripts/tests/supply-chain.test.mjs",
