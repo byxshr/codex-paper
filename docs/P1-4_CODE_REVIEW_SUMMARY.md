@@ -163,8 +163,11 @@ Use Node `22.23.1`, npm `10.9.8` and the managed CPython/PyMuPDF runtime. On a h
   build, Viewer HTTP security, smoke, and official plugin validation passed.
 - Canonical marketplace install resolves to `plugins/codex-paper/` at
   `2.0.0+codex.20260730125252`.
-- Docker is unavailable locally and fails closed as designed; remote CI must
-  provide the real sandbox conformance evidence before Review completion.
+- Docker is unavailable locally and fails closed as designed. Stage commit
+  `7f0211e` was pushed, and
+  [CI run 30544688962](https://github.com/byxshr/codex-paper/actions/runs/30544688962)
+  passed the real sandbox conformance, pinned runtime, provenance, lifecycle,
+  benchmark, build, Viewer security and smoke gates. Review is complete.
 
 The ordinary secret-scan command sees the pre-existing Git index and therefore
 still sees the staged view of the moved runtime policy. Acceptance used an

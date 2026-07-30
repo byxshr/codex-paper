@@ -23,7 +23,7 @@ and canonical marketplace reinstall. This stage does not commit or push.
 
 ## Implementation result
 
-Status: `开发完成 / 未推送` on 2026-07-30.
+Status: `Review 完成 / 已推送` on 2026-07-30.
 
 The implementation now seals new publications with Generation Manifest 2.0,
 keeps Manifest and Identity 1.0 read-only compatible, records redacted source
@@ -45,10 +45,11 @@ Local acceptance passed:
 - Nuxt production build, Viewer HTTP security, smoke test, official plugin
   validation, and canonical marketplace reinstall.
 
-Docker is unavailable on this Mac and correctly remains fail closed; the
-digest-pinned Docker conformance gate must run in remote CI after a later
-reviewed commit/push. The installed active version is
-`2.0.0+codex.20260730125252`. No commit or push was performed.
+Docker is unavailable on this Mac and correctly remains fail closed. Stage
+commit `7f0211e` was pushed, and
+[CI run 30544688962](https://github.com/byxshr/codex-paper/actions/runs/30544688962)
+passed the digest-pinned Docker conformance gate and the complete workflow.
+The installed active version is `2.0.0+codex.20260730125252`.
 
 Independent Review round 1 identified two workflow blockers and several
 contract-hardening opportunities. The implementation now reports actionable
