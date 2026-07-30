@@ -66,7 +66,7 @@ Adopted from round 3:
 Adopted from round 4:
 
 - Extended macOS relocation and verification to `LC_RPATH` entries using `otool -l` and `install_name_tool -rpath`; load commands, dylib IDs, and search paths now share one bootstrap-prefix rejection boundary.
-- Made native publication verification explicit and environment-independent: native imports run with Python and loader overrides removed, `runtimeStatus` exposes `nativeRuntimeSelfContained`, and Linux fails closed when `readelf -d` finds an absolute bootstrap RPATH/RUNPATH. Linux ELF rewriting is intentionally not introduced in P1-3a.
+- Made native publication verification explicit and environment-independent: native imports run with Python and loader overrides removed, and `runtimeStatus` exposes `nativeRuntimeSelfContained`. The reviewed implementation initially failed closed on Linux bootstrap RPATH/RUNPATH; remote CI then demonstrated that the pinned setup-python artifact requires relocation, so the delivery follow-up added a bounded `$ORIGIN` rewrite only for verified bootstrap-contained `DT_RPATH`, `DT_RUNPATH`, and absolute `DT_NEEDED` entries. Missing copied targets, oversized replacements, or residual absolute references still fail closed.
 - Extended exact execution-count gates to the complete repository/security and study suites. Any test failure or count drift preserves its TAP output in a named temporary file for diagnosis.
 - Added native-module checks to bootstrap discovery, included file modes in complete-tree attestation, normalized copied modes after umask-sensitive creation, and documented the required macOS/Linux inspection tools.
 - Clarified that `CODEX_PAPER_RUNTIME_DIR` is a trusted same-UID operator configuration input, not a cryptographic runtime identity. Rehashing the 159 MiB tree at every parse was not adopted because it would not create an independent same-UID trust boundary.
@@ -76,13 +76,13 @@ Round 5 independent review conclusion:
 - PASS: every blocker and medium finding from rounds 1–4 was closed and re-verified with the original failing probes. Round 5 found no P1-3a defect.
 - The pre-existing, load-sensitive `concurrent atomic writers leave one complete schema-valid report` test flake is tracked separately from P1-3a. The exact-count gate intentionally continues to surface it, and preserved TAP output makes any occurrence diagnosable.
 - The review's `nativeRuntimeSelfContained` naming refinement and `observed()` environment-forwarding note are optional cleanup, not correctness or security gaps. The existing probe runs with loader/Python overrides removed, while native-reference verification and complete-tree attestation enforce the underlying property.
-- Linux runtime publication and real Docker dual-runtime conformance remain required remote CI evidence before the stage is considered delivered.
+- Linux runtime publication and real Docker dual-runtime conformance were retained as mandatory remote acceptance conditions and both passed in CI run 30529700654.
 
 Not adopted:
 
 - `PaperAnalysisHero.vue` remains untouched because it is an unrelated untracked user file outside P1-3a.
 - Exact advisory-set equality remains fail-closed. A repaired advisory requires removal of the obsolete exception instead of silently passing.
-- Docker is not installed on the review Mac. Static and mutation checks cover the image contract locally; real image build and conformance remain a required remote CI gate.
+- Docker is not installed on the review Mac. Static and mutation checks cover the image contract locally; real image build and conformance passed on the trusted Ubuntu CI runner.
 - The round-5 optional renaming/environment-plumbing nits are deferred to P1-3b because they do not change the verified runtime boundary.
 
 ## Local verification
@@ -93,11 +93,19 @@ Not adopted:
 - The exact-count aggregate repository/security suite now passes 207/207 and the exact-count study suite passes 87/87 under Node 22.23.1/npm 10.9.8; supply-chain tests pass 21/21 and PDF ingestion security passes 12/12. The three-count increase is the reviewed Linux venv-alias plus ELF relocation coverage added from remote CI evidence.
 - Runtime marker 1.5 is conformant. A bootstrap-absent probe with hostile `DYLD_LIBRARY_PATH`, `LD_LIBRARY_PATH`, and `PYTHONPATH` values still reported `nativeRuntimeSelfContained=true`, `managedRuntimeContained=true`, and `marker=true`; no Mach-O load command or `LC_RPATH` contained the bootstrap prefix.
 - Mandatory regression passed 2/2; external parser corpus passed 5/5; reasoning and package benchmarks passed 12/12 each.
-- Dependency audit passed: plugin 0 vulnerabilities; Web 12 reviewed high and 0 critical, with the exception expiring 2026-08-31. Secret scan passed over 274 tracked files.
+- Dependency audit passed: plugin 0 vulnerabilities; Web 12 reviewed high and 0 critical, with the exception expiring 2026-08-31. Secret scan passed over 294 tracked files.
 - Nuxt 4 production build, Viewer HTTP security integration, smoke test, official plugin validation, marketplace reinstall, and post-install supply-chain verification passed.
 - Active plugin path is `plugins/codex-paper`; cachebuster version is `2.0.0+codex.20260728114120`.
-- Docker remains unavailable locally; full dual-runtime conformance must pass in remote CI.
-- The fifth independent review passed with no P1-3a defects; delivery remains conditional on green remote Linux/runtime and Docker jobs.
+- Docker remains unavailable locally, while the digest-pinned Node/Python sandbox build and full conformance suite passed in remote CI.
+- The fifth independent review passed with no P1-3a defects. Remote follow-up commits `deed5a9`, `f0fb0d9`, `23df1b0`, `2c2b7db`, and `bd91c61` closed the hosted bootstrap wiring, permission, venv alias, ELF relocation, and exact-count integration issues exposed only on Linux.
+
+## Remote acceptance
+
+- [CI run 30529700654](https://github.com/byxshr/codex-paper/actions/runs/30529700654) passed on Ubuntu with Node 22.23.1, npm 10.9.8, CPython 3.11.15, and PyMuPDF 1.28.0.
+- The managed CPython runtime completed setup, post-publication containment/status verification, dependency audit, and all parser-reaching tests without relying on the setup-python prefix.
+- Docker sandbox setup/status/test passed for the digest-pinned Node 20.20.2 and Python 3.11.15 image contract.
+- Repository/security 207/207, study 87/87, PDF ingestion, Identity, Layout, Storage, Publication, Validation, mandatory/external/reasoning/package benchmarks, production build, Viewer security integration, and smoke all passed.
+- P1-3a is therefore remotely accepted. P1-3 remains `开发中` only because P1-3b is intentionally deferred until after P1-4 and P1-2.
 
 ## Deliberate deferrals
 
