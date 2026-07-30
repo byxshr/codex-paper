@@ -49,7 +49,7 @@
     },
     {
       "path": "scripts/runtime-policy.mjs",
-      "sha256": "727d3367132aeeef5f7836bd56c505170b6785ce255ff483638350051d86f85e"
+      "sha256": "12e4cdb2ac38b4fe33c4efaf900439f76f77cf7906ad683cfd0e8bec5891c307"
     },
     {
       "path": "scripts/dependency-audit.mjs",
@@ -73,11 +73,11 @@
     },
     {
       "path": "scripts/check-repository.mjs",
-      "sha256": "9dbc7b129a88b78eb063c5ba55eb6d4ba004ea59fe74684afbe0c73f54aa1399"
+      "sha256": "09fc5e30aa771d7880ce6e02e99971e14d2813aa8b616b34e1db15eabfe60560"
     },
     {
       "path": "scripts/tests/supply-chain.test.mjs",
-      "sha256": "d249b26cb67a44b53b105051224c1e947df3fbf819e03ba6706b705ff58b2d12"
+      "sha256": "049a4fc8e33006ca8a4447988abec04c5b0cef390ddbf79d789cfc2f773aaf07"
     }
   ]
 }

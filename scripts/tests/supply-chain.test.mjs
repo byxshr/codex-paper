@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { auditDependencies, evaluateAudit } from '../dependency-audit.mjs'
-import { acquireSetupLock, managedPythonPath, normalizeManagedVenvAliases, publishPreparedRuntime, runtimeStatus, sanitizeDiagnostic, sha256Directory } from '../runtime-policy.mjs'
+import { acquireSetupLock, managedPythonPath, normalizeManagedVenvAliases, publishPreparedRuntime, relocateLinuxSearchPath, rewriteLinuxNativeReferences, runtimeStatus, sanitizeDiagnostic, sha256Directory } from '../runtime-policy.mjs'
 import { scanContent, scanRepository, validateSecretPolicy } from '../secret-scan.mjs'
 import { checkSupplyChain, checkWorkflowUses, validateDependencyPolicy } from '../supply-chain-check.mjs'
 
@@ -271,6 +271,71 @@ test('managed venv normalization removes only the standard contained lib64 alias
     assert.throws(() => normalizeManagedVenvAliases(root), /unsafe lib64 entry/)
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Linux native relocation maps only bootstrap-contained search paths to loader-relative paths', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'codex-paper-linux-relocation-test-'))
+  const filename = path.join(root, 'lib/python3.11/lib-dynload/_ssl.so')
+  const prefixes = ['/opt/bootstrap/python']
+  try {
+    mkdirSync(path.join(root, 'lib/python3.11/lib-dynload'), { recursive: true })
+    assert.equal(
+      relocateLinuxSearchPath(
+        root,
+        filename,
+        '/opt/bootstrap/python/lib:$ORIGIN:/usr/lib',
+        prefixes,
+      ),
+      '$ORIGIN/../..:$ORIGIN:/usr/lib',
+    )
+    assert.throws(
+      () => relocateLinuxSearchPath(
+        root,
+        filename,
+        '/opt/bootstrap/python/missing',
+        prefixes,
+      ),
+      /was not copied/,
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Linux native relocation rewrites a bounded ELF dynamic string and preserves unrelated bytes', () => {
+  const fixture = mkdtempSync(path.join(os.tmpdir(), 'codex-paper-linux-elf-test-'))
+  const bootstrap = path.join(fixture, 'bootstrap')
+  const root = path.join(fixture, 'managed')
+  const native = path.join(root, 'lib/python3.11/lib-dynload/probe.so')
+  const tools = path.join(fixture, 'tools')
+  try {
+    mkdirSync(path.join(bootstrap, 'lib'), { recursive: true })
+    mkdirSync(path.dirname(native), { recursive: true })
+    mkdirSync(tools)
+    const original = `${bootstrap}/lib`
+    writeFileSync(native, Buffer.concat([
+      Buffer.from('prefix\0'),
+      Buffer.from(`${original}\0`),
+      Buffer.from('suffix\0'),
+    ]))
+    const readelf = path.join(tools, 'readelf')
+    writeFileSync(readelf, `#!/bin/sh\nprintf '%s\\n' ' 0x000000000000001d (RUNPATH) Library runpath: [${original}]'\n`)
+    chmodSync(readelf, 0o755)
+
+    rewriteLinuxNativeReferences(root, { facts: { basePrefix: bootstrap } }, {
+      ...process.env,
+      PATH: `${tools}:${process.env.PATH || ''}`,
+    })
+
+    const rewritten = readFileSync(native)
+    assert.equal(rewritten.includes(Buffer.from(original)), false)
+    assert.equal(rewritten.includes(Buffer.from('$ORIGIN/../..')), true)
+    assert.equal(rewritten.includes(Buffer.from('prefix\0')), true)
+    assert.equal(rewritten.includes(Buffer.from('suffix\0')), true)
+    assert.equal(rewritten.length, Buffer.byteLength(`prefix\0${original}\0suffix\0`))
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
   }
 })
 

@@ -503,6 +503,72 @@ function rewriteMacNativeReferences(root, bootstrap, env) {
   }
 }
 
+function replaceNullTerminatedNativeString(filename, before, after) {
+  const source = Buffer.from(before)
+  const replacement = Buffer.from(after)
+  if (replacement.length > source.length) {
+    throw new Error('relocated native reference exceeds the available ELF string-table entry')
+  }
+  const content = readFileSync(filename)
+  const needle = Buffer.concat([source, Buffer.from([0])])
+  let cursor = 0
+  let replacements = 0
+  while ((cursor = content.indexOf(needle, cursor)) !== -1) {
+    content.fill(0, cursor, cursor + needle.length)
+    replacement.copy(content, cursor)
+    cursor += needle.length
+    replacements += 1
+  }
+  if (replacements === 0) throw new Error('ELF dynamic reference could not be located for relocation')
+  writeFileSync(filename, content)
+}
+
+function linuxLoaderRelativePath(root, filename, absolute, prefixes) {
+  const prefix = prefixes.find((candidate) => insideAnyPrefix(absolute, [candidate]))
+  if (!prefix) return absolute
+  const target = path.join(root, path.relative(prefix, absolute))
+  if (!existsSync(target)) throw new Error('bootstrap native dependency was not copied into the managed runtime')
+  const relative = path.relative(path.dirname(filename), target).split(path.sep).join('/')
+  return relative ? `$ORIGIN/${relative}` : '$ORIGIN'
+}
+
+export function relocateLinuxSearchPath(root, filename, searchPath, prefixes) {
+  return searchPath
+    .split(':')
+    .map((entry) => path.isAbsolute(entry)
+      ? linuxLoaderRelativePath(root, filename, entry, prefixes)
+      : entry)
+    .join(':')
+}
+
+function linuxDynamicEntries(filename, env) {
+  const result = run('readelf', ['-d', filename], env)
+  if (result.status !== 0) return []
+  const entries = []
+  for (const line of String(result.stdout).split('\n')) {
+    const match = line.match(/\((RPATH|RUNPATH|NEEDED)\).*\[([^\]]*)\]/)
+    if (match) entries.push({ kind: match[1], value: match[2] })
+  }
+  return entries
+}
+
+export function rewriteLinuxNativeReferences(root, bootstrap, env) {
+  const prefixes = bootstrapPrefixes(bootstrap)
+  for (const filename of nativeCandidates(root)) {
+    for (const entry of linuxDynamicEntries(filename, env)) {
+      let replacement = entry.value
+      if (entry.kind === 'RPATH' || entry.kind === 'RUNPATH') {
+        replacement = relocateLinuxSearchPath(root, filename, entry.value, prefixes)
+      } else if (path.isAbsolute(entry.value)) {
+        replacement = linuxLoaderRelativePath(root, filename, entry.value, prefixes)
+      }
+      if (replacement !== entry.value) {
+        replaceNullTerminatedNativeString(filename, entry.value, replacement)
+      }
+    }
+  }
+}
+
 function verifyNativeReferences(root, bootstrap, env) {
   const prefixes = bootstrapPrefixes(bootstrap)
   const tool = process.platform === 'darwin' ? 'otool' : 'readelf'
@@ -536,6 +602,7 @@ function copySelfContainedRuntime(bootstrap, temporary, env) {
     copyDereferencedTree(path.join(sourceStdlib, name), path.join(targetStdlib, name))
   }
   if (process.platform === 'darwin') rewriteMacNativeReferences(temporary, bootstrap, env)
+  if (process.platform === 'linux') rewriteLinuxNativeReferences(temporary, bootstrap, env)
   verifyNativeReferences(temporary, bootstrap, env)
 }
 
