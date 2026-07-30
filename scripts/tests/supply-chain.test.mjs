@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { auditDependencies, evaluateAudit } from '../dependency-audit.mjs'
-import { acquireSetupLock, managedPythonPath, publishPreparedRuntime, runtimeStatus, sanitizeDiagnostic, sha256Directory } from '../runtime-policy.mjs'
+import { acquireSetupLock, managedPythonPath, normalizeManagedVenvAliases, publishPreparedRuntime, runtimeStatus, sanitizeDiagnostic, sha256Directory } from '../runtime-policy.mjs'
 import { scanContent, scanRepository, validateSecretPolicy } from '../secret-scan.mjs'
 import { checkSupplyChain, checkWorkflowUses, validateDependencyPolicy } from '../supply-chain-check.mjs'
 
@@ -253,6 +253,22 @@ test('runtime tree attestation ignores marker and bytecode caches but covers con
     assert.notEqual(sha256Directory(root), baseline)
     symlinkSync(path.join(root, 'os.py'), path.join(root, 'linked.py'))
     assert.throws(() => sha256Directory(root), /unsupported filesystem entry/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('managed venv normalization removes only the standard contained lib64 alias', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'codex-paper-venv-alias-test-'))
+  try {
+    mkdirSync(path.join(root, 'lib'))
+    symlinkSync('lib', path.join(root, 'lib64'))
+    normalizeManagedVenvAliases(root)
+    assert.equal(existsSync(path.join(root, 'lib64')), false)
+
+    mkdirSync(path.join(root, 'other'))
+    symlinkSync('other', path.join(root, 'lib64'))
+    assert.throws(() => normalizeManagedVenvAliases(root), /unsafe lib64 entry/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

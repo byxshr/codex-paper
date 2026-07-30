@@ -373,6 +373,19 @@ function removeInstallerArtifacts(temporary) {
   }
 }
 
+export function normalizeManagedVenvAliases(temporary) {
+  const alias = path.join(temporary, 'lib64')
+  if (!existsSync(alias)) return
+  const info = lstatSync(alias)
+  const library = path.join(temporary, 'lib')
+  if (!info.isSymbolicLink()
+    || !existsSync(library)
+    || realpathSync(alias) !== realpathSync(library)) {
+    throw new Error('managed Python venv contains an unsafe lib64 entry')
+  }
+  rmSync(alias)
+}
+
 function copyDereferencedTree(source, target, activeDirectories = new Set()) {
   const resolved = realpathSync(source)
   const info = lstatSync(resolved)
@@ -627,6 +640,7 @@ export function setupRuntime(env = process.env) {
     ], env)
     if (result.status !== 0) throw new Error(`failed to install hash-locked Python dependencies: ${sanitizeDiagnostic(result.stderr, env)}`)
     removeInstallerArtifacts(temporary)
+    normalizeManagedVenvAliases(temporary)
     copySelfContainedRuntime(bootstrap, temporary, env)
     writeRelocatedVenvConfig(temporary, temporary)
     const installed = pythonFacts(python, env)

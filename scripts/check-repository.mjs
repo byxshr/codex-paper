@@ -811,6 +811,7 @@ export function checkRepository({
         'managedTreeSha256',
         'managedRuntimeContained',
         'nativeRuntimeSelfContained',
+        'normalizeManagedVenvAliases',
         'sanitizeDiagnostic',
         "name === '__pycache__'",
         'rewriteMacNativeReferences',
