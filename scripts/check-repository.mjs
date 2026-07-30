@@ -910,7 +910,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, ROOT_SCRIPT))) {
     const source = readFileSync(join(root, ROOT_SCRIPT), 'utf8')
-    for (const required of ['run_counted_test_suite', '"repository-security" 204', '"study" 87', '"repository-guard-static" 77', 'preserved output: $output']) {
+    for (const required of ['run_counted_test_suite', '"repository-security" 207', '"study" 87', '"repository-guard-static" 77', 'preserved output: $output']) {
       if (!source.includes(required)) errors.push(`${ROOT_SCRIPT} must fail and preserve diagnostics when a regression test is silently not executed: ${required}`)
     }
   }

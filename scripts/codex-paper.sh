@@ -158,7 +158,7 @@ cmd_test() {
   ensure_pymupdf
 
   print_section "Repository Guard Tests"
-  run_counted_test_suite "repository-security" 204 \
+  run_counted_test_suite "repository-security" 207 \
     --test-concurrency=1 "$REPO_ROOT"/scripts/tests/*.test.mjs
 
   print_section "Unit Tests"

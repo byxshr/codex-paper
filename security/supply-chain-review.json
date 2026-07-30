@@ -73,7 +73,7 @@
     },
     {
       "path": "scripts/check-repository.mjs",
-      "sha256": "09fc5e30aa771d7880ce6e02e99971e14d2813aa8b616b34e1db15eabfe60560"
+      "sha256": "4dae230ba2f6bfede039a324fc8f755d2d3e8fd5f61e833a7a3a7e6d38a5b6f6"
     },
     {
       "path": "scripts/tests/supply-chain.test.mjs",

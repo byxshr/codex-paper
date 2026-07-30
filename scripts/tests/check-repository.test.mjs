@@ -889,7 +889,7 @@ test('PDF parser cannot trust a caller-movable canonical runtime anchor or ambie
 test('repository and study suites keep explicit execution-count gates and failure diagnostics', () => withFixture((fixture) => {
   const rootScript = join(fixture.root, 'scripts/codex-paper.sh')
   writeFileSync(rootScript, readFileSync(rootScript, 'utf8')
-    .replace('"repository-security" 204', '"repository-security" 203')
+    .replace('"repository-security" 207', '"repository-security" 206')
     .replace('"study" 87', '"study" 86')
     .replace('preserved output: $output', 'test output was discarded'))
   assert.match(errorsFor(fixture), /must fail and preserve diagnostics when a regression test is silently not executed/)
