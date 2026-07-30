@@ -6,7 +6,7 @@ MANAGED_PYTHON="$RUNTIME_ROOT/python-3.11.15/bin/python"
 PYTHON_BIN="$MANAGED_PYTHON"
 
 if [ ! -x "$PYTHON_BIN" ]; then
-  echo "Error: managed CPython 3.11.15 runtime is unavailable. Run: bash scripts/codex-paper.sh runtime-setup" >&2
+  echo "Error: managed CPython 3.11.15 runtime is unavailable. Run runtime-setup from the codex-paper repository root; this installed plugin does not bootstrap host runtimes." >&2
   exit 3
 fi
 

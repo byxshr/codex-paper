@@ -158,11 +158,11 @@ cmd_test() {
   ensure_pymupdf
 
   print_section "Repository Guard Tests"
-  run_counted_test_suite "repository-security" 207 \
+  run_counted_test_suite "repository-security" 209 \
     --test-concurrency=1 "$REPO_ROOT"/scripts/tests/*.test.mjs
 
   print_section "Unit Tests"
-  run_counted_test_suite "study" 87 \
+  run_counted_test_suite "study" 100 \
     "$PLUGIN_ROOT"/skills/study/scripts/tests/*.mjs
 }
 
@@ -196,7 +196,7 @@ cmd_repo_test() {
   ensure_node
 
   print_section "Repository Guard Tests (Static)"
-  run_counted_test_suite "repository-guard-static" 77 \
+  run_counted_test_suite "repository-guard-static" 79 \
     --test-concurrency=1 "$REPO_ROOT/scripts/tests/check-repository.test.mjs"
 }
 
@@ -229,7 +229,7 @@ cmd_identity_test() {
   ensure_python
   ensure_pymupdf
 
-  print_section "Paper Identity 1.0"
+  print_section "Paper Identity 1.0 / 2.0"
   "$NODE_BIN" --test \
     "$PLUGIN_ROOT/skills/study/scripts/tests/paper-identity.test.mjs" \
     "$PLUGIN_ROOT/skills/study/scripts/tests/prepare-paper-identity.test.mjs"
@@ -258,8 +258,18 @@ cmd_publication_test() {
   ensure_python
   ensure_pymupdf
 
-  print_section "Generation Publication 1.0"
+  print_section "Generation Publication and Manifest 1.0 / 2.0"
   "$NODE_BIN" --test "$REPO_ROOT/scripts/tests/generation-publication.test.mjs"
+}
+
+cmd_provenance_test() {
+  ensure_node
+  ensure_python
+  ensure_pymupdf
+
+  print_section "Unified Provenance and Generation Manifest 2.0"
+  "$NODE_BIN" --test \
+    "$PLUGIN_ROOT/skills/study/scripts/tests/generation-provenance.test.mjs"
 }
 
 cmd_workspace() {
@@ -274,6 +284,25 @@ cmd_publication() {
   local action="$1"
   shift
   "$NODE_BIN" "$PUBLICATION_CLI" "$action" "$@"
+}
+
+cmd_provenance() {
+  ensure_node
+  local action="$1"
+  shift
+  "$NODE_BIN" "$PROVENANCE_CLI" "$action" "$@"
+}
+
+cmd_prepare() {
+  ensure_node
+  ensure_python
+  ensure_pymupdf
+  if [ "$#" -lt 1 ]; then
+    echo "Usage: bash scripts/codex-paper.sh prepare <input> [prepare-paper options]" >&2
+    exit 2
+  fi
+  print_section "Prepare Generation Workspace"
+  "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/prepare-paper.js" "$@"
 }
 
 cmd_package_test() {
@@ -461,13 +490,18 @@ Commands:
   test         Run deterministic unit tests
   reasoning-test Run reasoning validation fixtures
   validation-test Run Validation Report 1.0 and cross-artifact gate tests
-  identity-test Run Paper Identity 1.0, fingerprint, reuse, and collision tests
+  identity-test Run Paper Identity 1.0/2.0 compatibility, fingerprint, reuse, and collision tests
   layout-test Run current-generation resolver, legacy read-only, and overlay tests
   storage-test Run generation workspace, cross-process lock, and shared writer tests
   publication-test Run generation manifest, publication recovery, and reindex tests
+  provenance-test Run Manifest 2.0, runtime/source, authoring WAL, DAG, and binding tests
+  provenance-inspect <paper-or-workspace> [--json] Inspect authoritative or draft provenance
+  provenance-verify <paper-or-workspace> [--json] Verify provenance integrity and bindings
+  provenance-resolve <workspace> --adopt-current <event-id> Audit and adopt an ambiguous authoring event
+  prepare <input> [prepare-paper options] Prepare with the pinned host runtime checks
   workspace-list [--json] List exact generation workspaces
   workspace-inspect <workspace> [--json] Inspect one exact workspace
-  workspace-write <workspace> <path> (--stdin|--from-file <path>) (--expect-absent|--expected-sha256 <sha>)
+  workspace-write <workspace> <path> (--stdin|--from-file <path>) (--expect-absent|--expected-sha256 <sha>) [--actor codex|human|unknown] [--depends-on <path>]...
   workspace-tags <workspace> --tag <tag> --tag <tag> Set pending publish tags
   workspace-abandon <workspace> [--json] Mark a workspace abandoned without deleting it
   publish-workspace <workspace> [--json] Publish one exact validated workspace
@@ -558,6 +592,25 @@ case "$command_name" in
     ;;
   publication-test)
     cmd_publication_test
+    ;;
+  provenance-test)
+    cmd_provenance_test
+    ;;
+  provenance-inspect)
+    shift
+    cmd_provenance inspect "$@"
+    ;;
+  provenance-verify)
+    shift
+    cmd_provenance verify "$@"
+    ;;
+  provenance-resolve)
+    shift
+    cmd_workspace resolve-event "$@"
+    ;;
+  prepare)
+    shift
+    cmd_prepare "$@"
     ;;
   workspace-list)
     shift

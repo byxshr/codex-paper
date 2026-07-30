@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { MAX_LOCK_TIMEOUT_MS } from '../../../src/shared/storage-transaction.mjs'
+import { formatCliError } from '../../../src/shared/cli-error-format.mjs'
 import {
   publishGenerationWorkspace,
   rebuildLibraryIndex,
@@ -55,6 +56,6 @@ async function main() {
 
 main().catch((error) => {
   const code = String(error?.code || 'PUBLICATION_OPERATION_FAILED')
-  console.error(`Error [${code}]: ${String(error?.message || error).replace(/[\r\n]+/g, ' ').slice(0, 2048)}`)
+  console.error(formatCliError(error, 'PUBLICATION_OPERATION_FAILED'))
   process.exit(exitCode(error))
 })

@@ -26,6 +26,15 @@ import {
   verifyGenerationManifestBinding,
 } from './generation-manifest.mjs'
 import {
+  MANIFEST_VERSION,
+  assertContentRuntime,
+  collectRuntimeAttestation,
+  recoverPendingAuthoringEvents,
+  runtimeGenerationContract,
+  stableJson as provenanceStableJson,
+  verifyReadmeProjection,
+} from './generation-provenance.mjs'
+import {
   createWorkspaceDiagnostic,
   listGenerationWorkspaces,
   resolveGenerationWorkspace,
@@ -145,12 +154,13 @@ function readIdentity(packageDir, workspace) {
   return identity
 }
 
-function addManifestProjection(packageDir, manifestId, lockHandle, workspaceLockKey) {
+function verifyManifestProjection(packageDir, manifestId) {
   const metaPath = path.join(packageDir, 'meta.json')
   const meta = readJsonNoFollow(metaPath, 'meta.json', 8 * 1024 * 1024)
-  const next = { ...meta, generationManifest: { schemaVersion: '1.0.0', manifestId } }
-  atomicWriteJson({ root: packageDir, relativePath: 'meta.json', value: next, lockHandle, requiredLock: workspaceLockKey, maxBytes: 8 * 1024 * 1024, ...fileWritePrecondition(metaPath, 8 * 1024 * 1024) })
-  return next
+  if (meta?.generationManifest?.schemaVersion !== MANIFEST_VERSION || meta.generationManifest.manifestId !== manifestId) {
+    throw new GenerationPublicationError('PUBLICATION_PROVENANCE_MISMATCH', 'meta.json manifest projection does not match the workspace identity.', 409)
+  }
+  return meta
 }
 
 function sealWorkspacePackage(workspace, lockHandle, options = {}) {
@@ -158,10 +168,29 @@ function sealWorkspacePackage(workspace, lockHandle, options = {}) {
   if (!packageDir) throw new GenerationPublicationError('PUBLICATION_WORKSPACE_DETACHED', 'Detached publication residues must be recovered from their committed generation.', 409)
   const report = readValidationReport(packageDir)
   const identity = readIdentity(packageDir, workspace)
-  const id = deriveManifestId({ paperKey: workspace.paperKey, generationId: workspace.generationId, validationReportHash: report.reportHash.value })
-  addManifestProjection(packageDir, id, lockHandle, workspace.workspaceLockKey)
+  if (identity.schemaVersion !== '2.0.0') throw new GenerationPublicationError('PUBLICATION_PROVENANCE_REQUIRED', 'Generation Manifest 2.0 publication requires Paper Identity 2.0.', 409)
+  const currentRuntime = assertContentRuntime(options.runtimeAttestation || collectRuntimeAttestation(options.env || process.env))
+  if (provenanceStableJson(runtimeGenerationContract(currentRuntime)) !== provenanceStableJson(identity.generation.inputs.runtimeContract)) {
+    throw new GenerationPublicationError('PUBLICATION_RUNTIME_MISMATCH', 'Current content runtime does not match the generation identity.', 409)
+  }
+  const draft = recoverPendingAuthoringEvents(workspace, lockHandle)
+  const id = deriveManifestId({
+    paperKey: workspace.paperKey,
+    sourceRevisionId: workspace.sourceRevisionId,
+    generationId: workspace.generationId,
+  })
+  if (draft.manifestId !== id) throw new GenerationPublicationError('PUBLICATION_PROVENANCE_MISMATCH', 'Workspace provenance does not match the publication identity.', 409)
+  verifyManifestProjection(packageDir, id)
+  verifyReadmeProjection(packageDir, id)
   const txId = options.transactionId || transactionId()
-  const manifest = buildGenerationManifest({ packageDir, transactionId: txId, paperKey: workspace.paperKey, identity, validationReport: report })
+  const manifest = buildGenerationManifest({
+    packageDir,
+    transactionId: txId,
+    paperKey: workspace.paperKey,
+    identity,
+    validationReport: report,
+    provenanceDraft: draft,
+  })
   const manifestPath = path.join(packageDir, ...GENERATION_MANIFEST_RELATIVE_PATH.split('/'))
   atomicWriteJson({
     root: packageDir,
@@ -509,7 +538,7 @@ export async function publishGenerationWorkspace(input, options = {}) {
     let journal = readJournal(workspace)
     try {
       if (!journal) {
-        const sealed = sealWorkspacePackage(workspace, lockHandle)
+        const sealed = sealWorkspacePackage(workspace, lockHandle, options)
         journal = sealed.journal
         maybeFault(options, 'after_manifest')
       } else if (workspace.packageDir) {

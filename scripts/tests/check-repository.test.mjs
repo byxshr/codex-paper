@@ -27,6 +27,7 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/scripts/extract-facts.js',
   'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
   'plugins/codex-paper/skills/study/scripts/validation-report.js',
+  'plugins/codex-paper/src/shared/validation-report-intrinsic.mjs',
   'plugins/codex-paper/skills/study/scripts/paper-identity.js',
   'plugins/codex-paper/skills/study/scripts/tests/prepare-paper-identity.test.mjs',
   'plugins/codex-paper/skills/study/scripts/tests/paper-identity.test.mjs',
@@ -34,7 +35,9 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json',
   'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json',
   'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/paper-identity-2.0.schema.json',
   'plugins/codex-paper/skills/study/generation-contract-1.0.json',
+  'plugins/codex-paper/skills/study/generation-contract-2.0.json',
   'plugins/codex-paper/skills/summary/SKILL.md',
   'plugins/codex-paper/src/shared/package-compatibility.mjs',
   'plugins/codex-paper/src/shared/paper-library.mjs',
@@ -48,9 +51,14 @@ const SENTINELS = [
   'plugins/codex-paper/skills/study/scripts/workspace-cli.js',
   'plugins/codex-paper/skills/study/scripts/publication-cli.js',
   'plugins/codex-paper/skills/study/schemas/generation-manifest-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/generation-manifest-2.0.schema.json',
   'plugins/codex-paper/skills/study/schemas/publication-transaction-1.0.schema.json',
   'plugins/codex-paper/src/shared/generation-manifest.mjs',
   'plugins/codex-paper/src/shared/generation-publication.mjs',
+  'plugins/codex-paper/src/shared/generation-provenance.mjs',
+  'plugins/codex-paper/src/shared/cli-error-format.mjs',
+  'plugins/codex-paper/skills/study/scripts/provenance-cli.js',
+  'plugins/codex-paper/skills/study/scripts/tests/generation-provenance.test.mjs',
   'plugins/codex-paper/src/web/nuxt.config.ts',
   'plugins/codex-paper/runtime/python/requirements.lock',
   'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs',
@@ -67,7 +75,7 @@ const SENTINELS = [
   'README.md',
   'README.zh-CN.md',
   '.github/workflows/ci.yml',
-  'security/runtime-baseline.json',
+  'plugins/codex-paper/runtime/runtime-baseline.json',
   'security/dependency-policy.json',
   'security/secret-scan-policy.json',
   'security/supply-chain-review.json',
@@ -101,7 +109,7 @@ function write(root, path, content = '') {
 
 function makeFixture() {
   const root = mkdtempSync('/tmp/codex-paper-repo-check-')
-  const generationContract = JSON.parse(readFileSync(join(REPO_ROOT, 'plugins/codex-paper/skills/study/generation-contract-1.0.json'), 'utf8'))
+  const generationContract = JSON.parse(readFileSync(join(REPO_ROOT, 'plugins/codex-paper/skills/study/generation-contract-2.0.json'), 'utf8'))
   const contractFiles = [...generationContract.common, ...generationContract.workflows.study, ...generationContract.workflows.summary]
     .map((path) => `plugins/codex-paper/${path}`)
   const fixtureFiles = [...new Set([...SENTINELS, ...contractFiles])]
@@ -446,7 +454,7 @@ test('CI cannot remove the Validation Report 1.0 gate', () => withFixture((fixtu
   assert.match(errorsFor(fixture), /must run validation-test before benchmark-mandatory/)
 }))
 
-test('CI cannot remove or reorder the Paper Identity 1.0 gate', () => withFixture((fixture) => {
+test('CI cannot remove or reorder the Paper Identity gate', () => withFixture((fixture) => {
   const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
   const workflow = readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh identity-test', 'true')
   writeFileSync(workflowPath, workflow)
@@ -464,6 +472,12 @@ test('CI cannot remove the generation publication gate', () => withFixture((fixt
   const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
   writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh publication-test', 'true'))
   assert.match(errorsFor(fixture), /must run publication-test after storage-test/)
+}))
+
+test('CI cannot remove or reorder the unified provenance gate', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh provenance-test', 'true'))
+  assert.match(errorsFor(fixture), /must run provenance-test after publication-test/)
 }))
 
 test('generation manifest, authoritative resolver, and mandatory publication boundaries are guarded', () => withFixture((fixture) => {
@@ -592,15 +606,15 @@ test('legacy migration must share the paper lock and preserve existing reviews',
   assert.match(errors, /must preserve an existing reasoning review/)
 }))
 
-test('Paper Identity 1.0 schema and generation contract are required', () => withFixture((fixture) => {
-  const schema = 'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json'
+test('Paper Identity 2.0 schema and generation contract are required while 1.0 remains present', () => withFixture((fixture) => {
+  const schema = 'plugins/codex-paper/skills/study/schemas/paper-identity-2.0.schema.json'
   rmSync(join(fixture.root, schema))
-  const contractPath = join(fixture.root, 'plugins/codex-paper/skills/study/generation-contract-1.0.json')
+  const contractPath = join(fixture.root, 'plugins/codex-paper/skills/study/generation-contract-2.0.json')
   const contract = JSON.parse(readFileSync(contractPath, 'utf8'))
   contract.common.push('.codex-plugin/plugin.json')
   writeFileSync(contractPath, JSON.stringify(contract))
   const errors = errorsFor(fixture)
-  assert.match(errors, /active plugin sentinel is missing: .*paper-identity-1\.0\.schema\.json/)
+  assert.match(errors, /active plugin sentinel is missing: .*paper-identity-2\.0\.schema\.json/)
   assert.match(errors, /must exclude provenance-only file from fingerprint/)
 }))
 
@@ -608,13 +622,18 @@ test('prepare and skills cannot restore overwrite or implicit identity inputs', 
   const preparePath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
   writeFileSync(preparePath, `${readFileSync(preparePath, 'utf8')}\nconst force = { force: true }; // mutation\n`)
   const studyPath = join(fixture.root, 'plugins/codex-paper/skills/study/SKILL.md')
-  writeFileSync(studyPath, readFileSync(studyPath, 'utf8').replace('--workflow study', '--workflow auto'))
+  writeFileSync(studyPath, readFileSync(studyPath, 'utf8')
+    .replace('--workflow study', '--workflow auto')
+    .replaceAll('../../../../scripts/codex-paper.sh', 'scripts/codex-paper.sh'))
   const summaryPath = join(fixture.root, 'plugins/codex-paper/skills/summary/SKILL.md')
-  writeFileSync(summaryPath, readFileSync(summaryPath, 'utf8').replace('--language "$OUTPUT_LANG"', '--lang "$OUTPUT_LANG"'))
+  writeFileSync(summaryPath, readFileSync(summaryPath, 'utf8')
+    .replace('--language "$OUTPUT_LANG"', '--lang "$OUTPUT_LANG"')
+    .replaceAll('../../../../scripts/codex-paper.sh', 'scripts/codex-paper.sh'))
   const errors = errorsFor(fixture)
   assert.match(errors, /must not restore overwrite or force preparation/)
   assert.match(errors, /must pass explicit --workflow study/)
   assert.match(errors, /must pass explicit --workflow summary and --language/)
+  assert.match(errors, /must use repository-root runtime commands only when the checkout wrapper exists/)
 }))
 
 test('Validation Report 1.0 schema is a required repository sentinel', () => withFixture((fixture) => {
@@ -645,6 +664,9 @@ test('shared CAS, CLI limits, and both validation failure compensations cannot d
   const prepare = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
   const workspaceCli = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/workspace-cli.js')
   const validation = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/validation-report.js')
+  const workspace = join(fixture.root, 'plugins/codex-paper/src/shared/generation-workspace.mjs')
+  const provenanceCli = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/provenance-cli.js')
+  const cliErrorFormat = join(fixture.root, 'plugins/codex-paper/src/shared/cli-error-format.mjs')
   writeFileSync(librarySecurity, readFileSync(librarySecurity, 'utf8').replaceAll('fileWritePrecondition', 'localCasPrecondition'))
   for (const cli of [prepare, workspaceCli]) writeFileSync(cli, readFileSync(cli, 'utf8')
     .replaceAll('storageCliExitCode', 'localCliExitCode')
@@ -654,6 +676,17 @@ test('shared CAS, CLI limits, and both validation failure compensations cannot d
     .replaceAll('validation_report_write_failed', 'validation_started')
     .replaceAll('validation_state_update_failed', 'validation_started')
     .replaceAll('preservationError', 'discardedSecondaryError'))
+  writeFileSync(workspace, readFileSync(workspace, 'utf8').replace(
+    'const authoring = transitionWorkspaceToAuthoringLocked(current, lockHandle, options)',
+    'const authoring = current',
+  ))
+  writeFileSync(provenanceCli, readFileSync(provenanceCli, 'utf8')
+    .replaceAll('pendingEvents', 'hiddenPendingEvents')
+    .replaceAll('formatCliError', 'messageOnlyError'))
+  writeFileSync(cliErrorFormat, readFileSync(cliErrorFormat, 'utf8')
+    .replaceAll('sanitizeText', 'unsafeText')
+    .replaceAll('redactPathText', 'unsafePathText')
+    .replace("details === '{}'", "details === '__never_empty__'"))
   const errors = errorsFor(fixture)
   assert.match(errors, /librarySecurity\.mjs must use the shared CAS precondition helper/)
   assert.match(errors, /prepare-paper\.js must use the shared storage CLI exit mapping/)
@@ -664,6 +697,12 @@ test('shared CAS, CLI limits, and both validation failure compensations cannot d
   assert.match(errors, /Validation Report 1\.0 contract validation_report_write_failed/)
   assert.match(errors, /Validation Report 1\.0 contract validation_state_update_failed/)
   assert.match(errors, /Validation Report 1\.0 contract preservationError/)
+  assert.match(errors, /must demote validation state before adopting an ambiguous authoring event/)
+  assert.match(errors, /must expose provenance mode pendingEvents/)
+  assert.match(errors, /must expose provenance mode formatCliError/)
+  assert.match(errors, /must preserve bounded redacted CLI detail sanitizeText/)
+  assert.match(errors, /must preserve bounded redacted CLI detail redactPathText/)
+  assert.match(errors, /must preserve bounded redacted CLI detail details === '\{\}'/)
 }))
 
 test('README layout cannot present the legacy tree as active', () => withFixture((fixture) => {
@@ -733,7 +772,7 @@ test('sandbox image composes complete digest-pinned CPython without a mutable pa
 }))
 
 test('runtime baseline and Python wheel hashes are immutable repository contracts', () => withFixture((fixture) => {
-  const runtimePath = join(fixture.root, 'security/runtime-baseline.json')
+  const runtimePath = join(fixture.root, 'plugins/codex-paper/runtime/runtime-baseline.json')
   const runtime = JSON.parse(readFileSync(runtimePath, 'utf8'))
   runtime.host.node = 'latest'
   runtime.retroactiveManifestRewrite = true
@@ -889,8 +928,8 @@ test('PDF parser cannot trust a caller-movable canonical runtime anchor or ambie
 test('repository and study suites keep explicit execution-count gates and failure diagnostics', () => withFixture((fixture) => {
   const rootScript = join(fixture.root, 'scripts/codex-paper.sh')
   writeFileSync(rootScript, readFileSync(rootScript, 'utf8')
-    .replace('"repository-security" 207', '"repository-security" 206')
-    .replace('"study" 87', '"study" 86')
+    .replace('"repository-security" 209', '"repository-security" 208')
+    .replace('"study" 100', '"study" 99')
     .replace('preserved output: $output', 'test output was discarded'))
   assert.match(errorsFor(fixture), /must fail and preserve diagnostics when a regression test is silently not executed/)
 }))
@@ -903,6 +942,12 @@ test('modifying any frozen 2.0 schema fails', () => {
     })
   }
 })
+
+test('Generation Manifest 2.0 schema is immutable after format freeze', () => withFixture((fixture) => {
+  const schemaPath = join(fixture.root, 'plugins/codex-paper/skills/study/schemas/generation-manifest-2.0.schema.json')
+  writeFileSync(schemaPath, `${readFileSync(schemaPath, 'utf8')}\n`)
+  assert.match(errorsFor(fixture), /frozen Generation Manifest 2\.0 schema hash mismatch/)
+}))
 
 test('changing the recorded active path or frozen hash fails', () => withFixture((fixture) => {
   const baselinePath = join(fixture.root, 'docs/contracts/s0-contract-baseline.json')

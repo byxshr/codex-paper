@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "policyVersion": "p1-3a-1.0.0",
-  "reviewedAt": "2026-07-28",
+  "reviewedAt": "2026-07-30",
   "artifacts": [
     {
       "path": "plugins/codex-paper/package.json",
@@ -29,14 +29,14 @@
     },
     {
       "path": "plugins/codex-paper/sandbox/policy.json",
-      "sha256": "555feeb7b642f9913b2912536c96e06d3d4d25ef1fd0d5843232d4f26039aac6"
+      "sha256": "e936a4658b6eb50ff13341e18ed95fe81842bb30662b5b8784590d7cae611e88"
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "28d621344356c38df163c6324ae566840260a9e7b6cfdfda99522020a180dabf"
+      "sha256": "0d2d800102cc78e483b5ee34272f2130f61f2b5a7e5ac98113826848d763fb3c"
     },
     {
-      "path": "security/runtime-baseline.json",
+      "path": "plugins/codex-paper/runtime/runtime-baseline.json",
       "sha256": "8985588070f9c3978995231d1037e2d303704674d4774987d56aa0a113219b18"
     },
     {
@@ -49,7 +49,7 @@
     },
     {
       "path": "scripts/runtime-policy.mjs",
-      "sha256": "12e4cdb2ac38b4fe33c4efaf900439f76f77cf7906ad683cfd0e8bec5891c307"
+      "sha256": "3394d7665334e5fbc2a38bae0de246ec584bf2dcb572e7755207df778d0a2fa1"
     },
     {
       "path": "scripts/dependency-audit.mjs",
@@ -69,11 +69,11 @@
     },
     {
       "path": "scripts/common.sh",
-      "sha256": "91e2b895f6244d1c3e9ff7233343b6086424b9e577a96238db4ef561036826b6"
+      "sha256": "7f2abb0bd30f4e7258dd32f3f11abdad125fe29e4c637d9cd576705ffe0751d9"
     },
     {
       "path": "scripts/check-repository.mjs",
-      "sha256": "4dae230ba2f6bfede039a324fc8f755d2d3e8fd5f61e833a7a3a7e6d38a5b6f6"
+      "sha256": "341781a15720ebf0049a24ac956bbc5594f51771a2984a17783541191f09abfe"
     },
     {
       "path": "scripts/tests/supply-chain.test.mjs",

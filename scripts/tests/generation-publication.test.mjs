@@ -18,6 +18,7 @@ import {
   unsealGenerationPackageForLifecycle,
   verifyGenerationManifest,
 } from '../../plugins/codex-paper/src/shared/generation-manifest.mjs'
+import { collectRuntimeAttestation } from '../../plugins/codex-paper/src/shared/generation-provenance.mjs'
 import {
   isActiveGenerationWorkspace,
   listGenerationWorkspaces,
@@ -114,6 +115,25 @@ test('publication rejects a route claimed by a legacy paper before current commi
 
 test('publication seals one immutable generation and commits current before index visibility', async (t) => {
   const { libraryRoot, prepared } = await validatedWorkspace(t)
+  const driftedRuntime = collectRuntimeAttestation(process.env, {
+    node: '22.23.1',
+    npm: '10.9.8',
+    python: {
+      version: '3.11.15',
+      implementation: 'CPython',
+      pyMuPDF: '1.28.0',
+    },
+  })
+  driftedRuntime.host.node = '22.23.2'
+  await assert.rejects(
+    publishGenerationWorkspace(prepared.workspaceId, {
+      libraryRoot,
+      lockTimeoutMs: 0,
+      runtimeAttestation: driftedRuntime,
+    }),
+    { code: 'PUBLICATION_RUNTIME_MISMATCH' },
+  )
+  assert.equal(resolveGenerationWorkspace(prepared.workspaceId, { libraryRoot }).workspace.state, 'validated')
   const published = await publishGenerationWorkspace(prepared.workspaceId, { libraryRoot, lockTimeoutMs: 0 })
   assert.equal(published.published, true)
   const descriptor = resolveLibraryPaper(prepared.paperSlug, { libraryRoot })
@@ -136,6 +156,26 @@ test('publication seals one immutable generation and commits current before inde
   const index = JSON.parse(fs.readFileSync(path.join(libraryRoot, 'index.json'), 'utf8'))
   assert.equal(index.length, 1)
   assert.equal(index[0].generationManifest.manifestId, published.manifestId)
+  const provenanceCli = path.join(pluginScripts, 'provenance-cli.js')
+  const provenance = spawnSync(process.execPath, [provenanceCli, 'verify', prepared.paperSlug, '--json'], {
+    cwd: repoRoot,
+    env: { ...process.env, PAPERS_DIR: libraryRoot },
+    encoding: 'utf8',
+  })
+  assert.equal(provenance.status, 0, provenance.stderr)
+  assert.equal(JSON.parse(provenance.stdout).mode, 'native_2_0')
+  const outsideReports = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-outside-execution-'))
+  fs.symlinkSync(outsideReports, path.join(descriptor.overlayDir, 'execution-reports'))
+  const unsafeProvenance = spawnSync(process.execPath, [provenanceCli, 'verify', prepared.paperSlug, '--json'], {
+    cwd: repoRoot,
+    env: { ...process.env, PAPERS_DIR: libraryRoot },
+    encoding: 'utf8',
+  })
+  assert.equal(unsafeProvenance.status, 1)
+  assert.match(unsafeProvenance.stderr, /PROVENANCE_EXECUTION_INVALID/)
+  assert.equal(unsafeProvenance.stderr.includes(libraryRoot), false)
+  fs.rmSync(path.join(descriptor.overlayDir, 'execution-reports'))
+  fs.rmSync(outsideReports, { recursive: true, force: true })
   assert.deepEqual(await recoverPublications({ libraryRoot, lockTimeoutMs: 0 }), [])
   assert.equal(fs.readFileSync(path.join(prepared.workspaceDir, 'publication.json'), 'utf8').includes(fs.realpathSync(libraryRoot)), false)
 })

@@ -26,12 +26,56 @@ import {
 } from '../../plugins/codex-paper/src/shared/generation-workspace.mjs'
 import { replaceWorkspaceJson, withWorkspaceMutationSync } from '../../plugins/codex-paper/src/shared/workspace-writer.mjs'
 import { resolveExplicitPackage } from '../../plugins/codex-paper/src/shared/paper-library.mjs'
+import {
+  collectRuntimeAttestation,
+  collectSoftwareProvenance,
+} from '../../plugins/codex-paper/src/shared/generation-provenance.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const holderScript = path.join(repoRoot, 'scripts/tests/helpers/storage-lock-holder.mjs')
 const prepareScript = path.join(repoRoot, 'plugins/codex-paper/skills/study/scripts/prepare-paper.js')
 const workspaceCli = path.join(repoRoot, 'plugins/codex-paper/skills/study/scripts/workspace-cli.js')
 const fixturePdf = path.join(repoRoot, 'benchmarks/fixtures/pdf/front-matter-noise.pdf')
+
+function directIdentity(paperId, sourceRevisionId, generationId) {
+  return {
+    schemaVersion: '2.0.0',
+    paperId,
+    sourceRevisionId,
+    generationId,
+    source: { sha256: sourceRevisionId.replace(/^sha256:/, '') },
+    canonical: { resolution: 'source_fallback', primary: null, aliases: [], candidates: [], diagnostics: [] },
+    generation: {
+      inputs: {
+        workflow: 'study',
+        pluginBaseVersion: '2.0.0',
+        evidenceSchemaVersion: '2.0.0',
+        factsSchemaVersion: '2.1.0',
+        reasoningSchemaVersion: '2.0.0',
+        authoringEngine: { provider: 'unavailable', model: 'unavailable', evidence: 'unavailable' },
+      },
+    },
+    provenance: { pluginBuildVersion: '2.0.0+codex.test' },
+  }
+}
+
+function directProvenance(identity) {
+  return {
+    runtime: collectRuntimeAttestation(process.env, {
+      node: '22.23.1',
+      npm: '10.9.8',
+      python: { version: '3.11.15', implementation: 'CPython', pyMuPDF: '1.28.0' },
+    }),
+    source: {
+      kind: 'local_file',
+      filename: 'synthetic.pdf',
+      bytes: 64,
+      acquiredAt: '2026-07-30T00:00:00.000Z',
+    },
+    software: collectSoftwareProvenance(identity),
+    identity,
+  }
+}
 
 test('shared storage CLI exit mapping distinguishes policy, conflict, and operation failures', () => {
   assert.equal(storageCliExitCode({ code: 'ARGUMENT_INVALID' }), 2)
@@ -230,10 +274,12 @@ test('workspace initialization failure is preserved as a failed exact workspace'
     return originalRename.apply(this, arguments)
   }
   try {
+    const identity = directIdentity(`source:${sourceRevisionId}`, sourceRevisionId, generationId)
     await assert.rejects(createGenerationWorkspace({
-      identity: { paperId: `source:${sourceRevisionId}`, sourceRevisionId, generationId },
+      identity,
       routeSlug: 'failure-preserved',
       paperRecord: { paperKey },
+      provenance: directProvenance(identity),
       libraryRoot,
       populate: async ({ packageDir }) => { fs.writeFileSync(path.join(packageDir, 'prepared.txt'), 'complete') },
     }), /synthetic workspace publish failure/)
@@ -252,7 +298,7 @@ test('double rename and pre-rename crash residues remain discoverable, read-only
   const paperKey = `p-${'d'.repeat(64)}`
   const sourceRevisionId = `sha256:${'e'.repeat(64)}`
   const generationId = `gen:sha256:${'f'.repeat(64)}`
-  const identity = { paperId: `source:${sourceRevisionId}`, sourceRevisionId, generationId }
+  const identity = directIdentity(`source:${sourceRevisionId}`, sourceRevisionId, generationId)
   const originalRename = fs.renameSync
   let injected = 0
   fs.renameSync = function (from, to) {
@@ -270,6 +316,7 @@ test('double rename and pre-rename crash residues remain discoverable, read-only
       identity,
       routeSlug: 'double-failure-preserved',
       paperRecord: { paperKey },
+      provenance: directProvenance(identity),
       libraryRoot,
       populate: async ({ packageDir }) => { fs.writeFileSync(path.join(packageDir, 'prepared.txt'), 'complete') },
     })
@@ -302,6 +349,7 @@ test('double rename and pre-rename crash residues remain discoverable, read-only
     identity,
     routeSlug: 'double-failure-preserved',
     paperRecord: { paperKey },
+    provenance: directProvenance(identity),
     libraryRoot,
     populate: async ({ packageDir }) => { fs.writeFileSync(path.join(packageDir, 'prepared.txt'), 'retry') },
   })
@@ -326,6 +374,9 @@ test('active workspaces reserve route slugs before C2b publication', (t) => {
 test('authoring requires exact workspace CAS and abandon is persistent without deletion', async (t) => {
   const libraryRoot = temporaryLibrary(t)
   const prepared = prepareWorkspace(libraryRoot)
+  await writeWorkspaceAuthoring(prepared.workspaceId, 'reasoning-analysis.json', '{}\n', { expectAbsent: true }, {
+    libraryRoot, lockTimeoutMs: 0, actor: 'codex',
+  })
   const first = await writeWorkspaceAuthoring(prepared.workspaceId, 'README.md', '# One\n', { expectAbsent: true }, { libraryRoot, lockTimeoutMs: 0 })
   await assert.rejects(writeWorkspaceAuthoring(prepared.workspaceId, 'README.md', '# Two\n', { expectedSha256: '0'.repeat(64) }, { libraryRoot, lockTimeoutMs: 0 }), { code: 'WRITE_PRECONDITION_FAILED' })
   await writeWorkspaceAuthoring(prepared.workspaceId, 'README.md', '# Two\n', { expectedSha256: first.sha256 }, { libraryRoot, lockTimeoutMs: 0 })
@@ -371,6 +422,10 @@ test('workspace CLI requires exact references and preserves CAS exit contracts',
   assert.equal(JSON.parse(listed.stdout)[0].workspaceId, prepared.workspaceId)
   const missing = spawnSync(process.execPath, [workspaceCli, 'inspect', 'latest'], { encoding: 'utf8', env })
   assert.equal(missing.status, 2)
+  const reasoning = spawnSync(process.execPath, [workspaceCli, 'write', prepared.workspaceId, 'reasoning-analysis.json', '--stdin', '--expect-absent', '--actor', 'codex'], {
+    input: '{}\n', encoding: 'utf8', env
+  })
+  assert.equal(reasoning.status, 0, reasoning.stderr)
   const created = spawnSync(process.execPath, [workspaceCli, 'write', prepared.workspaceId, 'summary.md', '--stdin', '--expect-absent', '--json'], {
     input: '# Summary\n', encoding: 'utf8', env
   })

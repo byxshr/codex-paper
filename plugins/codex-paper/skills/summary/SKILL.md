@@ -42,13 +42,23 @@ Supports multiple input formats:
 - **Direct HTTPS PDF URL**: `https://arxiv.org/pdf/1706.03762.pdf`
 - **arXiv URL**: `https://arxiv.org/abs/1706.03762`
 
-Use the shared preparation entrypoint:
+Use the shared preparation entrypoint. From this skill directory in a
+repository checkout, prefer the root wrapper:
 
 ```bash
 USER_INPUT="<user-input>"
 OUTPUT_LANG="en"   # or zh, based on the user's request
-node ../study/scripts/prepare-paper.js "$USER_INPUT" --workflow summary --language "$OUTPUT_LANG" --context paper-only --profile auto
+bash ../../../../scripts/codex-paper.sh prepare "$USER_INPUT" --workflow summary --language "$OUTPUT_LANG" --context paper-only --profile auto \
+  --authoring-provider unavailable --authoring-model unavailable
 ```
+
+In an installed plugin cache without the repository wrapper, use
+`node ../study/scripts/prepare-paper.js ...` with the same arguments. If
+preparation reports `PROVENANCE_RUNTIME_NONCONFORMANT`, use
+`../../../../scripts/codex-paper.sh runtime-status` and `runtime-setup` only
+when that repository script exists. Otherwise stop and ask the user to run the
+root commands from a codex-paper repository checkout; never bypass the
+content-runtime gate.
 
 The preparation identity includes the summary workflow and output language. A new run creates a private generation workspace and returns its exact `workspaceId`, `workspaceDir`, and package `paperDir`; preparation does not update `paper.json`, `current.json`, or `index.json`, and it is not visible in the Viewer. An already published exact generation may still be reused read-only with `--resume`. Legacy flat packages remain read-only until explicit migration.
 
@@ -86,7 +96,7 @@ PAPER_DIR="<prepare-output.paperDir>"
 node ../study/scripts/render-from-analysis.js "$PAPER_DIR" summary "$OUTPUT_LANG"
 ```
 
-This creates `quick-summary.md` from the structured analysis layer through the shared workspace writer. Any manual refinement must use `workspace-write` with the current file SHA-256; never edit workspace files directly. Preserve the same structure and do not add new facts.
+This creates `quick-summary.md` from the structured analysis layer through the shared workspace writer. Any manual refinement must use `workspace-write ... --actor codex` with the current file SHA-256; never edit workspace files directly. Preserve the same structure and do not add new facts.
 
 If the user language differs from the paper language, use the rendered file as a scaffold and translate the prose sections into the user language while preserving technical terms, metric values, and `Source:` notes.
 

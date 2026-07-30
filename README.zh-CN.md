@@ -249,6 +249,7 @@ bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh layout-test
 bash scripts/codex-paper.sh storage-test
 bash scripts/codex-paper.sh publication-test
+bash scripts/codex-paper.sh provenance-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
@@ -260,15 +261,18 @@ prepare 阶段的新生成内容只进入私有 generation workspace；不会创
 ```bash
 bash scripts/codex-paper.sh workspace-list --json
 bash scripts/codex-paper.sh workspace-inspect <workspace-id-or-path> --json
-bash scripts/codex-paper.sh workspace-write <workspace> README.md --stdin --expect-absent
+bash scripts/codex-paper.sh workspace-write <workspace> README.md --stdin --expect-absent --actor codex
+bash scripts/codex-paper.sh provenance-resolve <workspace> --adopt-current <event-id>
 bash scripts/codex-paper.sh workspace-tags <workspace> --tag <领域> --tag <方法>
 bash scripts/codex-paper.sh workspace-abandon <workspace> --json
 bash scripts/codex-paper.sh publish-workspace <validated-workspace> --json
 bash scripts/codex-paper.sh publication-recover --json
 bash scripts/codex-paper.sh reindex --json
+bash scripts/codex-paper.sh provenance-inspect <paper-or-workspace> --json
+bash scripts/codex-paper.sh provenance-verify <paper-or-workspace> --json
 ```
 
-只有 `phase=complete`、intrinsic `publishable=true` 且标准策略为 `allow_publish` 的 Validation Report 才能发布。`current.json` 是 Viewer 可见性的提交点，`index.json` 只是可重建投影；正式 generation 每次权威解析都会核验 manifest，既有无 manifest 的 managed generation 继续按兼容模式只读。
+只有 `phase=complete`、intrinsic `publishable=true` 且标准策略为 `allow_publish` 的 Validation Report 才能发布。新发布使用 Generation Manifest 2.0 作为唯一权威 provenance，统一记录 source、内容运行时、软件、authoring 事件、artifact DAG、validation 和封存前 execution binding；Manifest 1.0 保持只读兼容。`current.json` 是 Viewer 可见性的提交点，`index.json` 只是可重建投影。
 
 验证一个已完成的学习包：
 
@@ -421,10 +425,14 @@ node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 bash scripts/codex-paper.sh pdf-security-test
 
 # 先准备论文数据、facts.json 和 evidence-ledger.json
-node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf --workflow study --language zh
+bash scripts/codex-paper.sh prepare /path/to/paper.pdf --workflow study --language zh \
+  --authoring-provider unavailable --authoring-model unavailable
 
 # 测试 identity、fingerprint、只读复用和 flat-layout 碰撞保护
 bash scripts/codex-paper.sh identity-test
+
+# 测试统一 provenance 与 Manifest 1.0/2.0 兼容
+bash scripts/codex-paper.sh provenance-test
 
 # 校验研究推理
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug

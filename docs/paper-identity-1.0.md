@@ -1,5 +1,7 @@
 # Paper Identity 1.0
 
+> Historical compatibility contract: new workspaces use Paper Identity / Generation Contract 2.0 so content-runtime and declared authoring-engine inputs participate in the generation fingerprint. Identity 1.0 records remain read-only and retain their original IDs.
+
 Paper Identity 1.0 separates three concepts that the historical flat layout conflated:
 
 - `paperId` groups a paper by a high-confidence DOI or arXiv base identifier, with `source:sha256:<hash>` as the fail-closed fallback.

@@ -68,7 +68,7 @@ jobs:
           bash scripts/codex-paper.sh sandbox-test
           bash scripts/codex-paper.sh sandbox-status
 
-      - name: Paper Identity 1.0
+      - name: Paper Identity 1.0 and 2.0
         run: bash scripts/codex-paper.sh identity-test
 
       - name: Paper Library Layout 1.0
@@ -79,6 +79,9 @@ jobs:
 
       - name: Generation Publication and Recovery
         run: bash scripts/codex-paper.sh publication-test
+
+      - name: Unified Provenance and Generation Manifest 2.0
+        run: bash scripts/codex-paper.sh provenance-test
 
       - name: Validation Report 1.0
         run: bash scripts/codex-paper.sh validation-test

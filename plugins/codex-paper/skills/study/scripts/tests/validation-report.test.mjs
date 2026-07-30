@@ -15,6 +15,7 @@ import {
   writeValidationReportAtomic
 } from '../validation-report.js';
 import { buildPaperIdentity, canonicalStringify, identityProjection } from '../paper-identity.js';
+import { writeTestProvenanceDraft } from './helpers/provenance-fixture.js';
 
 const EVIDENCE_A = 'ev-p001-par-aaaaaaaaaa';
 const EVIDENCE_B = 'ev-p001-par-bbbbbbbbbb';
@@ -40,13 +41,20 @@ function writableWorkspaceFixture(prefix = 'codex-paper-validation-workspace-') 
   const workspaceDir = path.join(root, '.codex-paper', 'workspaces-v1', workspaceId);
   const packageDir = path.join(workspaceDir, 'package');
   fs.mkdirSync(packageDir, { recursive: true });
+  const paperKey = `p-${'3'.repeat(64)}`;
+  const paperId = `source:sha256:${'1'.repeat(64)}`;
+  const sourceRevisionId = `sha256:${'1'.repeat(64)}`;
+  const generationId = `gen:sha256:${'2'.repeat(64)}`;
   writeJson(workspaceDir, 'workspace.json', {
-    schemaVersion: '1.0.0', workspaceId, state: 'authoring', paperKey: `p-${'3'.repeat(64)}`,
-    paperId: `source:sha256:${'1'.repeat(64)}`, sourceRevisionId: `sha256:${'1'.repeat(64)}`,
-    generationId: `gen:sha256:${'2'.repeat(64)}`,
+    schemaVersion: '1.0.0', workspaceId, state: 'authoring', paperKey,
+    paperId, sourceRevisionId,
+    generationId,
     targetPackageRelativePath: `sources/sha256-${'1'.repeat(64)}/generations/gen-sha256-${'2'.repeat(64)}/package`,
     routeSlug: 'validation-fixture', createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(),
     lastSuccessfulStep: 'initialized', diagnostics: [], publishIntent: { paperRecord: {}, reconciliation: null, tags: [] }
+  });
+  writeTestProvenanceDraft({
+    workspaceDir, workspaceId, paperKey, paperId, sourceRevisionId, generationId
   });
   return { root, workspaceDir, packageDir };
 }
@@ -482,9 +490,18 @@ test('identity validation is conditional, fail-closed, and does not affect legac
       slug: 'validation-fixture', sourceSha256, workflow: 'study', language: 'en',
       contextMode: 'paper-only', requestedPaperProfile: 'auto', parserBackend: 'fixture', parserBackendVersion: '1',
       contentContract: {
-        version: '1.0.0',
-        sha256: crypto.createHash('sha256').update(canonicalStringify({ version: '1.0.0', files: contractFiles })).digest('hex'),
+        version: '2.0.0',
+        sha256: crypto.createHash('sha256').update(canonicalStringify({ version: '2.0.0', files: contractFiles })).digest('hex'),
         files: contractFiles
+      },
+      runtimeContract: {
+        policyVersion: '1.0.0',
+        policySha256: 'a'.repeat(64),
+        node: '22.23.1',
+        python: '3.11.15',
+        pyMuPDF: '1.28.0',
+        parserPolicyVersion: '1.0.0',
+        parserPolicySha256: 'b'.repeat(64)
       },
       pluginBuildVersion: '2.0.0+codex.test', platform: 'test', createdAt: '2026-07-21T00:00:00.000Z'
     });

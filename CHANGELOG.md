@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added Generation Manifest 2.0 as the authoritative provenance for new publications, covering redacted source acquisition, content runtime and software attestations, declared authoring WAL events, artifact dependencies, validation, execution bindings, diagnostics, and unsigned integrity metadata.
+- Added Paper Identity / Generation Contract 2.0 so content-affecting runtime and declared authoring model inputs participate in generation fingerprints while timestamps, repository state, OS patch level, cachebusters, and unavailable Codex metadata remain provenance-only.
+- Added `provenance-inspect`, `provenance-verify`, and `provenance-test`; Manifest and Identity 1.0 remain zero-write compatible, unknown versions fail closed, and post-seal execution reports bind the authoritative manifest without mutating it.
+- Hardened P1-4 after independent review: freeze Manifest 2.0, share Validation Report intrinsic hashing, make stale dependencies actionable, add audited ambiguous-WAL adoption, verify exact repository ownership, move observations outside locks, narrow content fingerprints, and improve runtime/authoring diagnostics.
+- Hardened P1-4 after the second review: demote validation state before WAL adoption, expose pending event IDs and redacted CLI details, distinguish adopted from reconciled events, normalize missing dependencies/projections, and re-derive manifest diagnostics.
+- Closed the third P1-4 review round: redact absolute paths and URL secrets in CLI messages as well as details, type missing provenance drafts, suppress empty details, preserve valid JSON under truncation, unify the checkout publish command, and document the frozen-schema adoption encoding.
+- Closed the fourth P1-4 review round with a conditional pass: path redaction now covers punctuation-adjacent and doubled-slash absolute paths, while URL sanitation no longer relies on collision-prone textual placeholders.
 - Added the P1-3a runtime and supply-chain baseline: exact Node/npm/CPython/PyMuPDF versions, a private hash-locked Python venv, Nuxt 4, digest-pinned sandbox Python, expiring dependency exceptions, secret scanning, and reviewed artifact hashes.
 - Added runtime, dependency-audit, secret-scan, and supply-chain commands plus dedicated CI and Repository Guard enforcement; existing generations and manifests remain untouched for P1-4 provenance integration.
 - Hardened the P1-3a baseline after review: runtime replacement is locked and rollback-safe, parser overrides are version checked, fixture provenance uses the managed interpreter, and the Docker sandbox keeps a complete package-manager-free Python standard library.

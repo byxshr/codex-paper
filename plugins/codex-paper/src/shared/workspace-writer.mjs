@@ -4,7 +4,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { resolveExplicitPackage, WORKSPACE_ID_PATTERN } from './paper-library.mjs'
 import { resolveGenerationWorkspace, transitionWorkspaceToAuthoringLocked } from './generation-workspace.mjs'
-import { atomicWriteFile, atomicWriteJson, fileWritePrecondition, readFileNoFollowBounded, withStorageLocksSync } from './storage-transaction.mjs'
+import { fileWritePrecondition, readFileNoFollowBounded, withStorageLocksSync } from './storage-transaction.mjs'
+import { writeAuthoringWithProvenance } from './generation-provenance.mjs'
 
 const WRITE_POLICIES = Object.freeze({
   analysis: new Set(['analysis.json']),
@@ -72,18 +73,22 @@ function assertWritePolicy(policy, relativePath) {
 export function replaceWorkspaceFile({ descriptor, lockHandle, relativePath, data, policy, maxBytes = 16 * 1024 * 1024, mode = 0o600 }) {
   assertWritePolicy(policy, relativePath)
   const precondition = fileWritePrecondition(path.join(descriptor.packageDir, ...relativePath.split('/')), maxBytes)
-  return atomicWriteFile({
-    root: descriptor.packageDir, relativePath, data, lockHandle, requiredLock: descriptor.workspaceLockKey,
-    maxBytes, mode, ...precondition
+  return writeAuthoringWithProvenance({
+    workspace: descriptor, relativePath, data, precondition, actor: 'tool', lockHandle, maxBytes, mode
   })
 }
 
 export function replaceWorkspaceJson({ descriptor, lockHandle, relativePath, value, policy, maxBytes = 64 * 1024 * 1024 }) {
   assertWritePolicy(policy, relativePath)
   const precondition = fileWritePrecondition(path.join(descriptor.packageDir, ...relativePath.split('/')), maxBytes)
-  return atomicWriteJson({
-    root: descriptor.packageDir, relativePath, value, lockHandle, requiredLock: descriptor.workspaceLockKey,
-    maxBytes, ...precondition
+  return writeAuthoringWithProvenance({
+    workspace: descriptor,
+    relativePath,
+    data: `${JSON.stringify(value, null, 2)}\n`,
+    precondition,
+    actor: 'tool',
+    lockHandle,
+    maxBytes,
   })
 }
 

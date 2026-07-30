@@ -19,6 +19,14 @@ import {
   readPaperIdentity,
   sha256File
 } from './paper-identity.js';
+import {
+  validationReportIntrinsic,
+  validationReportIntrinsicHash
+} from '../../../src/shared/validation-report-intrinsic.mjs';
+export {
+  validationReportIntrinsic,
+  validationReportIntrinsicHash
+} from '../../../src/shared/validation-report-intrinsic.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPORT_SCHEMA_PATH = path.resolve(__dirname, '../schemas/validation-report-1.0.schema.json');
@@ -222,7 +230,7 @@ export function createValidationReport({
   const outcome = blocking.length > 0
     ? 'block'
     : (phase === 'complete' ? 'allow_publish' : 'allow_authoring');
-  const intrinsic = {
+  const intrinsic = validationReportIntrinsic({
     schemaVersion: REPORT_VERSION,
     status,
     phase,
@@ -231,7 +239,7 @@ export function createValidationReport({
     validator: VALIDATOR,
     findings: normalized,
     referenceCoverage
-  };
+  });
   const report = {
     ...intrinsic,
     gate: {
@@ -242,7 +250,7 @@ export function createValidationReport({
     generatedAt,
     reportHash: {
       algorithm: 'sha256',
-      value: sha256(stableJson(intrinsic))
+      value: validationReportIntrinsicHash(intrinsic)
     },
     errors,
     warnings
@@ -261,17 +269,7 @@ export function validateValidationReportForPublication(report) {
     error.statusCode = 422;
     throw error;
   }
-  const intrinsic = {
-    schemaVersion: report.schemaVersion,
-    status: report.status,
-    phase: report.phase,
-    publishable: report.publishable,
-    scope: report.scope,
-    validator: report.validator,
-    findings: report.findings,
-    referenceCoverage: report.referenceCoverage
-  };
-  const expectedHash = sha256(stableJson(intrinsic));
+  const expectedHash = validationReportIntrinsicHash(report);
   const projectedErrors = report.findings.filter((finding) => finding.severity === 'error');
   const projectedWarnings = report.findings.filter((finding) => finding.severity === 'warning');
   if (report.reportHash?.value !== expectedHash

@@ -27,6 +27,7 @@ import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { generationDirectoryName, resolveExplicitPackage } from '../../../src/shared/paper-library.mjs'
+import { readProvenanceDraft, reportIntrinsicHash } from '../../../src/shared/generation-provenance.mjs'
 import {
   atomicRemoveFile,
   atomicWriteJson,
@@ -628,6 +629,35 @@ function reportPolicyForDescriptor(descriptor) {
   return null
 }
 
+function generationBindingForDescriptor(descriptor) {
+  if (descriptor.mode === 'generation_workspace_v1') {
+    const draft = readProvenanceDraft(descriptor)
+    return {
+      phase: 'preseal',
+      manifestId: draft.manifestId,
+      manifestHash: null,
+      manifestFileSha256: null,
+      generationId: descriptor.generationId,
+    }
+  }
+  if (descriptor.mode === 'managed_v1' || descriptor.mode === 'managed_generation_v1') {
+    const binding = {
+      phase: 'published',
+      manifestId: descriptor.current?.manifestId || descriptor.manifest?.manifestId,
+      manifestHash: descriptor.current?.manifestHash || descriptor.manifest?.manifestHash,
+      manifestFileSha256: descriptor.current?.manifestFileSha256 || descriptor.integrity?.manifestFileSha256,
+      generationId: descriptor.generationId,
+    }
+    if (!/^gm-sha256-[a-f0-9]{64}$/.test(String(binding.manifestId || ''))
+      || !/^[a-f0-9]{64}$/.test(String(binding.manifestHash || ''))
+      || !/^[a-f0-9]{64}$/.test(String(binding.manifestFileSha256 || ''))) {
+      throw new SandboxError('Published execution reports require a complete authoritative manifest binding.')
+    }
+    return binding
+  }
+  return null
+}
+
 function reportTarget(input, env, executionId = randomBytes(16).toString('hex')) {
   const { paperDir, descriptor } = resolvePaperDir(input, env)
   const policy = reportPolicyForDescriptor(descriptor)
@@ -640,6 +670,7 @@ function reportTarget(input, env, executionId = randomBytes(16).toString('hex'))
     descriptorMode: descriptor.mode,
     generationId: descriptor.generationId,
     workspaceId: descriptor.workspaceId || null,
+    generationBinding: generationBindingForDescriptor(descriptor),
     ...policy,
     pendingPath: `${policy.relativeRoot}/.${executionId}.pending`,
     finalPath: `${policy.relativeRoot}/${timestamp}-${executionId}.json`,
@@ -733,7 +764,8 @@ function snapshotApprovedCode(plan) {
 function commitReport(reservation, report, env) {
   const current = reportTarget(reservation.input, env, reservation.executionId)
   if (current.paperDir !== reservation.paperDir || current.descriptorMode !== reservation.descriptorMode
-    || current.generationId !== reservation.generationId || current.workspaceId !== reservation.workspaceId) {
+    || current.generationId !== reservation.generationId || current.workspaceId !== reservation.workspaceId
+    || stableJson(current.generationBinding) !== stableJson(reservation.generationBinding)) {
     throw new SandboxError('Execution report target changed after approval.')
   }
   return withReportLock(reservation, env, (lockHandle) => {
@@ -790,7 +822,9 @@ export async function executeApprovedPlan(input, token, { env = process.env } = 
       limits: plan.limits,
       artifacts: results,
       outcome: failed ? 'fail' : 'pass',
+      generationBinding: reservation.generationBinding,
     }
+    report.reportHash = { algorithm: 'sha256', value: reportIntrinsicHash(report) }
     commitReport(reservation, report, env)
     return { report, reportPath: path.join(reservation.root, ...reservation.finalPath.split('/')), exitCode: failed ? EXIT.EXECUTION : EXIT.OK }
   } catch (error) {

@@ -36,9 +36,15 @@ import {
   resolveGenerationWorkspace
 } from '../../../src/shared/generation-workspace.mjs';
 import {
+  assertContentRuntime,
+  collectSoftwareProvenance,
+  collectRuntimeAttestation,
+  deriveManifestId,
+  runtimeGenerationContract,
+  writeAuthoringWithProvenance
+} from '../../../src/shared/generation-provenance.mjs';
+import {
   MAX_LOCK_TIMEOUT_MS,
-  atomicWriteFile,
-  atomicWriteJson,
   readFileNoFollowBounded,
   storageCliExitCode
 } from '../../../src/shared/storage-transaction.mjs';
@@ -88,6 +94,8 @@ function parsePrepareArgs(argv) {
     replace: false,
     reconcileIdentity: null,
     resumeWorkspace: null,
+    authoringProvider: 'unavailable',
+    authoringModel: 'unavailable',
     lockTimeoutMs: 10_000
   };
 
@@ -116,6 +124,12 @@ function parsePrepareArgs(argv) {
       index += 1;
     } else if (arg === '--resume-workspace') {
       args.resumeWorkspace = argv[index + 1];
+      index += 1;
+    } else if (arg === '--authoring-provider') {
+      args.authoringProvider = argv[index + 1];
+      index += 1;
+    } else if (arg === '--authoring-model') {
+      args.authoringModel = argv[index + 1];
       index += 1;
     } else if (arg === '--lock-timeout-ms') {
       args.lockTimeoutMs = Number(argv[index + 1]);
@@ -148,6 +162,8 @@ function parsePrepareArgs(argv) {
   if (args.resumeWorkspace && (args.resume || args.newRevision || args.replace)) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume-workspace cannot be combined with --resume, --new-revision, or --replace.');
   if (!Number.isInteger(args.lockTimeoutMs) || args.lockTimeoutMs < 0 || args.lockTimeoutMs > MAX_LOCK_TIMEOUT_MS) throw new PaperIdentityError('ARGUMENT_INVALID', `--lock-timeout-ms must be an integer from 0 to ${MAX_LOCK_TIMEOUT_MS}.`);
   if (args.reconcileIdentity !== null && !args.reconcileIdentity) throw new PaperIdentityError('ARGUMENT_INVALID', '--reconcile-identity requires an existing route alias.');
+  if (!args.authoringProvider || args.authoringProvider.length > 80) throw new PaperIdentityError('ARGUMENT_INVALID', '--authoring-provider requires a bounded value.');
+  if (!args.authoringModel || args.authoringModel.length > 160) throw new PaperIdentityError('ARGUMENT_INVALID', '--authoring-model requires a bounded value.');
 
   return args;
 }
@@ -156,8 +172,12 @@ async function resolveInput(input) {
   const staged = await stagePdfInput(input);
   return {
     inputPath: staged.path,
-    sourceUrl: /^https:\/\//i.test(input) ? input : null,
+    sourceUrl: staged.sourceUrl || null,
+    requestedUrl: /^[a-z][a-z0-9+.-]*:/i.test(input) ? input : null,
+    sourceKind: staged.sourceUrl ? 'remote_https' : 'local_file',
     sourceFilename: staged.sourceFilename,
+    sourceBytes: staged.bytes,
+    acquiredAt: staged.acquiredAt,
     inputWarnings: staged.warnings || [],
     cleanup: staged.cleanup
   };
@@ -411,6 +431,8 @@ export async function preparePaper(userInput, options = {}) {
   const replace = options.replace === true;
   const reconcileIdentity = options.reconcileIdentity || null;
   const resumeWorkspace = options.resumeWorkspace || null;
+  const authoringProvider = options.authoringProvider || 'unavailable';
+  const authoringModel = options.authoringModel || 'unavailable';
   const lockTimeoutMs = options.lockTimeoutMs ?? 10_000;
   if (!CONTEXT_MODES.has(contextMode)) {
     throw new PaperIdentityError('ARGUMENT_INVALID', 'contextMode must be paper-only, canonical, or literature.');
@@ -424,12 +446,14 @@ export async function preparePaper(userInput, options = {}) {
   if (resume && newRevision) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume and --new-revision are mutually exclusive.');
   if (resumeWorkspace && (resume || newRevision || replace)) throw new PaperIdentityError('ARGUMENT_INVALID', '--resume-workspace cannot be combined with --resume, --new-revision, or --replace.');
   if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs < 0 || lockTimeoutMs > MAX_LOCK_TIMEOUT_MS) throw new PaperIdentityError('ARGUMENT_INVALID', `lockTimeoutMs must be an integer from 0 to ${MAX_LOCK_TIMEOUT_MS}.`);
+  if (!authoringProvider || authoringProvider.length > 80 || !authoringModel || authoringModel.length > 160) throw new PaperIdentityError('ARGUMENT_INVALID', 'authoring provider/model must be bounded non-empty values.');
 
   const libraryRoot = path.resolve(options.libraryRoot || process.env.PAPERS_DIR || path.join(os.homedir(), 'codex-papers'));
   const layout = getLibraryLayout(libraryRoot);
   fs.mkdirSync(libraryRoot, { recursive: true, mode: 0o700 });
   const indexState = readIndexPreserveShape(layout.indexPath);
 
+  const runtimeAttestation = assertContentRuntime(options.runtimeAttestation || collectRuntimeAttestation(options.env || process.env));
   const resolvedInput = await resolveInput(userInput);
   const { inputPath, sourceUrl } = resolvedInput;
   try {
@@ -444,7 +468,7 @@ export async function preparePaper(userInput, options = {}) {
   const identity = buildPaperIdentity({
     slug: basePaperSlug,
     sourceSha256,
-    sourceUrl,
+    sourceUrl: resolvedInput.sourceKind === 'remote_https' ? resolvedInput.requestedUrl : null,
     pages: detailed.pages,
     workflow,
     language,
@@ -452,6 +476,9 @@ export async function preparePaper(userInput, options = {}) {
     requestedPaperProfile: profile,
     parserBackend: detailed.parserMetadata?.parser || 'unknown',
     parserBackendVersion: detailed.parserMetadata?.backendVersion || 'unknown',
+    runtimeContract: runtimeGenerationContract(runtimeAttestation),
+    authoringProvider,
+    authoringModel,
     pluginBuildVersion: detailed.parserMetadata?.parserBuildVersion || parsed.parserBuildVersion || PLUGIN_BASE_VERSION,
     platform: platformProvenance()
   });
@@ -584,6 +611,15 @@ export async function preparePaper(userInput, options = {}) {
     qualityFlags: parsed.qualityFlags,
     url: sourceUrl
   };
+  meta.generationManifest = {
+    schemaVersion: '2.0.0',
+    manifestId: deriveManifestId({
+      paperKey: managed.record.paperKey,
+      sourceRevisionId: identity.sourceRevisionId,
+      generationId: identity.generationId
+    })
+  };
+  const softwareProvenance = collectSoftwareProvenance(identity);
 
   const workspace = await createGenerationWorkspace({
     identity,
@@ -591,15 +627,36 @@ export async function preparePaper(userInput, options = {}) {
     paperRecord: managed.record,
     reconciliation: preparation.reconciliation,
     tags: [],
+    provenance: {
+      identity,
+      runtime: runtimeAttestation,
+      software: softwareProvenance,
+      source: {
+        kind: resolvedInput.sourceKind,
+        requestedUrl: resolvedInput.requestedUrl,
+        resolvedUrl: sourceUrl,
+        filename: sourceFilename,
+        bytes: resolvedInput.sourceBytes,
+        acquiredAt: resolvedInput.acquiredAt
+      }
+    },
     libraryRoot,
     lockTimeoutMs,
-    populate: async ({ packageDir, lockHandle, requiredLock }) => {
-      const write = (relativePath, data, maxBytes = 128 * 1024 * 1024) => atomicWriteFile({
-        root: packageDir, relativePath, data, lockHandle, requiredLock, expectAbsent: true, maxBytes
+    populate: async ({ workspace: initializingWorkspace, lockHandle }) => {
+      const write = (relativePath, data, maxBytes = 128 * 1024 * 1024) => writeAuthoringWithProvenance({
+        workspace: initializingWorkspace,
+        relativePath,
+        data,
+        precondition: { expectAbsent: true },
+        actor: 'tool',
+        lockHandle,
+        maxBytes
       });
-      const writeJson = (relativePath, value) => atomicWriteJson({
-        root: packageDir, relativePath, value, lockHandle, requiredLock, expectAbsent: true, maxBytes: 64 * 1024 * 1024
-      });
+      const writeJson = (relativePath, value) => write(
+        relativePath,
+        `${JSON.stringify(value, null, 2)}\n`,
+        64 * 1024 * 1024
+      );
       write('paper.pdf', readFileNoFollowBounded(inputPath, 128 * 1024 * 1024));
       writeJson('paper-data.json', paperData);
       writeJson('evidence-ledger.json', ledger);

@@ -50,6 +50,18 @@ test('prepare creates private workspaces, resumes exactly, and keeps multiple ge
     assert.match(output.identity.paperId, /^source:sha256:/);
     const paperDir = output.paperDir;
     const identity = JSON.parse(fs.readFileSync(path.join(paperDir, '.codex-paper/paper-identity.json')));
+    const provenance = JSON.parse(fs.readFileSync(path.join(output.workspaceDir, 'provenance-draft.json')));
+    assert.equal(provenance.authoringEvents.length, 7);
+    assert.equal(provenance.authoringEvents.every((event) => event.state === 'completed' && event.actor === 'tool'), true);
+    assert.deepEqual(provenance.authoringEvents.map((event) => event.path), [
+      'paper.pdf',
+      'paper-data.json',
+      'evidence-ledger.json',
+      'facts.json',
+      'analysis.json',
+      'meta.json',
+      '.codex-paper/paper-identity.json'
+    ]);
     const indexPath = path.join(library, 'index.json');
     assert.equal(fs.existsSync(indexPath), false);
     assert.equal(fs.existsSync(path.join(library, '.codex-paper/store-v1')), false);

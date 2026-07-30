@@ -4,7 +4,7 @@
 
 Generation content is affected by the host Node runtime, CPython, PyMuPDF, parser policy, and generation contract. Nuxt and Vue affect only the local Viewer. The Docker runtimes affect only explicitly approved generated-code execution reports. npm and pip are installation tooling.
 
-The authoritative machine-readable classification is `security/runtime-baseline.json`. It is an input to P1-4 provenance, not a second generation manifest.
+The authoritative, distributable machine-readable classification is `plugins/codex-paper/runtime/runtime-baseline.json`. Root runtime and supply-chain tools consume this same file; Generation Manifest 2.0 records its version and SHA-256 rather than maintaining a second policy copy.
 
 ## Installation
 

@@ -94,12 +94,32 @@ Inputs supported:
 * Direct HTTPS PDF URL
 * arXiv `/abs/` or `/pdf/` URL
 
-Run the preparation entrypoint from the study skill directory:
+Run the preparation entrypoint from the study skill directory. In a repository
+checkout, use the root wrapper so the exact Node and managed Python gates run:
 
 ```bash
 OUTPUT_LANG="zh"   # use en for an English request
-node ./scripts/prepare-paper.js "<user-input>" --workflow study --language "$OUTPUT_LANG" --context paper-only --profile auto
+bash ../../../../scripts/codex-paper.sh prepare "<user-input>" --workflow study --language "$OUTPUT_LANG" --context paper-only --profile auto \
+  --authoring-provider unavailable --authoring-model unavailable
 ```
+
+If the skill is running from an installed plugin cache where the repository
+wrapper is absent, run `node ./scripts/prepare-paper.js ...` with the same
+arguments. It still fails closed on runtime drift; do not invent a path to a
+nonexistent root script.
+
+The command requires the exact content runtime. If it reports
+`PROVENANCE_RUNTIME_NONCONFORMANT`, do not bypass the gate. From this skill
+directory in a repository checkout, inspect and provision with:
+
+```bash
+bash ../../../../scripts/codex-paper.sh runtime-status
+bash ../../../../scripts/codex-paper.sh runtime-setup
+```
+
+If `../../../../scripts/codex-paper.sh` is absent in an installed plugin cache,
+stop and ask the user to open the codex-paper repository checkout and run those
+root commands there.
 
 Preparation is identity-aware and workspace-only. A new generation is initialized under `PAPERS_DIR/.codex-paper/workspaces-v1/`; preparation itself does not create or change `paper.json`, `current.json`, the formal store, or `index.json`, and it is not visible in the Viewer. If the same generation already has an active workspace, preparation fails with `WORKSPACE_EXISTS` and names the exact workspace ID; resume it with `--resume-workspace <workspaceId>` or explicitly abandon it before retrying. A retained `failed` workspace remains inspectable but does not block a fresh prepare retry. `--resume` remains reserved for exact reuse of an already published generation. A changed fingerprint creates a distinct workspace and a changed source creates a new source revision proposal. Use `--new-revision` and `--reconcile-identity <route-slug>` only with their explicit identity intent. `--replace` remains rejected; publication switches the authoritative current generation only after validation.
 
@@ -172,7 +192,7 @@ Fill `reasoning-analysis.json` yourself after reading the evidence. Send the com
 
 ```bash
 node ./scripts/workspace-cli.js write "{prepare-output.workspaceId}" reasoning-analysis.json \
-  --stdin --expected-sha256 "{scaffold-output.reasoningSha256}"
+  --stdin --expected-sha256 "{scaffold-output.reasoningSha256}" --actor codex
 ```
 
 Required reasoning contents:
@@ -204,6 +224,13 @@ node ./scripts/validate-reasoning.js "{prepare-output.paperDir}"
 
 The reasoning gate writes a draft-phase Validation Report and must return `allow_authoring` before visible authoring begins. Fix every error before writing user-facing materials. Review warnings and either fix them or explicitly reflect the limitation in the visible package. Complete `.codex-paper/reasoning-review.md` before authoring final Markdown and HTML. `--strict` is an optional warning-blocking policy; it does not change the intrinsic report status or findings.
 
+Finalize reasoning before Step 6. If reasoning changes after visible artifacts
+have been written, regenerate every affected downstream Markdown, HTML, code,
+and answering artifact through `workspace-cli.js write` so each event records
+the new dependency hashes. Publication intentionally blocks stale downstream
+dependencies and reports the affected artifact/dependency pairs.
+The blocking diagnostic code is `PROVENANCE_DEPENDENCY_STALE`.
+
 ## Step 5: Tags
 
 Infer exactly two semantic tags from the paper:
@@ -222,7 +249,28 @@ node ./scripts/workspace-cli.js tags "{prepare-output.workspaceId}" --tag "<doma
 
 ## Step 6: Write The Complete Study Package
 
-Codex must author these files from `reasoning-analysis.json` and the cited paper evidence, but every file creation or replacement must go through the shared workspace writer. Use `workspace-cli.js write <exact-workspace> <relative-path> --stdin --expect-absent` for a first write and `--expected-sha256` for replacement. Never edit `paperDir` directly. Do not use `render-from-analysis.js` as the final generator; it is only a workspace-scoped quick-summary fallback.
+Codex must author these files from `reasoning-analysis.json` and the cited paper evidence, but every file creation or replacement must go through the shared workspace writer. Use `workspace-cli.js write <exact-workspace> <relative-path> --stdin --expect-absent --actor codex` for a first write and `--expected-sha256 ... --actor codex` for replacement. Never edit `paperDir` directly. Do not use `render-from-analysis.js` as the final generator; it is only a workspace-scoped quick-summary fallback.
+
+`--depends-on <relative-path>` adds an artifact dependency; it never removes
+the default dependencies. The total dependency limit is 64 after merging and
+deduplicating defaults plus explicit values. For
+`README.md`, the writer adds or refreshes the single provenance footer, so use
+the SHA-256 returned by the writer—not a hash computed from the input bytes—for
+the next CAS replacement.
+
+If an interrupted write becomes ambiguous because the target was edited
+outside the writer, normal authoring and publication stop with
+`PROVENANCE_EVENT_UNRESOLVED`. Inspect the named event and either explicitly
+adopt the current bytes with
+`bash ../../../../scripts/codex-paper.sh provenance-resolve <workspace> --adopt-current <event-id>`
+or abandon the workspace and prepare again. Adoption is permanently recorded
+with an unknown actor and an `AUTHORING_EVENT_ADOPTED` diagnostic; it does not
+silently certify who made the edit. Use `provenance-inspect <workspace> --json`
+to obtain pending event IDs. If the root script is absent in an installed
+plugin cache, stop and ask the user to perform recovery from the repository
+checkout; do not edit the provenance draft directly. A missing target artifact
+or recorded dependency cannot be adopted safely and requires abandoning and
+preparing again.
 
 Ground every claim in `reasoning-analysis.json`, `evidence-ledger.json`, `paper-data.json`, `facts.json`, `analysis.json`, or direct `rawText` reading. Do not invent metrics, datasets, model sizes, ablations, code links, training stages, or conclusions. When mentioning quantitative results, use a natural source note such as `论文 p.8，Table 3` or `paper p.8, Table 3`; do not expose evidence IDs.
 
@@ -438,7 +486,7 @@ bash ../../scripts/runtime-python.sh ./scripts/extract-images.py \
   "{prepare-output.paperDir}/paper.pdf" \
   "<private-temporary-output>"
 node ./scripts/workspace-cli.js write "{prepare-output.workspaceId}" "images/<selected-name>" \
-  --from-file "<private-temporary-output>/<selected-file>" --expect-absent
+  --from-file "<private-temporary-output>/<selected-file>" --expect-absent --actor codex
 ```
 
 If useful figures are found, rename the most important ones descriptively, for example:
@@ -538,10 +586,10 @@ Only when the user explicitly asks to execute generated code:
 
 The CLI token proves plan integrity and single-use authorization; it does not authenticate a human. Human consent is a workflow boundary: stop after showing the plan and require a new, explicit user reply before running it. Never issue and consume a token in one uninterrupted turn. The token expires after five minutes and is single-use. If the plan does not issue a token, the supported Docker sandbox is unavailable or nonconformant; report that generated code was not executed. Never use Python, Node, a shell, `sandbox-exec`, bubblewrap, Podman, or another fallback directly on the host.
 
-After a successful standard complete validation, publish the exact workspace. Publication rechecks the report hash and standard `allow_publish` gate while holding the full storage lock hierarchy, seals a Generation Manifest 1.0, commits `current.json`, and rebuilds the index:
+After a successful standard complete validation, publish the exact workspace. Publication rechecks the report hash, content runtime, authoring WAL, execution bindings and standard `allow_publish` gate while holding the full storage lock hierarchy, seals a Generation Manifest 2.0, commits `current.json`, and rebuilds the index:
 
 ```bash
-bash scripts/codex-paper.sh publish-workspace "{prepare-output.workspaceId}" --json
+bash ../../../../scripts/codex-paper.sh publish-workspace "{prepare-output.workspaceId}" --json
 ```
 
 Do not publish a strict-blocked, draft, failed, abandoned, implicit, or different workspace. A successful command returns the manifest binding and route; only then describe the package as published or Viewer-visible. If publication is interrupted, preserve the workspace journal and run `publication-recover`; use `reindex` only to rebuild the non-authoritative index cache.

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -6,6 +7,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { isContained, listManagedRecords, resolveExplicitPackage } from '../../plugins/codex-paper/src/shared/paper-library.mjs'
+import { inventoryGenerationFiles, stableJson } from '../../plugins/codex-paper/src/shared/generation-manifest.mjs'
+import {
+  buildProvenanceDraft,
+  collectRuntimeAttestation,
+  sha256,
+} from '../../plugins/codex-paper/src/shared/generation-provenance.mjs'
 
 import {
   SandboxError,
@@ -41,6 +48,46 @@ function fixture() {
     routeSlug: 'paper', createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(),
     lastSuccessfulStep: 'initialized', diagnostics: [], publishIntent: { paperRecord: {}, reconciliation: null, tags: [] },
   }, null, 2)}\n`)
+  const runtime = collectRuntimeAttestation(process.env, {
+    node: '22.23.1',
+    npm: '10.9.8',
+    python: { version: '3.11.15', implementation: 'CPython', pyMuPDF: '1.28.0' },
+  })
+  const identity = {
+    schemaVersion: '2.0.0',
+    paperId: `source:${sourceRevisionId}`,
+    sourceRevisionId,
+    generationId,
+    source: { sha256: sourceRevisionId.replace(/^sha256:/, '') },
+    canonical: { resolution: 'source_fallback', primary: null, aliases: [], candidates: [], diagnostics: [] },
+    generation: {
+      inputs: {
+        workflow: 'study',
+        pluginBaseVersion: '2.0.0',
+        evidenceSchemaVersion: '2.0.0',
+        factsSchemaVersion: '2.1.0',
+        reasoningSchemaVersion: '2.0.0',
+        authoringEngine: { provider: 'unavailable', model: 'unavailable', evidence: 'unavailable' },
+      },
+    },
+    provenance: { pluginBuildVersion: '2.0.0+codex.test' },
+  }
+  const draft = buildProvenanceDraft({
+    workspaceId,
+    paperKey: `p-${'3'.repeat(64)}`,
+    sourceRevisionId,
+    generationId,
+    identity,
+    runtime,
+    source: {
+      kind: 'local_file',
+      filename: 'sandbox.pdf',
+      bytes: 64,
+      acquiredAt: '2026-07-30T00:00:00.000Z',
+    },
+    now: '2026-07-30T00:00:00.000Z',
+  })
+  writeFileSync(path.join(workspaceDir, 'provenance-draft.json'), `${JSON.stringify(draft, null, 2)}\n`, { mode: 0o600 })
   writeFileSync(path.join(paper, 'code', 'demo.py'), 'print("safe")\n')
   const env = {
     ...process.env,
@@ -93,6 +140,32 @@ function createPublishedGeneration(item, { createOverlay = false } = {}) {
   writeFileSync(path.join(packageDir, '.codex-paper', 'paper-identity.json'), JSON.stringify({
     paperId, sourceRevisionId, generationId, slug: 'published-paper',
   }))
+  const validationReportHash = '8'.repeat(64)
+  const manifestId = `gm-sha256-${sha256(stableJson({ paperKey, generationId, validationReportHash }))}`
+  const intrinsic = {
+    schemaVersion: '1.0.0',
+    manifestId,
+    transactionState: 'sealed',
+    transactionId: `pub-${'9'.repeat(32)}`,
+    paperKey,
+    paperId,
+    sourceRevisionId,
+    generationId,
+    sourceSha256: sourceRevisionId.replace(/^sha256:/, ''),
+    generationFingerprint: generationId.replace(/^gen:sha256:/, ''),
+    validation: { schemaVersion: '1.0.0', status: 'pass', reportHash: validationReportHash },
+    sealedAt: '2026-07-30T00:00:00.000Z',
+    files: inventoryGenerationFiles(packageDir),
+  }
+  const manifest = { ...intrinsic, manifestHash: sha256(stableJson(intrinsic)) }
+  const manifestPath = path.join(packageDir, '.codex-paper/generation-manifest.json')
+  writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`)
+  const manifestFileSha256 = createHash('sha256').update(readFileSync(manifestPath)).digest('hex')
+  writeFileSync(path.join(recordDir, 'current.json'), JSON.stringify({
+    schemaVersion: '1.0.0', paperKey, paperId, sourceRevisionId, generationId, packageRelativePath: relative,
+    manifestId, manifestHash: manifest.manifestHash, manifestFileSha256, validationReportHash,
+    publishedAt: '2026-07-30T00:00:00.000Z',
+  }))
   return { packageDir, overlayDir: path.join(recordDir, 'overlay') }
 }
 
@@ -130,6 +203,10 @@ test('matching conformance stamp enables one-time approval and report', async ()
     const result = await executeApprovedPlan(item.paper, plan.approval.token, { env: item.env })
     assert.equal(result.exitCode, 0)
     assert.equal(result.report.outcome, 'pass')
+    assert.equal(result.report.executionReportVersion, '2.0.0')
+    assert.equal(result.report.generationBinding.phase, 'preseal')
+    assert.match(result.report.generationBinding.manifestId, /^gm-sha256-[a-f0-9]{64}$/)
+    assert.match(result.report.reportHash.value, /^[a-f0-9]{64}$/)
     assert.equal(result.report.artifacts[0].outcome, 'success')
     assert.equal(result.report.artifacts[0].resourceUsage.maxRssKiB, 4096)
     assert.equal(result.report.artifacts[0].resourceUsage.measurementSource, 'container-wrapper')
@@ -160,6 +237,10 @@ test('an explicit managed generation path executes with reports in its mutable o
     assert.match(plan.approval.token, /^[a-f0-9]{64}$/)
     const result = await executeApprovedPlan(published.packageDir, plan.approval.token, { env: item.env })
     assert.equal(result.exitCode, 0)
+    assert.equal(result.report.generationBinding.phase, 'published')
+    assert.match(result.report.generationBinding.manifestId, /^gm-sha256-[a-f0-9]{64}$/)
+    assert.match(result.report.generationBinding.manifestHash, /^[a-f0-9]{64}$/)
+    assert.match(result.report.generationBinding.manifestFileSha256, /^[a-f0-9]{64}$/)
     assert.match(path.relative(realpathSync(published.overlayDir), result.reportPath), /^execution-reports\//)
     assert.match(path.relative(realpathSync(published.overlayDir), result.reportPath), /gen-sha256-[a-f0-9]{64}/)
     assert.doesNotMatch(path.relative(realpathSync(published.overlayDir), result.reportPath), /:/)

@@ -251,6 +251,7 @@ bash scripts/codex-paper.sh identity-test
 bash scripts/codex-paper.sh layout-test
 bash scripts/codex-paper.sh storage-test
 bash scripts/codex-paper.sh publication-test
+bash scripts/codex-paper.sh provenance-test
 bash scripts/codex-paper.sh benchmark-mandatory
 bash scripts/codex-paper.sh benchmark-all
 bash scripts/codex-paper.sh smoke-test
@@ -262,15 +263,18 @@ Workspace operations are explicit and CAS-protected:
 ```bash
 bash scripts/codex-paper.sh workspace-list --json
 bash scripts/codex-paper.sh workspace-inspect <workspace-id-or-path> --json
-bash scripts/codex-paper.sh workspace-write <workspace> README.md --stdin --expect-absent
+bash scripts/codex-paper.sh workspace-write <workspace> README.md --stdin --expect-absent --actor codex
+bash scripts/codex-paper.sh provenance-resolve <workspace> --adopt-current <event-id>
 bash scripts/codex-paper.sh workspace-tags <workspace> --tag <domain> --tag <method>
 bash scripts/codex-paper.sh workspace-abandon <workspace> --json
 bash scripts/codex-paper.sh publish-workspace <validated-workspace> --json
 bash scripts/codex-paper.sh publication-recover --json
 bash scripts/codex-paper.sh reindex --json
+bash scripts/codex-paper.sh provenance-inspect <paper-or-workspace> --json
+bash scripts/codex-paper.sh provenance-verify <paper-or-workspace> --json
 ```
 
-Only a complete, intrinsically publishable Validation Report with the standard `allow_publish` gate can be published. `current.json` is the visibility commit point; `index.json` is a rebuildable projection. Every sealed generation is verified against its manifest during authoritative resolution, while older unsealed managed generations remain readable for compatibility.
+Only a complete, intrinsically publishable Validation Report with the standard `allow_publish` gate can be published. New publications use Generation Manifest 2.0 as the sole authoritative provenance record, including source, content runtime, software, authoring events, artifact DAG, validation, and pre-seal execution bindings. Manifest 1.0 stays read-only compatible. `current.json` is the visibility commit point; `index.json` is a rebuildable projection.
 
 Validate one completed study package:
 
@@ -423,10 +427,14 @@ node plugins/codex-paper/skills/study/scripts/parse-pdf.js /path/to/paper.pdf
 bash scripts/codex-paper.sh pdf-security-test
 
 # Prepare a paper into paper-data.json, facts.json, and evidence-ledger.json
-node plugins/codex-paper/skills/study/scripts/prepare-paper.js /path/to/paper.pdf --workflow study --language en
+bash scripts/codex-paper.sh prepare /path/to/paper.pdf --workflow study --language en \
+  --authoring-provider unavailable --authoring-model unavailable
 
 # Test identity, fingerprint, reuse, and flat-layout collision protection
 bash scripts/codex-paper.sh identity-test
+
+# Test unified provenance and Manifest 1.0/2.0 compatibility
+bash scripts/codex-paper.sh provenance-test
 
 # Validate research reasoning
 node plugins/codex-paper/skills/study/scripts/validate-reasoning.js paper-slug

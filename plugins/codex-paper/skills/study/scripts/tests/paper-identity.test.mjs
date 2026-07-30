@@ -24,8 +24,8 @@ function tempContractFixture() {
   fs.writeFileSync(path.join(root, 'common.txt'), 'common\n');
   fs.writeFileSync(path.join(root, 'study.txt'), 'study\n');
   fs.writeFileSync(path.join(root, 'summary.txt'), 'summary\n');
-  fs.writeFileSync(path.join(root, 'skills/study/generation-contract-1.0.json'), JSON.stringify({
-    version: '1.0.0',
+  fs.writeFileSync(path.join(root, 'skills/study/generation-contract-2.0.json'), JSON.stringify({
+    version: '2.0.0',
     common: ['common.txt'],
     workflows: { study: ['study.txt'], summary: ['summary.txt'] }
   }));
@@ -35,8 +35,8 @@ function tempContractFixture() {
 function build(overrides = {}) {
   const contractFiles = [{ path: 'contract.txt', sha256: 'c'.repeat(64) }];
   const contentContract = overrides.contentContract || {
-    version: '1.0.0',
-    sha256: crypto.createHash('sha256').update(canonicalStringify({ version: '1.0.0', files: contractFiles })).digest('hex'),
+    version: '2.0.0',
+    sha256: crypto.createHash('sha256').update(canonicalStringify({ version: '2.0.0', files: contractFiles })).digest('hex'),
     files: contractFiles
   };
   return buildPaperIdentity({
@@ -141,6 +141,8 @@ test('generation ID changes for content inputs but not provenance-only fields', 
   assert.notEqual(build({ contextMode: 'canonical', sourceUrl: 'https://example.com/paper.pdf' }).generationId, baseline.generationId);
   assert.notEqual(build({ requestedPaperProfile: 'architecture' }).generationId, baseline.generationId);
   assert.notEqual(build({ parserBackendVersion: '1.27.0' }).generationId, baseline.generationId);
+  assert.notEqual(build({ runtimeContract: { ...baseline.generation.inputs.runtimeContract, node: '22.23.2' } }).generationId, baseline.generationId);
+  assert.notEqual(build({ authoringProvider: 'openai', authoringModel: 'gpt-provenance-test' }).generationId, baseline.generationId);
   assert.notEqual(build({ sourceSha256: 'd'.repeat(64) }).generationId, baseline.generationId);
 });
 
@@ -148,7 +150,7 @@ test('validates identity and produces the stable projection', () => {
   const identity = build();
   assert.equal(validatePaperIdentity(identity).valid, true);
   assert.deepEqual(identityProjection(identity), {
-    identitySchemaVersion: '1.0.0',
+    identitySchemaVersion: '2.0.0',
     paperId: `source:sha256:${SOURCE_HASH}`,
     sourceRevisionId: `sha256:${SOURCE_HASH}`,
     generationId: identity.generationId,

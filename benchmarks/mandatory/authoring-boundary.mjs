@@ -1,7 +1,7 @@
 import { writeWorkspaceAuthoring } from '../../plugins/codex-paper/src/shared/generation-workspace.mjs';
 
 async function write(workspace, relativePath, content) {
-  return writeWorkspaceAuthoring(workspace, relativePath, content, { expectAbsent: true });
+  return writeWorkspaceAuthoring(workspace, relativePath, content, { expectAbsent: true }, { actor: 'codex' });
 }
 
 async function writeJson(workspace, relativePath, value) {

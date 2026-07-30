@@ -1,5 +1,7 @@
 # Generation Publication 1.0
 
+> Historical P0-C2 baseline: new publications now seal Generation Manifest 2.0 as defined in [Provenance Manifest 2.0](provenance-manifest-2.0.md). Manifest 1.0 remains a read-only compatibility contract and is not upgraded in place.
+
 Generation Publication 1.0 turns one exact validated workspace into a sealed managed generation. It uses the C2a no-follow writer and hierarchical locks; it does not claim filesystem-wide multi-file atomicity.
 
 The commit sequence is `sealed workspace → generation rename → current.json → index.json`. The generation rename makes immutable bytes durable, while `current.json` makes them authoritative and Viewer-visible. `index.json` is a cache and can always be rebuilt from records/current/manifests.

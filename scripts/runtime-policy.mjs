@@ -21,7 +21,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const policyPath = path.join(repoRoot, 'security/runtime-baseline.json')
+const policyPath = path.join(repoRoot, 'plugins/codex-paper/runtime/runtime-baseline.json')
 const requirementsPath = path.join(repoRoot, 'plugins/codex-paper/runtime/python/requirements.lock')
 const policy = JSON.parse(readFileSync(policyPath, 'utf8'))
 const EXIT = Object.freeze({ OK: 0, POLICY: 1, CONFIG: 2, UNAVAILABLE: 3 })

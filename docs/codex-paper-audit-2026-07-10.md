@@ -365,6 +365,7 @@ S0 已冻结 2.0 → 2.1 的兼容方向和 unknown-version 只读策略，P0-B2
 
 - evidence ID alias、引用迁移和旧包只读策略；
 - 面向 identity/layout/manifest 的可重复、可回滚 migration，禁止隐式迁移或读取时写回；
+- 为每个长期支持的 manifest 版本保留已封存 golden fixture，并用当前 reader 做零写回兼容验证；Manifest 2.0 首个 golden 随本项落地，避免只靠 schema 文件 hash 约束兼容性；
 - `doctor`、`reindex`、backup/restore 和 index/package drift 修复；
 - migration 前后 hash、验证报告与失败恢复测试。
 
@@ -400,6 +401,7 @@ P0-C2a 最终 Review 还确认了以下非阻塞工程化债务。它们不改�
 - 统一安全的目录创建与遍历辅助逻辑；同 workspace 写入继续由 workspace lock 串行，预期外竞争和不安全目录状态必须 fail closed；
 - 改进 Repository Guard 的 authority-aware 静态分析和消费者覆盖。在新机制能识别实际写权限及绕过路径前，保留显式消费者清单和完整 mutation tests，不以单纯 import 扫描替代现有门禁；
 - 对上述重构增加行为等价、安全回归和性能门禁，至少覆盖 repository/security、storage transaction、workspace lifecycle、Guard mutation 和规模化 workspace-list benchmark。
+- 收敛 `stableValue`/`stableJson` 等 canonical JSON 辅助实现，并把 `generation-provenance.mjs` 中内容生产逻辑与纯验证/读取逻辑拆分；拆分必须保持既有 Generation Contract 2.0 指纹和已发布 Manifest 2.0 reader 行为不变。
 
 职责边界保持不变：lock doctor、损坏锁恢复以及 migration/backup/restore 属于 P1-2；已完成的 publication/manifest/current/index 协议不在本项返工；Web/API streaming、Ask 队列和请求可观测性属于 P1-5。Code Review 已驳回的删除确认 TTL、冗余字符串转换和已由 workspace lock 排除的目录竞争不登记为缺陷。
 
@@ -584,7 +586,7 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 
 ### M3：必要 P1 工程与恢复能力
 
-- **当前状态：已进入 M3，下一项为 P1-3a。**
+- **当前状态：已进入 M3；P1-3a、P1-4 已完成本地实现，下一项为 P1-2。**
 - **主线基础链必须按顺序执行：**
   1. `P1-3a`：完成依赖告警归因，固定 Node/Python/Docker 与关键依赖基线，明确哪些 runtime 输入影响 generation 内容；
   2. `P1-4`：基于上述基线，把 source、execution、validation、环境和人工编辑 provenance 汇入唯一 authoritative manifest，并冻结迁移目标 schema；
@@ -673,7 +675,7 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 
 - 跟踪基线：2026-07-10
 - 开发分支：`codex/audit-optimizations-2026-07-10`
-- 当前阶段：`M3`“必要 P1 工程与恢复能力”；M0、M1、M2 均已正式关闭。P1-3a 已完成五轮独立 Review，并由 [CI run 30529700654](https://github.com/byxshr/codex-paper/actions/runs/30529700654) 完成 Linux 自包含 runtime、Docker 双运行时 conformance 与全量回归验收；当前下一开发项为 `P1-4`，后续仍按 `P1-4 → P1-2 → P1-3b` 严格串行。
+- 当前阶段：`M3`“必要 P1 工程与恢复能力”；M0、M1、M2 均已正式关闭。P1-3a 已完成独立 Review 与远端 CI；P1-4 第四轮 Review 已给出条件性 `PASS`，代码修订及 pinned-runtime 本地全量验收完成，等待阶段提交和远端 Docker sandbox conformance 关闭最后一个外部证据条件。当前下一开发项为 `P1-2`，后续按 `P1-2 → P1-3b` 严格串行。
 - 编号规则：与第 3 章优先级总表一致；一个工作包可拆成多个 Issue，但父项按最保守子项状态汇总。
 - 子项映射：`P0-C1` 对应 C1a identity/fingerprint 与 C1b layout/resolver/overlay，`P0-C2` 对应 C2a workspace/locks/writers 与 C2b publish/manifest/index/recovery；`P1-2` 对应 migration/alias 与 recovery，`P1-3` 对应 dependency/runtime governance 与 repository engineering，`P1-7` 对应 a11y 与 privacy/lifecycle controls；更新父项时必须在“工作位置”列出全部关联 Issue。
 - 初始化说明：下表的 `未开始` 表示“尚未在本台账登记本轮实现活动”，不表示仓库中完全没有相关基础能力。
@@ -693,7 +695,7 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 | `P1-1` | P1 | 深层版面解析与 benchmark 校准 | `未开始` | `未推送` | — | — | 基础链 `P1-3a → P1-4 → P1-2 → P1-3b` 完成后，复用 B1 fixture/golden 和 B3 finding 语义扩展双栏、header/footer、脚注和表格 grid benchmark | 2026-07-27 |
 | `P1-2` | P1 | 兼容实现、迁移与恢复工具 | `未开始` | `未推送` | — | — | 阻塞于 P1-4 manifest schema 冻结；之后实施 identity/layout/manifest migration、doctor/reindex、backup/restore 和 rollback | 2026-07-27 |
 | `P1-3` | P1 | 依赖治理、测试与仓库工程化 | `开发中` | `已推送` | `codex/audit-optimizations-2026-07-10`；P1-3a commits `3917956`、`deed5a9`、`f0fb0d9`、`23df1b0`、`2c2b7db`、`bd91c61`；`docs/P1-3A_IMPLEMENTATION_PLAN.md`；`docs/P1-3A_CODE_REVIEW_SUMMARY.md`；五轮 `docs/P1-3A_CODE_REVIEW_FINDINGS*.md`；`docs/dependency-runtime-supply-chain-policy.md`；`security/`；runtime/dependency/secret/supply-chain scripts | `P1-3a=Review 完成/已推送/远端验收完成`：固定 Node 22.23.1、npm 10.9.8、CPython 3.11.15、PyMuPDF 1.28.0；升级 Nuxt 4.5.1；根 audit 为 0，Web 仅保留 12 个精确、2026-08-31 到期的 high 例外；受管自包含 CPython runtime 已完成 macOS/Linux load/rpath relocation、零 symlink和完整树 attestation，parser 在使用点复核 containment；双 digest sandbox、secret scan、policy self-validation、reviewed artifact hashes、Repository Guard 与 CI gates 已落地；五轮 Review 最终 `PASS`。远端 [CI run 30529700654](https://github.com/byxshr/codex-paper/actions/runs/30529700654) 通过 Linux runtime、Docker conformance、repository/security 207/207、study 87/87 及全部安全/生命周期/benchmark/build/smoke gates。`P1-3b=未开始`，故父项保持开发中 | 进入 P1-4；既有 validation 并发测试 flake 与可选诊断命名清理保留至 P1-3b | 2026-07-30 |
-| `P1-4` | P1 | 统一完整 provenance | `未开始` | `未推送` | — | P1-3a runtime/dependency 机器可读基线与远端 Linux/Docker 验收已完成 | 创建 P1-4 开发计划，冻结唯一 authoritative manifest provenance schema，再启动 P1-2 | 2026-07-30 |
+| `P1-4` | P1 | 统一完整 provenance | `开发完成` | `未推送` | `codex/audit-optimizations-2026-07-10`；`docs/P1-4_IMPLEMENTATION_PLAN.md`；`docs/P1-4_CODE_REVIEW_SUMMARY.md`；四轮 `docs/P1-4_CODE_REVIEW_FINDINGS*.md`；`docs/provenance-manifest-2.0.md`；`docs/paper-identity-2.0.md`；ADR 0006；Generation Manifest/Paper Identity/Generation Contract 2.0 schemas 与共享 provenance engine | Manifest/Identity 1.0 零写回兼容；2.0 source/runtime/software/validation/execution/authoring/migration/integrity 汇聚、WAL、artifact DAG、pre/post-seal execution binding、inspect/verify CLI、Guard 与 CI gate已完成。前三轮所有实质 finding 已关闭；第四轮结论为条件性 `PASS` 且无 correctness defect，采纳 S1/S2：绝对路径脱敏不再依赖前导字符 allowlist，URL 与非 URL 文本分段处理以消除占位符碰撞；S3 的末端绝对路径检查作为纵深防御保留。Manifest golden 兼容样本转入 P1-2；canonical JSON 收敛和 provenance 模块拆分转入 P1-3b。runtime/status、dependency audit、supply-chain 21/21、candidate secret scan、repository/security 209/209、study 100/100、PDF 12/12、identity 17/17、layout 7/7、storage 16/16、publication 15/15、Validation 24/24、provenance 13/13、mandatory 2/2、external 5/5、reasoning/package 各 12/12、Nuxt production build、HTTP security、smoke 和官方 validator 均通过；本机 Docker unavailable 按策略 fail closed；active path `plugins/codex-paper/`，版本 `2.0.0+codex.20260730125252` | 创建阶段提交并推送；远端 Docker sandbox conformance 通过后标记 Review 完成，再实施 `P1-2` migration/doctor/backup/restore | 2026-07-30 |
 | `P1-5` | P1 | Web/API 流式 I/O、队列与可观测性 | `未开始` | `未推送` | — | — | P1-1 后实施；聚焦 stream/range、剩余结构预算、request ID、全局有界 Ask 队列和取消/可观测性 | 2026-07-27 |
 | `P1-6` | P1 | 分享策略、导出 allowlist 与版权元数据 | `未开始` | `未推送` | — | — | P1-7 后实施；定义 local-full/shareable/audit allowlist、dry-run、确认流程和版权元数据 | 2026-07-27 |
 | `P1-7` | P1 | 基础可访问性与隐私/生命周期控制 | `未开始` | `未推送` | — | — | P1-5 后实施；建立键盘/ARIA/axe、Ask consent 和 trash/chat/report 生命周期控制 | 2026-07-27 |
@@ -709,9 +711,9 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 前置 | 1 | 0 | 0 | 0 | 0 | 1 | 0 |
 | P0 | 9 | 0 | 0 | 1 | 0 | 8 | 0 |
-| P1 | 7 | 6 | 1 | 0 | 0 | 0 | 0 |
+| P1 | 7 | 5 | 1 | 1 | 0 | 0 | 0 |
 | P2 | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
-| **合计** | **22** | **11** | **1** | **1** | **0** | **9** | **0** |
+| **合计** | **22** | **10** | **1** | **2** | **0** | **9** | **0** |
 
 | 交付状态 | 未推送 | 已推送 | 已合并 | 合计 |
 |---|---:|---:|---:|---:|
@@ -811,3 +813,9 @@ P0-B3 已提供明确三态和 warning。高级 dashboard 只有在 M2 的 ident
 | 2026-07-30 | `P1-3` / `P1-3a` Linux ELF remediation | 状态保持 `Review 完成 / 已推送` | Commit `23df1b0` 的 [CI run 30528729769](https://github.com/byxshr/codex-paper/actions/runs/30528729769) 已通过 bootstrap 权限与 `lib64` 归一化，随后按设计拒绝 setup-python 的绝对 native dependency。依据真实 Linux 证据将原“只拒绝”边界收敛为受限重定位：仅把 verified bootstrap prefix 内且已复制目标存在的 `DT_RPATH`、`DT_RUNPATH` 和 absolute `DT_NEEDED` 原位改为更短的 `$ORIGIN` 相对值；替换无法容纳、目标缺失或残留绝对引用继续 fail closed，并由 `readelf`、native import、Guard mutation 和供应链单测复核 | Codex |
 | 2026-07-30 | `P1-3` / `P1-3a` remote CI remediation | 状态保持 `Review 完成 / 已推送` | Commit `2c2b7db` 的 [CI run 30529280163](https://github.com/byxshr/codex-paper/actions/runs/30529280163) 证明受限 ELF 重定位有效：Install dependencies、Runtime baseline 与 dependency audit 全部通过。随后 unit gate 因新增 3 个 Linux runtime 回归而稳定执行 `207/207`，但契约仍期望 `204`，故按精确计数策略失败；同步将 repository/security 固定计数升级为 207，并由现有 mutation test 防止未来静默少跑 | Codex |
 | 2026-07-30 | `P1-3` / `P1-3a` remote acceptance | P1-3a 保持 `Review 完成 / 已推送`；远端验收关闭 | Commit `bd91c61` 的 [CI run 30529700654](https://github.com/byxshr/codex-paper/actions/runs/30529700654) 全绿：Linux 自包含 CPython runtime、dependency audit、repository/security 207/207、study 87/87、PDF security、digest-pinned Docker Node/Python conformance、Identity、Layout、Storage、Publication、Validation、mandatory/external/reasoning/package benchmarks、Nuxt production build、Viewer security 和 smoke 全部通过。P1-3a 正式交付完成；P1-3 父项因 P1-3b 未开始继续保持开发中，下一项进入 P1-4 | Codex |
+| 2026-07-30 | `P1-4` | `未开始 / 未推送` → `开发中 / 未推送` | 启动统一完整 provenance：冻结 Generation Manifest 2.0、Identity/Generation Contract 2.0、runtime/source/software attestation、authoring 事件、artifact DAG 与 execution binding；既有 1.0 generation 保持只读兼容，不做追溯式改写 | Codex |
+| 2026-07-30 | `P1-4` | `开发中 / 未推送` → `开发完成 / 未推送` | 完成 Generation Manifest 2.0、Identity/Generation Contract 2.0、唯一 runtime policy、脱敏 source/software/runtime provenance、authoring WAL、artifact DAG、validation 与 execution seal binding、post-seal overlay binding、inspect/verify CLI、Repository Guard 和独立 CI gate。repository/security 208/208、study 95/95、provenance 8/8、identity 17/17、layout 7/7、storage 16/16、publication 15/15、Validation 24/24、PDF 12/12、mandatory 2/2、external 5/5、reasoning/package 各 12/12、production build、HTTP security、smoke、官方 validator 和 canonical marketplace 重装均通过；active 版本 `2.0.0+codex.20260730103545`。本机 Docker unavailable 按策略 fail closed，完整 Docker conformance 留待远端 CI；下一项为 P1-2，M3 保持进行中 | Codex |
+| 2026-07-30 | `P1-4` Review remediation round 1 | 状态保持 `开发完成 / 未推送` | 采纳两个 workflow blocker 和全部实质 medium finding：stale dependency 返回下游/依赖/hash 元组并文档化 reasoning-first 重生成顺序；新增显式受审计 `provenance-resolve --adopt-current` 修复歧义 WAL；冻结 Manifest 2.0 schema hash，共享 Validation Report intrinsic hash 并补真实 round trip；Git provenance 要求精确 repository root，software observation 移至锁外，generation fingerprint 排除 sealing/verifier，自报 provider/model 默认 unavailable；补齐 runtime remediation、actor/dependency/README/projection/schema 诊断和 Identity 2.0 文档。L6 持久化性能优化因不得无 profiling 弱化 durability，转入 P1-3b；L8 正常发布路径不可达，保留现有 pre-seal projection；L10 无关未跟踪文件继续不纳入本阶段。repository/security 209/209、study 99/99、provenance 12/12、Validation 24/24、identity 17/17、publication 15/15、storage 16/16、mandatory 2/2、production build、Viewer security、smoke、Repository Contract、supply-chain 21/21、secret scan 与官方 validator 均通过；canonical marketplace 重装版本 `2.0.0+codex.20260730113820`，等待修订后独立复核 | Codex |
+| 2026-07-30 | `P1-4` Review remediation round 2 | 状态保持 `开发完成 / 未推送` | 采纳 N1–N9：显式 adoption 先持久降级 workspace 再修改 WAL，故障注入证明崩溃后保持 `authoring` 且事件仍 pending；inspect 输出待处理 event ID，三个 CLI 输出有界脱敏 details；修正 checkout/installed skill remediation；拆分 adopted/reconciled 诊断，统一缺失依赖与 README/meta projection 错误，依赖上限按默认+追加总数计算，并由 manifest validator 重新推导 diagnostics。新增 wrapper/CLI adoption 和 `PUBLICATION_RUNTIME_MISMATCH` 回归。M1 golden fixture 纳入 P1-2，N10 canonical JSON/混合模块拆分纳入 P1-3b。repository/security 209/209、study 99/99、provenance 12/12、publication 15/15、Validation 24/24、identity 17/17、layout 7/7、storage 16/16、PDF 12/12、mandatory 2/2、external 5/5、reasoning/package 各 12/12、runtime/dependency/supply-chain/candidate secret scan、build、Viewer security、smoke 和官方 validator 全部通过；canonical marketplace 重装版本 `2.0.0+codex.20260730121018`，等待第二轮修订后的独立复核 | Codex |
+| 2026-07-30 | `P1-4` Review remediation round 3 | 状态保持 `开发完成 / 未推送` | 第三轮结论无阻塞 finding；采纳 R1–R6：CLI message 与 details 共用路径/URL credential/query/fragment/secret 脱敏，缺失 provenance draft 归一为 `PROVENANCE_DRAFT_MISSING`，空 details 不输出，超限 details 仍为带截断标记的合法 JSON；study publish 使用统一 checkout-relative wrapper；记录 frozen Manifest 2.0 下 adoption pair 间接编码原因；workspace fault injection 收敛到 helper。修正 R7 的 N10 时间线陈述；R8 无关未跟踪文件继续排除，本机 Docker 继续 fail closed。新增独立 formatter/CLI 回归后 study 100/100、provenance 13/13；repository/security 209/209、Guard 79/79、storage 16/16、publication 15/15、mandatory 2/2、supply-chain 21/21、candidate secret scan 和官方 validator 通过；canonical marketplace 重装版本 `2.0.0+codex.20260730123606`，等待第三轮修订后的独立复核 | Codex |
+| 2026-07-30 | `P1-4` Review remediation round 4 | 状态保持 `开发完成 / 未推送`；获得条件性 `PASS` | 第四轮未发现 correctness defect。采纳 S1/S2 hardening：路径脱敏覆盖 bracket/comma/angle/doubled-slash 等任意标点相邻形式；URL 与非 URL 文本直接分段净化，消除用户文本与内部 placeholder 碰撞。S3 末端绝对路径检查有意保留为 defense in depth。固定运行时本地验收通过 provenance 13/13、Guard 79/79、repository/security 209/209、study 100/100、supply-chain 21/21、mandatory 2/2；candidate secret scan 与官方 validator 通过；canonical marketplace 重装版本 `2.0.0+codex.20260730125252`。Review 剩余外部条件为推送后远端 CI 的真实 Docker sandbox conformance；通过后标记 Review 完成 | Codex |

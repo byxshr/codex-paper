@@ -258,6 +258,8 @@ async function downloadFile(input, options = {}) {
         cleanup: staging.cleanup,
         sourceUrl: current.href,
         sourceFilename: path.basename(current.pathname) || 'paper.pdf',
+        bytes: received,
+        acquiredAt: new Date().toISOString(),
         warnings: /application\/pdf/i.test(contentType) ? [] : [`Server Content-Type was ${contentType || 'missing'}; PDF signature was valid.`]
       }
     } catch (error) {
@@ -301,7 +303,15 @@ async function stagePdfInput(input, options = {}) {
   try {
     secureCopy(source, staging.filePath, size)
     assertPdfMagic(staging.filePath, options.maxBytes ?? POLICY.maxInputBytes)
-    return { path: staging.filePath, cleanup: staging.cleanup, sourceUrl: null, sourceFilename: path.basename(source), warnings: path.extname(source).toLowerCase() === '.pdf' ? [] : ['Local file has no .pdf extension; PDF signature was valid.'] }
+    return {
+      path: staging.filePath,
+      cleanup: staging.cleanup,
+      sourceUrl: null,
+      sourceFilename: path.basename(source),
+      bytes: size,
+      acquiredAt: new Date().toISOString(),
+      warnings: path.extname(source).toLowerCase() === '.pdf' ? [] : ['Local file has no .pdf extension; PDF signature was valid.']
+    }
   } catch (error) {
     staging.cleanup()
     throw error

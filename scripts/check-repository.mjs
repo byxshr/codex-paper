@@ -29,10 +29,13 @@ const MIGRATION_SCRIPT = 'plugins/codex-paper/skills/study/scripts/migrate-packa
 const VIEWER_COMPATIBILITY = 'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs'
 const VALIDATION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json'
 const VALIDATION_ENGINE = 'plugins/codex-paper/skills/study/scripts/validation-report.js'
+const VALIDATION_INTRINSIC = 'plugins/codex-paper/src/shared/validation-report-intrinsic.mjs'
 const VALIDATION_API = 'plugins/codex-paper/src/web/server/api/papers/[slug]/validation.get.ts'
-const IDENTITY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json'
+const LEGACY_IDENTITY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json'
+const IDENTITY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-identity-2.0.schema.json'
 const IDENTITY_ENGINE = 'plugins/codex-paper/skills/study/scripts/paper-identity.js'
-const GENERATION_CONTRACT = 'plugins/codex-paper/skills/study/generation-contract-1.0.json'
+const LEGACY_GENERATION_CONTRACT = 'plugins/codex-paper/skills/study/generation-contract-1.0.json'
+const GENERATION_CONTRACT = 'plugins/codex-paper/skills/study/generation-contract-2.0.json'
 const PREPARE_SCRIPT = 'plugins/codex-paper/skills/study/scripts/prepare-paper.js'
 const LIBRARY_RESOLVER = 'plugins/codex-paper/src/shared/paper-library.mjs'
 const CURRENT_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-current-1.0.schema.json'
@@ -45,15 +48,21 @@ const STORAGE_ENGINE = 'plugins/codex-paper/src/shared/storage-transaction.mjs'
 const WORKSPACE_WRITER = 'plugins/codex-paper/src/shared/workspace-writer.mjs'
 const WORKSPACE_CLI = 'plugins/codex-paper/skills/study/scripts/workspace-cli.js'
 const STORAGE_TEST = 'scripts/tests/storage-transaction.test.mjs'
-const GENERATION_MANIFEST_SCHEMA = 'plugins/codex-paper/skills/study/schemas/generation-manifest-1.0.schema.json'
+const LEGACY_GENERATION_MANIFEST_SCHEMA = 'plugins/codex-paper/skills/study/schemas/generation-manifest-1.0.schema.json'
+const GENERATION_MANIFEST_SCHEMA = 'plugins/codex-paper/skills/study/schemas/generation-manifest-2.0.schema.json'
+const FROZEN_GENERATION_MANIFEST_V2_SHA256 = '514daada9b02a53424835bbac43f36cccbaeb6a9d58bdf685dd471ff43be17ce'
 const PUBLICATION_TRANSACTION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/publication-transaction-1.0.schema.json'
 const GENERATION_MANIFEST_ENGINE = 'plugins/codex-paper/src/shared/generation-manifest.mjs'
 const PUBLICATION_ENGINE = 'plugins/codex-paper/src/shared/generation-publication.mjs'
 const PUBLICATION_CLI = 'plugins/codex-paper/skills/study/scripts/publication-cli.js'
 const PUBLICATION_TEST = 'scripts/tests/generation-publication.test.mjs'
+const PROVENANCE_ENGINE = 'plugins/codex-paper/src/shared/generation-provenance.mjs'
+const PROVENANCE_CLI = 'plugins/codex-paper/skills/study/scripts/provenance-cli.js'
+const PROVENANCE_TEST = 'plugins/codex-paper/skills/study/scripts/tests/generation-provenance.test.mjs'
+const CLI_ERROR_FORMAT = 'plugins/codex-paper/src/shared/cli-error-format.mjs'
 const LIBRARY_SECURITY = 'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs'
 const WEB_CONFIG = 'plugins/codex-paper/src/web/nuxt.config.ts'
-const RUNTIME_BASELINE = 'security/runtime-baseline.json'
+const RUNTIME_BASELINE = 'plugins/codex-paper/runtime/runtime-baseline.json'
 const DEPENDENCY_POLICY = 'security/dependency-policy.json'
 const SECRET_SCAN_POLICY = 'security/secret-scan-policy.json'
 const SUPPLY_CHAIN_REVIEW = 'security/supply-chain-review.json'
@@ -118,10 +127,13 @@ const SENTINELS = [
   VIEWER_COMPATIBILITY,
   VALIDATION_SCHEMA,
   VALIDATION_ENGINE,
+  VALIDATION_INTRINSIC,
   VALIDATION_API,
   IDENTITY_SCHEMA,
+  LEGACY_IDENTITY_SCHEMA,
   IDENTITY_ENGINE,
   GENERATION_CONTRACT,
+  LEGACY_GENERATION_CONTRACT,
   PREPARE_SCRIPT,
   LIBRARY_RESOLVER,
   CURRENT_SCHEMA,
@@ -135,11 +147,16 @@ const SENTINELS = [
   WORKSPACE_CLI,
   STORAGE_TEST,
   GENERATION_MANIFEST_SCHEMA,
+  LEGACY_GENERATION_MANIFEST_SCHEMA,
   PUBLICATION_TRANSACTION_SCHEMA,
   GENERATION_MANIFEST_ENGINE,
   PUBLICATION_ENGINE,
   PUBLICATION_CLI,
   PUBLICATION_TEST,
+  PROVENANCE_ENGINE,
+  PROVENANCE_CLI,
+  PROVENANCE_TEST,
+  CLI_ERROR_FORMAT,
   LIBRARY_SECURITY,
   WEB_CONFIG,
   RUNTIME_BASELINE,
@@ -472,6 +489,10 @@ export function checkRepository({
     if (!rootScript.includes('layout-test') || !rootScript.includes('library-layout.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose layout-test`)
     if (!rootScript.includes('storage-test') || !rootScript.includes('storage-transaction.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose storage-test`)
     if (!rootScript.includes('publication-test') || !rootScript.includes('generation-publication.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose publication-test`)
+    if (!rootScript.includes('provenance-test') || !rootScript.includes('generation-provenance.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose provenance-test`)
+    for (const command of ['provenance-inspect', 'provenance-verify']) {
+      if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
+    }
     for (const command of ['publish-workspace', 'publication-recover', 'reindex']) {
       if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
     }
@@ -500,6 +521,10 @@ export function checkRepository({
     const publicationIndex = workflow.indexOf('publication-test')
     if (publicationIndex < 0 || publicationIndex < storageIndex || publicationIndex > validationIndex || publicationIndex > mandatoryIndex) {
       errors.push(`${CI_WORKFLOW} must run publication-test after storage-test and before validation-test and benchmark-mandatory`)
+    }
+    const provenanceIndex = workflow.indexOf('provenance-test')
+    if (provenanceIndex < publicationIndex || provenanceIndex > validationIndex) {
+      errors.push(`${CI_WORKFLOW} must run provenance-test after publication-test and before validation-test`)
     }
   }
 
@@ -537,8 +562,8 @@ export function checkRepository({
 
   if (existsSync(join(root, GENERATION_CONTRACT))) {
     const contract = readJson(join(root, GENERATION_CONTRACT), errors, GENERATION_CONTRACT)
-    if (contract?.version !== '1.0.0') {
-      errors.push(`${GENERATION_CONTRACT} must declare version 1.0.0`)
+    if (contract?.version !== '2.0.0') {
+      errors.push(`${GENERATION_CONTRACT} must declare version 2.0.0`)
     }
     for (const [group, paths] of [
       ['common', contract?.common],
@@ -567,26 +592,36 @@ export function checkRepository({
       ...(contract?.workflows?.study || []),
       ...(contract?.workflows?.summary || []),
     ]
-    for (const forbidden of ['.codex-plugin/plugin.json', 'package-lock.json']) {
+    for (const forbidden of [
+      '.codex-plugin/plugin.json',
+      'package-lock.json',
+      'skills/study/schemas/generation-manifest-2.0.schema.json',
+      'src/shared/generation-manifest.mjs',
+    ]) {
       if (allTrustedPaths.includes(forbidden)) errors.push(`${GENERATION_CONTRACT} must exclude provenance-only file from fingerprint: ${forbidden}`)
     }
-    if (!allTrustedPaths.includes('skills/study/scripts/paper-identity.js') || !allTrustedPaths.includes('skills/study/schemas/paper-identity-1.0.schema.json')) {
-      errors.push(`${GENERATION_CONTRACT} must trust the Paper Identity engine and schema`)
+    for (const required of [
+      'runtime/runtime-baseline.json',
+      'skills/study/scripts/paper-identity.js',
+      'skills/study/schemas/paper-identity-2.0.schema.json',
+      'src/shared/generation-provenance.mjs',
+    ]) {
+      if (!allTrustedPaths.includes(required)) errors.push(`${GENERATION_CONTRACT} must trust ${required}`)
     }
   }
 
   if (existsSync(join(root, IDENTITY_SCHEMA))) {
     const schema = readJson(join(root, IDENTITY_SCHEMA), errors, IDENTITY_SCHEMA)
-    if (schema?.$id !== 'https://github.com/byxshr/codex-paper/schemas/paper-identity-1.0.schema.json'
-      || schema?.properties?.schemaVersion?.const !== '1.0.0'
+    if (schema?.$id !== 'https://github.com/byxshr/codex-paper/schemas/paper-identity-2.0.schema.json'
+      || schema?.properties?.schemaVersion?.const !== '2.0.0'
       || !schema?.required?.includes('paperId')
       || !schema?.required?.includes('generationId')) {
-      errors.push(`${IDENTITY_SCHEMA} must preserve the strict Paper Identity 1.0 contract`)
+      errors.push(`${IDENTITY_SCHEMA} must preserve the strict Paper Identity 2.0 contract`)
     }
   }
   if (existsSync(join(root, IDENTITY_ENGINE))) {
     const source = readFileSync(join(root, IDENTITY_ENGINE), 'utf8')
-    for (const required of ['CANONICAL_ID_CONFLICT', 'canonicalStringify', 'buildContentContract', "gen:sha256:", 'pluginBuildVersion']) {
+    for (const required of ['CANONICAL_ID_CONFLICT', 'canonicalStringify', 'buildContentContract', "gen:sha256:", 'pluginBuildVersion', 'runtimeContract', 'authoringEngine', 'validateLegacyIdentitySchema']) {
       if (!source.includes(required)) errors.push(`${IDENTITY_ENGINE} must preserve identity boundary ${required}`)
     }
     if (!source.includes('sha256(canonicalStringify(generationInputs))')) {
@@ -595,8 +630,11 @@ export function checkRepository({
   }
   if (existsSync(join(root, PREPARE_SCRIPT))) {
     const source = readFileSync(join(root, PREPARE_SCRIPT), 'utf8')
-    for (const required of ['resolvePreparationAction', 'PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'RESUME_GENERATION_NOT_FOUND', 'createGenerationWorkspace', 'isActiveGenerationWorkspace', 'resumeWorkspace', 'IDENTITY_RELATIVE_PATH']) {
+    for (const required of ['resolvePreparationAction', 'PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'RESUME_GENERATION_NOT_FOUND', 'createGenerationWorkspace', 'isActiveGenerationWorkspace', 'resumeWorkspace', 'IDENTITY_RELATIVE_PATH', 'assertContentRuntime', 'collectSoftwareProvenance', '--authoring-provider', '--authoring-model']) {
       if (!source.includes(required)) errors.push(`${PREPARE_SCRIPT} must preserve fail-closed identity boundary ${required}`)
+    }
+    if (source.indexOf('collectSoftwareProvenance(identity)') > source.indexOf('createGenerationWorkspace({')) {
+      errors.push(`${PREPARE_SCRIPT} must collect software provenance before acquiring workspace storage locks`)
     }
     if (/writeLibraryIndex|writeCurrentRecord|writePaperRecord|writeJsonAtomicNoFollow|writeIndexPreserveShape|\bwriteFileSync\b|\bwriteFile\s*\(|['"](?:index|current|paper)\.json['"]/.test(source)) {
       errors.push(`${PREPARE_SCRIPT} must not publish current, record, or index during C2a`)
@@ -635,7 +673,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, WORKSPACE_ENGINE))) {
     const source = readFileSync(join(root, WORKSPACE_ENGINE), 'utf8')
-    for (const required of ['SHARED_WORKSPACES_RELATIVE_PATH', '.init-', 'WORKSPACE_EXISTS', 'resolveGenerationWorkspace', 'createWorkspaceDiagnostic', 'abandoned', 'writeWorkspaceAuthoring', 'publicationInvalid']) {
+    for (const required of ['SHARED_WORKSPACES_RELATIVE_PATH', '.init-', 'WORKSPACE_EXISTS', 'resolveGenerationWorkspace', 'createWorkspaceDiagnostic', 'abandoned', 'writeWorkspaceAuthoring', 'resolveWorkspaceAuthoringEvent', "maybeFault(options, 'after_authoring_demotion')", 'AUTHORING_EVENT_ADOPTED', 'publicationInvalid', 'buildProvenanceDraft', 'writeInitialProvenanceDraft', 'writeAuthoringWithProvenance', 'provenance?.software']) {
       if (!source.includes(required)) errors.push(`${WORKSPACE_ENGINE} must preserve workspace boundary ${required}`)
     }
     if (/latest workspace|selectLatest|most recent workspace/i.test(source)) errors.push(`${WORKSPACE_ENGINE} must not select an implicit latest workspace`)
@@ -644,32 +682,65 @@ export function checkRepository({
     if (cleanupIndex < 0 || lockIndex < 0 || cleanupIndex < lockIndex) {
       errors.push(`${WORKSPACE_ENGINE} must clean initialization residues while holding the registry lock`)
     }
+    const resolution = source.slice(source.indexOf('export async function resolveWorkspaceAuthoringEvent'))
+    const demotionIndex = resolution.indexOf('transitionWorkspaceToAuthoringLocked')
+    const adoptionIndex = resolution.indexOf('resolveUnresolvedAuthoringEvent')
+    if (demotionIndex < 0 || adoptionIndex < 0 || demotionIndex > adoptionIndex) {
+      errors.push(`${WORKSPACE_ENGINE} must demote validation state before adopting an ambiguous authoring event`)
+    }
   }
   if (existsSync(join(root, GENERATION_MANIFEST_SCHEMA))) {
     const schema = readJson(join(root, GENERATION_MANIFEST_SCHEMA), errors, GENERATION_MANIFEST_SCHEMA)
-    for (const field of ['manifestId', 'transactionId', 'paperKey', 'generationId', 'validation', 'files', 'manifestHash']) {
+    if (sha256(join(root, GENERATION_MANIFEST_SCHEMA)) !== FROZEN_GENERATION_MANIFEST_V2_SHA256) {
+      errors.push(`frozen Generation Manifest 2.0 schema hash mismatch: ${GENERATION_MANIFEST_SCHEMA}`)
+    }
+    if (schema?.properties?.schemaVersion?.const !== '2.0.0' || schema?.additionalProperties !== false) {
+      errors.push(`${GENERATION_MANIFEST_SCHEMA} must preserve the strict Generation Manifest 2.0 contract`)
+    }
+    for (const field of ['manifestId', 'transactionId', 'paperKey', 'generationId', 'source', 'generation', 'software', 'runtime', 'artifacts', 'validation', 'executions', 'authoring', 'migrations', 'diagnostics', 'integrity', 'files', 'manifestHash']) {
       if (!schema?.required?.includes(field)) errors.push(`${GENERATION_MANIFEST_SCHEMA} must require ${field}`)
     }
   }
   if (existsSync(join(root, GENERATION_MANIFEST_ENGINE))) {
     const source = readFileSync(join(root, GENERATION_MANIFEST_ENGINE), 'utf8')
-    for (const required of ['GENERATION_MANIFEST_RELATIVE_PATH', 'inventoryGenerationFiles', 'return files.sort', 'verifyGenerationManifestBinding', 'readManifestBoundFile', 'verifyGenerationManifest', 'unsealGenerationPackageForLifecycle', 'containmentRoot', 'GENERATION_MANIFEST_DIRTY', 'readFileNoFollowBounded']) {
+    for (const required of ['GENERATION_MANIFEST_RELATIVE_PATH', 'LEGACY_GENERATION_MANIFEST_VERSION', 'validateLegacyGenerationManifest', 'validateManifestV2Schema', 'inventoryGenerationFiles', 'return files.sort', 'verifyGenerationManifestBinding', 'readManifestBoundFile', 'verifyGenerationManifest', 'unsealGenerationPackageForLifecycle', 'containmentRoot', 'GENERATION_MANIFEST_DIRTY', 'readFileNoFollowBounded', 'buildArtifactGraph', 'collectExecutionReports', 'expectedDiagnostics', 'deferred_to_p2_5']) {
       if (!source.includes(required)) errors.push(`${GENERATION_MANIFEST_ENGINE} must preserve generation manifest boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, PROVENANCE_ENGINE))) {
+    const source = readFileSync(join(root, PROVENANCE_ENGINE), 'utf8')
+    for (const required of ['provenance-draft.json', 'PROVENANCE_DRAFT_MISSING', 'writeAuthoringWithProvenance', 'recoverPendingAuthoringEvents', 'resolveUnresolvedAuthoringEvent', 'MAX_AUTHORING_EVENTS', 'MAX_AUTHORING_DEPENDENCIES', 'defaultDependencies', 'buildArtifactGraph', 'PROVENANCE_DEPENDENCY_STALE', 'PROVENANCE_EVENT_UNRESOLVED', 'collectExecutionReports', 'reportIntrinsicHash', 'SOURCE_LOCATOR_REDACTED', 'AUTHORING_ACTOR_UNDECLARED', 'AUTHORING_EVENT_ADOPTED', 'AUTHORING_EVENT_RECONCILED']) {
+      if (!source.includes(required)) errors.push(`${PROVENANCE_ENGINE} must preserve provenance boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, CLI_ERROR_FORMAT))) {
+    const source = readFileSync(join(root, CLI_ERROR_FORMAT), 'utf8')
+    for (const required of ['formatCliError', 'sanitizeText', 'sanitizeHttpUrl', 'redactPathText', 'matchAll(HTTP_URL)', 'redacted-path', 'Details:', "details === '{}'", 'truncated: true']) {
+      if (!source.includes(required)) errors.push(`${CLI_ERROR_FORMAT} must preserve bounded redacted CLI detail ${required}`)
     }
   }
   if (existsSync(join(root, PUBLICATION_ENGINE))) {
     const source = readFileSync(join(root, PUBLICATION_ENGINE), 'utf8')
-    for (const required of ['validateValidationReportForPublication', 'publication.json', 'generation_committed', 'current_committed', 'index_committed', 'after_new_payload_rename', 'after_existing_payload_rename', 'after_new_payload_staged', 'persistedJournal', 'indexDiagnostics', 'withStorageLocks', 'verifyGenerationManifestBinding', 'readManifestBoundFile', 'verifyGenerationManifest', 'rebuildLibraryIndex']) {
+    for (const required of ['validateValidationReportForPublication', 'publication.json', 'generation_committed', 'current_committed', 'index_committed', 'after_new_payload_rename', 'after_existing_payload_rename', 'after_new_payload_staged', 'persistedJournal', 'indexDiagnostics', 'withStorageLocks', 'verifyGenerationManifestBinding', 'readManifestBoundFile', 'verifyGenerationManifest', 'rebuildLibraryIndex', 'recoverPendingAuthoringEvents', 'assertContentRuntime', 'verifyReadmeProjection', 'provenanceDraft']) {
       if (!source.includes(required)) errors.push(`${PUBLICATION_ENGINE} must preserve publication boundary ${required}`)
     }
     if (/rmSync\([^\n]*generation|rmSync\([^\n]*package/.test(source)) errors.push(`${PUBLICATION_ENGINE} must not delete committed generations or workspace packages`)
   }
   if (existsSync(join(root, PUBLICATION_CLI))) {
     const source = readFileSync(join(root, PUBLICATION_CLI), 'utf8')
-    for (const required of ['publishGenerationWorkspace', 'recoverPublications', 'rebuildLibraryIndex', 'MAX_LOCK_TIMEOUT_MS']) {
+    for (const required of ['publishGenerationWorkspace', 'recoverPublications', 'rebuildLibraryIndex', 'MAX_LOCK_TIMEOUT_MS', 'formatCliError']) {
       if (!source.includes(required)) errors.push(`${PUBLICATION_CLI} must expose exact publication operation ${required}`)
     }
     if (/latest workspace|selectLatest|most recent workspace/i.test(source)) errors.push(`${PUBLICATION_CLI} must not select an implicit latest workspace`)
+  }
+  if (existsSync(join(root, PROVENANCE_CLI))) {
+    const source = readFileSync(join(root, PROVENANCE_CLI), 'utf8')
+    for (const required of ['workspace_draft', 'native_2_0', 'compatible_1_0', 'unsupported', 'postSealEvents', 'pendingEvents', 'intendedSha256', 'verifyGenerationManifest', 'formatCliError']) {
+      if (!source.includes(required)) errors.push(`${PROVENANCE_CLI} must expose provenance mode ${required}`)
+    }
+  }
+  if (existsSync(join(root, WORKSPACE_CLI)) && !readFileSync(join(root, WORKSPACE_CLI), 'utf8').includes('formatCliError')) {
+    errors.push(`${WORKSPACE_CLI} must print bounded redacted operation details`)
   }
   if (existsSync(join(root, MANDATORY_WORKER)) && !readFileSync(join(root, MANDATORY_WORKER), 'utf8').includes('publishGenerationWorkspace')) {
     errors.push(`${MANDATORY_WORKER} must complete the mandatory pipeline through publication`)
@@ -686,6 +757,20 @@ export function checkRepository({
     const source = readFileSync(join(root, skillPath), 'utf8')
     if (!source.includes(`--workflow ${workflow}`) || !source.includes('--language')) {
       errors.push(`${skillPath} must pass explicit --workflow ${workflow} and --language to prepare-paper.js`)
+    }
+    if (!source.includes('--authoring-provider unavailable --authoring-model unavailable') || !source.includes('--actor codex')) {
+      errors.push(`${skillPath} must declare authoring provenance and use the codex actor for workspace writes`)
+    }
+    if (!source.includes('../../../../scripts/codex-paper.sh prepare')
+      || !source.includes('../../../../scripts/codex-paper.sh runtime-status')
+      || !source.includes('installed plugin cache')) {
+      errors.push(`${skillPath} must use repository-root runtime commands only when the checkout wrapper exists`)
+    }
+    if (workflow === 'study' && !source.includes('../../../../scripts/codex-paper.sh publish-workspace')) {
+      errors.push(`${skillPath} must publish through the same checkout-relative root wrapper`)
+    }
+    if (workflow === 'study' && (!source.includes('PROVENANCE_DEPENDENCY_STALE') || !source.includes('provenance-resolve'))) {
+      errors.push(`${skillPath} must document stale dependency regeneration and audited event recovery`)
     }
   }
 
@@ -775,6 +860,7 @@ export function checkRepository({
     if (policy?.policyVersion !== '1.0.0' || policy?.conformanceVersion !== '1.0.0') {
       errors.push(`${sandboxPolicyRelative} must declare P0-A3 policy and conformance version 1.0.0`)
     }
+    if (policy?.executionReportVersion !== '2.0.0') errors.push(`${sandboxPolicyRelative} must use provenance-bound execution reports 2.0.0`)
   }
 
   if (existsSync(join(root, RUNTIME_BASELINE))) {
@@ -910,7 +996,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, ROOT_SCRIPT))) {
     const source = readFileSync(join(root, ROOT_SCRIPT), 'utf8')
-    for (const required of ['run_counted_test_suite', '"repository-security" 207', '"study" 87', '"repository-guard-static" 77', 'preserved output: $output']) {
+    for (const required of ['run_counted_test_suite', '"repository-security" 209', '"study" 100', '"repository-guard-static" 79', 'provenance-resolve', 'cmd_prepare', 'preserved output: $output']) {
       if (!source.includes(required)) errors.push(`${ROOT_SCRIPT} must fail and preserve diagnostics when a regression test is silently not executed: ${required}`)
     }
   }
@@ -991,7 +1077,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, VALIDATION_ENGINE))) {
     const source = readFileSync(join(root, VALIDATION_ENGINE), 'utf8')
-    for (const required of ['pass_with_warnings', 'allow_authoring', 'allow_publish', 'reportHash', 'writeValidationReportAtomic', 'persistWorkspaceValidationReport', 'updateWorkspaceRecordLocked', 'createWorkspaceDiagnostic', 'validation_report_write_failed', 'validation_state_update_failed', 'preservationError', 'RESULT_VALUE_CONFLICT', 'PARSER_FRONT_MATTER_CONTAMINATION']) {
+    for (const required of ['pass_with_warnings', 'allow_authoring', 'allow_publish', 'reportHash', 'validationReportIntrinsicHash', 'writeValidationReportAtomic', 'persistWorkspaceValidationReport', 'updateWorkspaceRecordLocked', 'createWorkspaceDiagnostic', 'validation_report_write_failed', 'validation_state_update_failed', 'preservationError', 'RESULT_VALUE_CONFLICT', 'PARSER_FRONT_MATTER_CONTAMINATION']) {
       if (!source.includes(required)) errors.push(`${VALIDATION_ENGINE} must preserve Validation Report 1.0 contract ${required}`)
     }
     if (source.includes('validation-report-v2') || source.includes('validation-report-1.0.json')) errors.push(`${VALIDATION_ENGINE} must write only .codex-paper/validation-report.json`)

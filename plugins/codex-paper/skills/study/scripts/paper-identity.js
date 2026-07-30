@@ -4,12 +4,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
+import {
+  collectRuntimeAttestation,
+  normalizeAuthoringEngine,
+  runtimeGenerationContract
+} from '../../../src/shared/generation-provenance.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export const PLUGIN_ROOT = path.resolve(__dirname, '../../..');
-export const IDENTITY_SCHEMA_VERSION = '1.0.0';
-export const GENERATION_CONTRACT_VERSION = '1.0.0';
+export const IDENTITY_SCHEMA_VERSION = '2.0.0';
+export const GENERATION_CONTRACT_VERSION = '2.0.0';
 export const PACKAGE_VERSION = '2.1.0';
 export const PLUGIN_BASE_VERSION = '2.0.0';
 export const PARSER_CONTRACT_VERSION = '2.0.0';
@@ -18,10 +23,12 @@ export const FACTS_SCHEMA_VERSION = '2.1.0';
 export const REASONING_SCHEMA_VERSION = '2.0.0';
 export const IDENTITY_RELATIVE_PATH = '.codex-paper/paper-identity.json';
 
-const IDENTITY_SCHEMA_PATH = path.resolve(__dirname, '../schemas/paper-identity-1.0.schema.json');
-const GENERATION_CONTRACT_PATH = path.resolve(__dirname, '../generation-contract-1.0.json');
-const validateIdentitySchema = new Ajv2020({ allErrors: true, strict: true })
-  .compile(JSON.parse(fs.readFileSync(IDENTITY_SCHEMA_PATH, 'utf8')));
+const IDENTITY_SCHEMA_PATH = path.resolve(__dirname, '../schemas/paper-identity-2.0.schema.json');
+const LEGACY_IDENTITY_SCHEMA_PATH = path.resolve(__dirname, '../schemas/paper-identity-1.0.schema.json');
+const GENERATION_CONTRACT_PATH = path.resolve(__dirname, '../generation-contract-2.0.json');
+const schemaCompiler = new Ajv2020({ allErrors: true, strict: true });
+const validateIdentitySchema = schemaCompiler.compile(JSON.parse(fs.readFileSync(IDENTITY_SCHEMA_PATH, 'utf8')));
+const validateLegacyIdentitySchema = schemaCompiler.compile(JSON.parse(fs.readFileSync(LEGACY_IDENTITY_SCHEMA_PATH, 'utf8')));
 
 export class PaperIdentityError extends Error {
   constructor(code, message, details = {}) {
@@ -188,7 +195,7 @@ function assertContractRelativePath(relativePath) {
 export function buildContentContract(workflow, options = {}) {
   if (!['study', 'summary'].includes(workflow)) throw new PaperIdentityError('WORKFLOW_INVALID', 'Workflow must be study or summary.');
   const pluginRoot = options.pluginRoot || PLUGIN_ROOT;
-  const manifestPath = options.manifestPath || path.join(pluginRoot, 'skills/study/generation-contract-1.0.json');
+  const manifestPath = options.manifestPath || path.join(pluginRoot, 'skills/study/generation-contract-2.0.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   if (manifest.version !== GENERATION_CONTRACT_VERSION || !Array.isArray(manifest.common) || !Array.isArray(manifest.workflows?.[workflow])) {
     throw new PaperIdentityError('GENERATION_CONTRACT_INVALID', 'Generation contract manifest is invalid.');
@@ -225,6 +232,9 @@ export function buildPaperIdentity({
   parserBackendVersion,
   parserContractVersion = PARSER_CONTRACT_VERSION,
   contentContract = null,
+  runtimeContract = null,
+  authoringProvider = 'unavailable',
+  authoringModel = 'unavailable',
   pluginBuildVersion = readPluginBuildVersion(),
   platform = `${process.platform}-${process.arch}`,
   createdAt = new Date().toISOString()
@@ -248,6 +258,8 @@ export function buildPaperIdentity({
       backendVersion: String(parserBackendVersion || 'unknown'),
       contractVersion: parserContractVersion
     },
+    runtimeContract: runtimeContract || runtimeGenerationContract(collectRuntimeAttestation()),
+    authoringEngine: normalizeAuthoringEngine(authoringProvider, authoringModel),
     externalSourceLocator: contextMode === 'paper-only' ? null : normalizeExternalSourceLocator(sourceUrl),
     contentContract: contentContract || buildContentContract(workflow)
   };
@@ -280,8 +292,14 @@ export function identityProjection(identity) {
 
 export function validatePaperIdentity(identity) {
   const errors = [];
-  if (!validateIdentitySchema(identity)) {
-    errors.push(...(validateIdentitySchema.errors || []).map((error) => `${error.instancePath || '/'} ${error.message}`));
+  const validator = identity?.schemaVersion === '1.0.0'
+    ? validateLegacyIdentitySchema
+    : identity?.schemaVersion === IDENTITY_SCHEMA_VERSION
+      ? validateIdentitySchema
+      : null;
+  if (!validator) return { valid: false, errors: ['unsupported identity schema version'] };
+  if (!validator(identity)) {
+    errors.push(...(validator.errors || []).map((error) => `${error.instancePath || '/'} ${error.message}`));
     return { valid: false, errors };
   }
   const expectedFingerprint = sha256(canonicalStringify(identity.generation.inputs));

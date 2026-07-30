@@ -4,7 +4,6 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   StorageTransactionError,
-  atomicWriteFile,
   atomicWriteJson,
   fileWritePrecondition,
   readFileNoFollowBounded,
@@ -25,6 +24,13 @@ import {
   WORKSPACE_ID_PATTERN,
   workspaceStorageLockKey,
 } from './paper-library.mjs'
+import {
+  PROVENANCE_DRAFT_FILENAME,
+  buildProvenanceDraft,
+  resolveUnresolvedAuthoringEvent,
+  writeAuthoringWithProvenance,
+  writeInitialProvenanceDraft,
+} from './generation-provenance.mjs'
 
 export const GENERATION_WORKSPACE_VERSION = SHARED_WORKSPACE_VERSION
 export const WORKSPACES_RELATIVE_PATH = SHARED_WORKSPACES_RELATIVE_PATH
@@ -88,6 +94,12 @@ export function createWorkspaceDiagnostic(error, options = {}) {
   return {
     code,
     message: boundedText(error?.message || error, options.maxMessageLength ?? 600, options.redactions || [])
+  }
+}
+
+function maybeFault(options, point) {
+  if (options.faultAt === point) {
+    throw new GenerationWorkspaceError('WORKSPACE_FAULT_INJECTED', `Synthetic workspace failure at ${point}.`, 409)
   }
 }
 
@@ -187,6 +199,7 @@ function descriptor(workspaceDir, record, libraryRoot) {
     libraryRoot: getWorkspaceLayout(libraryRoot).libraryRoot,
     workspaceId: record.workspaceId,
     workspaceDir,
+    provenanceDraftPath: path.join(workspaceDir, PROVENANCE_DRAFT_FILENAME),
     packageDir,
     generationDir: packageDir,
     paperRoot: workspaceDir,
@@ -288,7 +301,7 @@ export function workspaceIdFor(identity) {
   return `ws-${paper}-${generation}-${crypto.randomBytes(16).toString('hex')}`
 }
 
-export async function createGenerationWorkspace({ identity, routeSlug, paperRecord, reconciliation = null, tags = [], populate, libraryRoot, lockTimeoutMs = 10_000 }) {
+export async function createGenerationWorkspace({ identity, routeSlug, paperRecord, reconciliation = null, tags = [], provenance, populate, libraryRoot, lockTimeoutMs = 10_000 }) {
   const layout = ensureWorkspaceRoot(libraryRoot)
   const paperKey = paperRecord?.paperKey
   if (!PAPER_KEY_PATTERN.test(String(paperKey || '')) || !ROUTE_PATTERN.test(String(routeSlug || ''))) {
@@ -327,7 +340,32 @@ export async function createGenerationWorkspace({ identity, routeSlug, paperReco
       publishIntent: { paperRecord, reconciliation, tags },
     }
     try {
-      await populate({ packageDir: path.join(initDir, 'package'), lockHandle, requiredLock: generationLock, workspaceId })
+      if (!provenance?.runtime || !provenance?.source || !provenance?.software) {
+        throw new GenerationWorkspaceError('PROVENANCE_REQUIRED', 'Generation workspace initialization requires pre-collected source, runtime, and software provenance.', 422)
+      }
+      writeInitialProvenanceDraft(initDir, buildProvenanceDraft({
+        workspaceId,
+        paperKey,
+        sourceRevisionId: identity.sourceRevisionId,
+        generationId: identity.generationId,
+        identity,
+        runtime: provenance.runtime,
+        source: provenance.source,
+        software: provenance.software,
+        now: createdAt,
+      }), lockHandle, generationLock)
+      await populate({
+        packageDir: path.join(initDir, 'package'),
+        lockHandle,
+        requiredLock: generationLock,
+        workspaceId,
+        workspace: {
+          workspaceId,
+          workspaceDir: initDir,
+          packageDir: path.join(initDir, 'package'),
+          workspaceLockKey: generationLock,
+        },
+      })
       atomicWriteJson({ root: initDir, relativePath: 'workspace.json', value: record, lockHandle, requiredLock: generationLock, expectAbsent: true })
       fs.renameSync(initDir, finalDir)
       const directoryDescriptor = fs.openSync(layout.workspacesRoot, fs.constants.O_RDONLY)
@@ -417,9 +455,51 @@ export async function writeWorkspaceAuthoring(input, relativePath, data, precond
   return withStorageLocks([current.paperLockKey, current.generationLockKey, current.workspaceLockKey], async (lockHandle) => {
     let refreshed = transitionWorkspaceToAuthoringLocked(current, lockHandle, options)
     const maxBytes = relativePath.startsWith('code/') ? 1024 * 1024 : 16 * 1024 * 1024
-    const result = atomicWriteFile({ root: refreshed.packageDir, relativePath, data, lockHandle, requiredLock: refreshed.workspaceLockKey, maxBytes, ...precondition })
+    const result = writeAuthoringWithProvenance({
+      workspace: refreshed,
+      relativePath,
+      data,
+      precondition,
+      actor: options.actor || 'unknown',
+      additionalDependencies: options.dependencies || [],
+      lockHandle,
+      maxBytes,
+    })
     refreshed = updateWorkspaceRecordLocked(refreshed, { state: 'authoring', lastSuccessfulStep: 'authoring' }, lockHandle, options)
     return result
+  }, { libraryRoot: current.libraryRoot, timeoutMs: options.lockTimeoutMs ?? 10_000 })
+}
+
+export async function resolveWorkspaceAuthoringEvent(input, eventId, options = {}) {
+  if (!/^ae-[a-f0-9]{32}$/.test(String(eventId || ''))) {
+    throw new GenerationWorkspaceError('ARGUMENT_INVALID', 'A valid pending authoring event ID is required.', 400)
+  }
+  const current = resolveGenerationWorkspace(input, options)
+  if (current.initializationResidue || current.publicationResidue || current.workspace.state === 'abandoned') {
+    throw new GenerationWorkspaceError('WORKSPACE_READ_ONLY', 'This workspace cannot resolve authoring events.', 409)
+  }
+  return withStorageLocks([current.paperLockKey, current.generationLockKey, current.workspaceLockKey], async (lockHandle) => {
+    const authoring = transitionWorkspaceToAuthoringLocked(current, lockHandle, options)
+    maybeFault(options, 'after_authoring_demotion')
+    const draft = resolveUnresolvedAuthoringEvent(authoring, eventId, lockHandle)
+    const refreshed = updateWorkspaceRecordLocked(authoring, {
+      state: 'authoring',
+      lastSuccessfulStep: 'authoring_event_resolved',
+      diagnostics: [
+        ...authoring.workspace.diagnostics,
+        {
+          code: 'AUTHORING_EVENT_ADOPTED',
+          message: 'An ambiguous pending authoring event was explicitly adopted.',
+        },
+      ].slice(-32),
+    }, lockHandle, options)
+    return {
+      workspaceId: refreshed.workspaceId,
+      eventId,
+      state: refreshed.workspace.state,
+      authoringEventCount: draft.authoringEvents.length,
+      diagnostic: 'AUTHORING_EVENT_ADOPTED',
+    }
   }, { libraryRoot: current.libraryRoot, timeoutMs: options.lockTimeoutMs ?? 10_000 })
 }
 
