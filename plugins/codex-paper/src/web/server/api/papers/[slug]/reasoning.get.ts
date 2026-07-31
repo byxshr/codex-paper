@@ -1,6 +1,5 @@
-import fs from 'fs'
-import path from 'path'
-import { readJsonFile, readOptionalJson, requirePaperDir, truncateText, validateSlug } from '../../../utils/paperAccess'
+import { readJsonPath, readOptionalInternalJson, resolveInternalFile, truncateText, validateSlug } from '../../../utils/librarySecurity.mjs'
+import { classifyStoredPackageCompatibility } from '../../../utils/storedPackageCompatibility.mjs'
 
 function trimNode(node: any) {
   if (!node || typeof node !== 'object') return node
@@ -40,25 +39,29 @@ export default defineEventHandler((event) => {
     throw createError({ statusCode: 400, statusMessage: 'Valid paper slug is required' })
   }
 
-  const paperDir = requirePaperDir(slug!)
-  const meta = readOptionalJson(path.join(paperDir, 'meta.json'), 'meta.json') || {}
-  const reasoningPath = path.join(paperDir, 'reasoning-analysis.json')
-  const ledgerPath = path.join(paperDir, 'evidence-ledger.json')
-
-  if (!fs.existsSync(reasoningPath) || !fs.existsSync(ledgerPath)) {
+  const meta = readOptionalInternalJson(slug!, 'meta.json', 'meta.json') || {}
+  let reasoningFile
+  let ledgerFile
+  try {
+    reasoningFile = resolveInternalFile(slug!, 'reasoning-analysis.json')
+    ledgerFile = resolveInternalFile(slug!, 'evidence-ledger.json')
+  } catch (error: any) {
+    if (error?.statusCode !== 404) throw error
     return {
       available: false,
       reason: 'v2 reasoning is not available for this package',
-      packageVersion: meta.packageVersion || 'legacy'
+      packageVersion: meta.packageVersion || 'legacy',
+      compatibility: classifyStoredPackageCompatibility(slug!, { meta, reasoning: null })
     }
   }
 
-  const reasoning = readJsonFile(reasoningPath, 'reasoning-analysis.json')
-  const validationReport = readOptionalJson(path.join(paperDir, '.codex-paper', 'validation-report.json'), 'validation-report.json')
+  const reasoning = readJsonPath(reasoningFile.path, 'reasoning-analysis.json')
+  const validationReport = readOptionalInternalJson(slug!, '.codex-paper/validation-report.json', 'validation-report.json')
 
   return {
     available: true,
     packageVersion: meta.packageVersion || reasoning.schemaVersion || '2.0.0',
+    compatibility: classifyStoredPackageCompatibility(slug!, { meta, reasoning }),
     contextMode: reasoning.contextMode,
     paperType: reasoning.paperType,
     difficulty: reasoning.difficulty,

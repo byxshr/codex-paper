@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.2.0",
+  "fixtureId": "front-matter-noise",
+  "requiredAssertions": {
+    "title": "Synthetic Front Matter Noise",
+    "paperSlug": "synthetic-front-matter-noise",
+    "pageCount": 1,
+    "authors": ["Ada Stone", "Ben River"],
+    "abstractPhrases": ["28.4 BLEU", "Equal contribution", "Copyright 2026"],
+    "sectionPhrases": {
+      "introduction": ["compact method"],
+      "conclusion": ["28.4 BLEU"]
+    },
+    "evidencePhrases": ["28.4 BLEU", "Equal contribution", "Conference 2017", "Copyright 2026"],
+    "parserBackend": "pymupdf",
+    "resultClaims2_1": {
+      "required": [
+        { "metric": "BLEU", "value": 28.4, "languagePair": "EN-DE" }
+      ],
+      "forbiddenValues": [2017, 2026],
+      "requiresDirectEvidenceRefs": true,
+      "requiresKeyResultsProjection": true,
+      "forbiddenCorePhrases": ["Equal contribution", "Conference 2017", "Copyright 2026"],
+      "forbiddenAnalysisPhrases": ["Equal contribution", "2017", "2026"]
+    },
+    "validationReport1_0": {
+      "expectedStatus": "pass_with_warnings",
+      "expectedFindingCodes": ["PARSER_FRONT_MATTER_CONTAMINATION"]
+    }
+  },
+  "authoring": {
+    "summary": "The synthetic paper reports 28.4 BLEU on EN-DE under controlled conditions.",
+    "primaryResult": "28.4 BLEU",
+    "primaryEvidenceSelector": "The method achieves 28.4 BLEU on the EN-DE benchmark.",
+    "supportingEvidenceSelectors": ["The method achieves 28.4 BLEU on the EN-DE benchmark."],
+    "conflictEvidenceSelector": null,
+    "visibleConflict": null
+  }
+}

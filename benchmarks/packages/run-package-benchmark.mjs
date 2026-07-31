@@ -102,8 +102,45 @@ function reasoning() {
 
 function createV2Package() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-package-bench-'));
-  writeJson(path.join(dir, 'meta.json'), { slug: 'package-fixture', packageVersion: '2.0.0', learningArtifacts: [{ type: 'code', path: 'code/core-concept-demo.py', runCommand: 'python3 core-concept-demo.py', purpose: 'minimal behavior' }] });
-  writeJson(path.join(dir, 'evidence-ledger.json'), { evidence: [{ id: EVIDENCE_ID, text: 'The method reports a 3% improvement on the benchmark.', quote: 'The method reports a 3% improvement on the benchmark.' }], quality: { parser: 'pymupdf', readingOrder: 'high', sectionCoverage: 'high', tableExtraction: 'text-only', warnings: [] } });
+  const evidenceText = 'The method reports a 3% improvement on the benchmark.';
+  writeJson(path.join(dir, 'meta.json'), { slug: 'package-fixture', packageVersion: '2.1.0', learningArtifacts: [{ type: 'code', path: 'code/core-concept-demo.py', runCommand: 'python3 core-concept-demo.py', purpose: 'minimal behavior' }] });
+  writeJson(path.join(dir, 'paper-data.json'), { paperSlug: 'package-fixture', parserVersion: 'benchmark', abstract: evidenceText });
+  writeJson(path.join(dir, 'facts.json'), {
+    schemaVersion: '2.1.0',
+    paperSlug: 'package-fixture',
+    parserVersion: 'benchmark',
+    coreClaims: [],
+    resultClaims: [],
+    keyResults: [],
+    limitations: []
+  });
+  writeJson(path.join(dir, 'analysis.json'), {
+    paperSlug: 'package-fixture',
+    parserVersion: 'benchmark',
+    analysisVersion: '1.0.0',
+    resultsTable: []
+  });
+  writeJson(path.join(dir, 'evidence-ledger.json'), {
+    schemaVersion: '2.0.0',
+    paperSlug: 'package-fixture',
+    parserVersion: 'benchmark',
+    generatedAt: '2026-07-20T00:00:00.000Z',
+    document: { title: 'Package fixture', authors: [], pageCount: 1, language: 'en', sourceUrl: null, sha256: 'a'.repeat(64) },
+    sections: [],
+    pages: [],
+    evidence: [{
+      id: EVIDENCE_ID,
+      kind: 'paragraph',
+      roles: ['claim_candidate', 'result'],
+      text: evidenceText,
+      quote: evidenceText,
+      location: { page: 1, sectionId: null, charStart: 0, charEnd: evidenceText.length, blockIndex: 0, bbox: null },
+      labels: { figureNumber: null, tableNumber: null, equationNumber: null },
+      source: 'paper',
+      confidence: 'high'
+    }],
+    quality: { parser: 'pymupdf', readingOrder: 'high', sectionCoverage: 'high', tableExtraction: 'text-only', warnings: [] }
+  });
   writeJson(path.join(dir, 'reasoning-analysis.json'), reasoning());
   write(path.join(dir, 'paper.pdf'), 'pdf fixture');
   write(path.join(dir, 'README.md'), '# Package Fixture\n\nEmpirical paper, advanced difficulty, complete enough evidence. Read summary first. The main conclusion is scoped to the reported benchmark. Minimal reproduction starts in `code/core-concept-demo.py`.\n');
@@ -127,7 +164,7 @@ function createV1Package() {
   return dir;
 }
 
-function runValidator(dir, args = ['--run-code']) {
+function runValidator(dir, args = []) {
   const result = spawnSync(process.execPath, [validatorPath, dir, ...args], {
     encoding: 'utf8'
   });
@@ -139,7 +176,19 @@ function runValidator(dir, args = ['--run-code']) {
 
 const fixtures = [
   { name: 'valid-v2-package', make: createV2Package, expectPass: true },
-  { name: 'legacy-v1-ok', make: createV1Package, args: ['--legacy-ok', '--run-code'], expectPass: true },
+  { name: 'legacy-v1-requires-legacy-ok', make: createV1Package, expectText: 'LEGACY_PACKAGE_REQUIRES_LEGACY_OK' },
+  { name: 'legacy-v1-ok', make: createV1Package, args: ['--legacy-ok'], expectPass: true },
+  {
+    name: 'legacy-run-code-rejected-without-execution',
+    make: createV2Package,
+    args: ['--run-code'],
+    mutate: (dir) => {
+      fs.rmSync('/tmp/codex-paper-validator-must-not-execute', { force: true });
+      write(path.join(dir, 'code/core-concept-demo.py'), 'from pathlib import Path\nPath("/tmp/codex-paper-validator-must-not-execute").write_text("unsafe")\n');
+    },
+    expectText: '--run-code was removed',
+    verify: () => !fs.existsSync('/tmp/codex-paper-validator-must-not-execute'),
+  },
   { name: 'missing-reflection-heading', make: createV2Package, mutate: (dir) => write(path.join(dir, 'reflection.md'), '# Reflection\n\n## 最弱假设\nOnly one section.\n'), expectText: 'reflection.md is missing required v2 heading' },
   { name: 'method-no-falsification', make: createV2Package, mutate: (dir) => write(path.join(dir, 'method.md'), '# Method\n\nSupport criteria: positive direction.\n'), expectText: 'method.md must include minimal reproduction falsification criteria' },
   { name: 'visible-leaks-evidenceRefs', make: createV2Package, mutate: (dir) => fs.appendFileSync(path.join(dir, 'summary.md'), '\nevidenceRefs leak\n'), expectText: 'contains machine residue' },
@@ -156,7 +205,8 @@ for (const fixture of fixtures) {
   try {
     fixture.mutate?.(dir);
     const result = runValidator(dir, fixture.args);
-    const pass = fixture.expectPass ? result.status === 0 : result.status !== 0 && result.output.includes(fixture.expectText);
+    const expectedResult = fixture.expectPass ? result.status === 0 : result.status !== 0 && result.output.includes(fixture.expectText);
+    const pass = expectedResult && (fixture.verify ? fixture.verify(dir, result) : true);
     results.push({ name: fixture.name, pass, exitCode: result.status, expected: fixture.expectPass ? 'PASS' : fixture.expectText });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

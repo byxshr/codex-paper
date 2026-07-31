@@ -19,8 +19,26 @@ export interface PaperReasoning {
   reason?: string
 }
 
+export interface PaperValidation {
+  available: boolean
+  legacy?: boolean
+  schemaVersion?: string
+  status?: 'pass' | 'pass_with_warnings' | 'fail'
+  phase?: 'draft' | 'complete'
+  publishable?: boolean
+  gate?: any
+  scope?: { included: any[]; excluded: any[] }
+  findings?: any[]
+  findingCount?: number
+  truncated?: boolean
+  referenceCoverage?: any
+  reportHash?: any
+  diagnostics?: any[]
+}
+
 export const usePaperEvidence = (slug: string) => {
   const reasoning = ref<PaperReasoning | null>(null)
+  const validation = ref<PaperValidation | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -41,11 +59,17 @@ export const usePaperEvidence = (slug: string) => {
     return await $fetch(`/api/papers/${slug}/evidence/${encodeURIComponent(evidenceId)}`)
   }
 
+  const loadValidation = async () => {
+    validation.value = await $fetch<PaperValidation>(`/api/papers/${slug}/validation`)
+  }
+
   return {
     reasoning,
+    validation,
     loading,
     error,
     loadReasoning,
+    loadValidation,
     loadEvidence
   }
 }

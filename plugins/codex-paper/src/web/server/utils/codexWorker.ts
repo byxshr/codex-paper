@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { homedir } from 'os'
+import { callCodexPaperTool, finalizeCodexPaperToolResult } from './codexThreadState.mjs'
 
 const ASK_TIMEOUT_MS = 180_000
 const MCP_INIT_TIMEOUT_MS = 30_000
@@ -145,44 +146,42 @@ class CodexMcpWorker {
   private stdoutBuffer = ''
   private stderrTail = ''
   private pendingRequests = new Map<string, PendingRequest>()
-  private paperThreads = new Map<string, string>()
+  private paperThreads = new Map<string, { threadId: string; paperDir: string }>()
+  private paperQueues = new Map<string, Promise<void>>()
 
   async ask(options: AskCodexWorkerOptions): Promise<AskCodexWorkerResult> {
-    try {
-      await this.ensureStarted()
+    const previous = this.paperQueues.get(options.slug) || Promise.resolve()
+    const operation = previous.catch(() => undefined).then(() => this.askSerialized(options))
+    const tail = operation.then(() => undefined, () => undefined)
+    this.paperQueues.set(options.slug, tail)
+    return operation.finally(() => {
+      if (this.paperQueues.get(options.slug) === tail) this.paperQueues.delete(options.slug)
+    })
+  }
 
-      const existingThreadId = this.paperThreads.get(options.slug)
-      const result = existingThreadId
-        ? await this.callTool('codex-reply', {
-            threadId: existingThreadId,
-            prompt: options.prompt
-          })
-        : await this.callTool('codex', {
-            prompt: options.prompt,
-            cwd: options.paperDir,
-            sandbox: 'read-only',
-            'approval-policy': 'never'
-          })
+  private async askSerialized(options: AskCodexWorkerOptions): Promise<AskCodexWorkerResult> {
+    await this.ensureStarted()
 
-      const output = extractCodexToolOutput(result)
-      const answer = output.content?.trim()
-      const threadId = output.threadId || existingThreadId
+    const { result, existingThreadId } = await callCodexPaperTool({
+      paperThreads: this.paperThreads,
+      slug: options.slug,
+      paperDir: options.paperDir,
+      prompt: options.prompt,
+      callTool: (name: string, args: Record<string, unknown>) => this.callTool(name, args)
+    })
 
-      if (!answer) {
-        throw new Error('Codex returned an empty answer')
-      }
+    const { answer, threadId } = finalizeCodexPaperToolResult({
+      paperThreads: this.paperThreads,
+      slug: options.slug,
+      paperDir: options.paperDir,
+      existingThreadId,
+      result,
+      extractOutput: extractCodexToolOutput
+    })
 
-      if (!threadId) {
-        throw new Error('Codex did not return a thread id for this paper')
-      }
+    this.paperThreads.set(options.slug, { threadId, paperDir: options.paperDir })
 
-      this.paperThreads.set(options.slug, threadId)
-
-      return { answer, threadId }
-    } catch (error) {
-      this.resetAfterFailure()
-      throw error
-    }
+    return { answer, threadId }
   }
 
   stop() {
@@ -386,10 +385,6 @@ class CodexMcpWorker {
     }
   }
 
-  private resetAfterFailure() {
-    this.stop()
-    this.rejectAll(new Error('Codex MCP worker was reset after a failed request.'))
-  }
 }
 
 const codexWorker = new CodexMcpWorker()

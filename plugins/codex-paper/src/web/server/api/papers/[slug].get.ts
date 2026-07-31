@@ -1,40 +1,10 @@
-import fs from 'fs'
-import path from 'path'
-import { homedir } from 'os'
+import { LIMITS, readFileNoFollow, resolvePublicFile, validateSlug } from '../../utils/librarySecurity.mjs'
+import { renderSafeMarkdown } from '../../utils/activeContentSecurity.mjs'
 
 export default defineEventHandler((event) => {
   const slug = getRouterParam(event, 'slug')
-
-  if (!slug) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Slug is required'
-    })
-  }
-
-  try {
-    const paperDir = path.join(homedir(), 'codex-papers/papers', slug)
-    const readmePath = path.join(paperDir, 'README.md')
-
-    if (!fs.existsSync(readmePath)) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Paper not found'
-      })
-    }
-
-    const markdown = fs.readFileSync(readmePath, 'utf-8')
-
-    return {
-      slug,
-      markdown
-    }
-  } catch (e: any) {
-    if (e.statusCode) throw e
-
-    throw createError({
-      statusCode: 500,
-      statusMessage: e.message || 'Failed to load paper'
-    })
-  }
+  if (!validateSlug(slug)) throw createError({ statusCode: 400, statusMessage: 'Valid paper slug is required' })
+  const readme = resolvePublicFile(slug!, 'README.md')
+  const markdown = readFileNoFollow(readme.path, LIMITS.publicTextBytes).toString('utf8')
+  return { slug, markdown, renderedHtml: renderSafeMarkdown(markdown, { slug, sourcePath: 'README.md' }) }
 })

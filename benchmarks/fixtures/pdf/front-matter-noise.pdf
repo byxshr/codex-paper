@@ -1,0 +1,96 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 839 >>
+stream
+BT
+/F1 18 Tf
+72 760 Td
+(Synthetic Front Matter Noise) Tj
+ET
+BT
+/F1 12 Tf
+72 730 Td
+(Ada Stone, Ben River) Tj
+ET
+BT
+/F1 14 Tf
+72 690 Td
+(Abstract) Tj
+ET
+BT
+/F1 11 Tf
+72 665 Td
+(We introduce a focused attention system for controlled translation) Tj
+ET
+BT
+/F1 8 Tf
+72 646 Td
+(*Equal contribution.) Tj
+ET
+BT
+/F1 11 Tf
+72 625 Td
+(The method achieves 28.4 BLEU on the EN-DE benchmark.) Tj
+ET
+BT
+/F1 8 Tf
+72 604 Td
+(Presented at Synthetic Translation Conference 2017.) Tj
+ET
+BT
+/F1 8 Tf
+72 586 Td
+(Copyright 2026 Codex Paper contributors. Licensed under MIT.) Tj
+ET
+BT
+/F1 14 Tf
+72 548 Td
+(1 Introduction) Tj
+ET
+BT
+/F1 11 Tf
+72 524 Td
+(This paper presents a compact method for translation evaluation.) Tj
+ET
+BT
+/F1 14 Tf
+72 486 Td
+(2 Conclusion) Tj
+ET
+BT
+/F1 11 Tf
+72 462 Td
+(We demonstrate a 28.4 BLEU result under controlled conditions.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Title (Synthetic Front Matter Noise) /Author (Ada Stone; Ben River) /Creator (Codex Paper deterministic fixture generator 1.0) /Producer (Codex Paper) /CreationDate (D:20260713000000Z) /ModDate (D:20260713000000Z) >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000001136 00000 n 
+0000001233 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R /Info 6 0 R /ID [<d91772bb586be417438a4530eb425bf4><4030af4f8c89c5683dc932e423bead76>] >>
+startxref
+1469
+%%EOF

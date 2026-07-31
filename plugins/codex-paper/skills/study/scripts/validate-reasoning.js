@@ -6,15 +6,21 @@ import { fileURLToPath } from 'url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { collectEvidenceRefs } from './evidence-utils.js';
 import { profileForType } from '../profiles/profile-rules.js';
+import { PAPER_EVIDENCE_ID_PATTERN } from '../../../src/shared/package-compatibility.mjs';
+import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
+import {
+  adaptLegacyFinding,
+  canWriteValidationReport,
+  createValidationReport,
+  inspectPackageArtifacts,
+  persistWorkspaceValidationReport
+} from './validation-report.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LIBRARY_ROOT = path.join(process.env.HOME || '', 'codex-papers');
-const PAPERS_ROOT = path.join(LIBRARY_ROOT, 'papers');
 const SCHEMA_PATH = path.join(__dirname, '../schemas/reasoning-analysis.schema.json');
 const EXTERNAL_SCHEMA_PATH = path.join(__dirname, '../schemas/external-evidence.schema.json');
 
-const PAPER_EVIDENCE_ID_PATTERN = /^ev-p\d{3,}-[a-z]+-[a-f0-9]{10}$/;
 const EXTERNAL_EVIDENCE_ID_PATTERN = /^ext-[a-z0-9][a-z0-9-]*-[a-f0-9]{10}$/;
 const TEMPLATE_RESIDUE = /\b(?:TODO|TBD|placeholder|fill me|lorem ipsum|待填写|占位|这里填写)\b/i;
 const INCREMENTAL_FOLLOWUP = /\b(?:more data|larger model|bigger model|more parameters|scale up|tune hyperparameters|更多数据|更大模型|更多参数|调参)\b/i;
@@ -53,12 +59,9 @@ function parseArgs(argv) {
 }
 
 function resolvePaperDir(input) {
-  const expanded = String(input || '').replace(/^~(?=$|\/)/, os.homedir());
-  const direct = path.resolve(expanded);
-  if (fs.existsSync(direct)) {
-    return fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
-  }
-  return path.join(PAPERS_ROOT, input);
+  return resolveExplicitPackage(String(input || '').replace(/^~(?=$|\/)/, os.homedir()), {
+    libraryRoot: process.env.PAPERS_DIR
+  }).packageDir;
 }
 
 function addFinding(target, code, pathValue, message) {
@@ -507,10 +510,11 @@ function loadExternalEvidence(paperDir) {
   return read.ok ? read.value : null;
 }
 
-function writeReport(paperDir, report) {
-  const codexDir = path.join(paperDir, '.codex-paper');
-  fs.mkdirSync(codexDir, { recursive: true });
-  fs.writeFileSync(path.join(codexDir, 'validation-report.json'), `${JSON.stringify(report, null, 2)}\n`);
+function persistWorkspaceReport(paperDir, report, enabled = true) {
+  const reportWritten = enabled && canWriteValidationReport(paperDir);
+  if (!reportWritten) return false;
+  persistWorkspaceValidationReport(paperDir, report);
+  return true;
 }
 
 export function validateReasoningPackage(input, options = {}) {
@@ -522,9 +526,13 @@ export function validateReasoningPackage(input, options = {}) {
   let externalEvidence = null;
 
   if (!fs.existsSync(paperDir) || !fs.statSync(paperDir).isDirectory()) {
-    addFinding(errors, 'REASONING_FILE_MISSING', 'paperDir', `Paper directory not found: ${paperDir}`);
-    const report = { status: 'fail', errors, warnings, stats: calculateCoverageStats(null) };
-    return { paperDir, report };
+    addFinding(errors, 'REASONING_FILE_MISSING', 'paperDir', 'Paper directory was not found.');
+    const report = createValidationReport({
+      phase: options.phase || 'draft',
+      strict: options.strict,
+      findings: errors.map((finding) => adaptLegacyFinding(finding, 'error'))
+    });
+    return { paperDir, report, reportWritten: false };
   }
 
   const reasoningPath = path.join(paperDir, 'reasoning-analysis.json');
@@ -554,22 +562,41 @@ export function validateReasoningPackage(input, options = {}) {
   externalEvidence = loadExternalEvidence(paperDir);
 
   if (reasoning) {
-    if (options.allowDraft && reasoning.status === 'draft' && errors.length === 0) {
-      const report = {
-        status: 'draft',
-        errors: [],
-        warnings: [{
-          code: 'REASONING_DRAFT_NOT_VALIDATED',
-          path: 'reasoning-analysis.json',
-          message: 'Draft reasoning skeleton was accepted because --allow-draft was provided; fill it and run strict validation before publishing.'
-        }],
-        stats: calculateCoverageStats(reasoning)
-      };
-      writeReport(paperDir, report);
-      return { paperDir, report };
+    const acceptedDraft = options.allowDraft && reasoning.status === 'draft' && errors.length === 0;
+    if (acceptedDraft) {
+      addFinding(
+        warnings,
+        'REASONING_DRAFT_NOT_VALIDATED',
+        'reasoning-analysis.json',
+        'Draft reasoning skeleton is accepted only for continued authoring; complete it before final package validation.'
+      );
+    } else {
+      errors.push(...validateSchema(reasoning));
+    }
+    if (reasoning.status === 'draft' && !options.allowDraft) {
+      addFinding(errors, 'REASONING_DRAFT_NOT_ALLOWED', 'reasoning-analysis.json.status', 'Draft reasoning requires --allow-draft.');
+    }
+    if (acceptedDraft) {
+      const inspection = inspectPackageArtifacts(paperDir, {
+        reasoning,
+        ledger,
+        externalEvidence,
+        phase: options.phase || 'draft'
+      });
+      const report = createValidationReport({
+        phase: options.phase || 'draft',
+        strict: options.strict,
+        scope: inspection.scope,
+        referenceCoverage: inspection.referenceCoverage,
+        findings: [
+          ...warnings.map((finding) => adaptLegacyFinding(finding, 'warning')),
+          ...inspection.findings
+        ]
+      });
+      const reportWritten = inspection.canWriteReport && persistWorkspaceReport(paperDir, report, options.writeReport !== false);
+      return { paperDir, report, reportWritten, compatibility: inspection.compatibility };
     }
 
-    errors.push(...validateSchema(reasoning));
     const sourceFindings = validateSourceTypes(reasoning, reasoning.contextMode || 'paper-only');
     errors.push(...sourceFindings.errors);
     warnings.push(...sourceFindings.warnings);
@@ -607,36 +634,28 @@ export function validateReasoningPackage(input, options = {}) {
       addFinding(warnings, 'LOW_CONFIDENCE_DOMINATES', 'confidence', 'Most reasoning nodes are low confidence');
     }
 
-    if (['partial_sections', 'noisy_reading_order', 'noisy_table_extraction', 'weak_quantitative_evidence', 'severely_limited'].includes(reasoning.evidenceQuality)) {
-      addFinding(warnings, 'PARSER_QUALITY_LIMITED', 'evidenceQuality', `Evidence quality is ${reasoning.evidenceQuality}`);
-    }
   }
 
-  let finalErrors = errors;
-  let finalWarnings = warnings;
-  if (options.strict && warnings.length > 0) {
-    finalErrors = errors.concat(warnings.map((warning) => ({
-      ...warning,
-      code: warning.code,
-      message: `[strict] ${warning.message}`
-    })));
-    finalWarnings = [];
-  }
-
-  const report = {
-    status: finalErrors.length === 0 ? 'pass' : 'fail',
-    errors: finalErrors,
-    warnings: finalWarnings,
-    stats: calculateCoverageStats(reasoning)
-  };
-
-  writeReport(paperDir, report);
-  return { paperDir, report };
+  const phase = options.phase || 'draft';
+  const inspection = inspectPackageArtifacts(paperDir, { reasoning, ledger, externalEvidence, phase });
+  const report = createValidationReport({
+    phase,
+    strict: options.strict,
+    scope: inspection.scope,
+    referenceCoverage: inspection.referenceCoverage,
+    findings: [
+      ...errors.map((finding) => adaptLegacyFinding(finding, 'error')),
+      ...warnings.map((finding) => adaptLegacyFinding(finding, 'warning')),
+      ...inspection.findings
+    ]
+  });
+  const reportWritten = inspection.canWriteReport && persistWorkspaceReport(paperDir, report, options.writeReport !== false);
+  return { paperDir, report, reportWritten, compatibility: inspection.compatibility };
 }
 
 function printHuman(result) {
   const { paperDir, report } = result;
-  console.log(`Reasoning validation: ${report.status.toUpperCase()}`);
+  console.log(`Reasoning validation: ${report.status.toUpperCase()} (${report.phase})`);
   console.log(`Paper directory: ${paperDir}`);
   if (report.errors.length > 0) {
     console.log('\nErrors:');
@@ -646,7 +665,8 @@ function printHuman(result) {
     console.log('\nWarnings:');
     report.warnings.forEach((finding) => console.log(`- ${finding.code} ${finding.path}: ${finding.message}`));
   }
-  console.log(`\nStats: ${JSON.stringify(report.stats)}`);
+  console.log(`\nGate: ${report.gate.policy}/${report.gate.outcome}`);
+  console.log(`Reference coverage: ${JSON.stringify(report.referenceCoverage)}`);
 }
 
 async function runCli() {
@@ -658,7 +678,7 @@ async function runCli() {
     } else {
       printHuman(result);
     }
-    process.exit(result.report.errors.length === 0 ? 0 : 1);
+    process.exit(result.report.gate.outcome === 'block' ? 1 : 0);
   } catch (error) {
     usage();
     console.error(`Error: ${error.message}`);

@@ -114,7 +114,7 @@
       </button>
       <div v-if="menuOpen" class="kebab-dropdown">
         <button class="kebab-item" @click="handleEditTags" type="button">Edit Tags</button>
-        <button class="kebab-item kebab-item--danger" @click="handleRemove" type="button">Delete</button>
+        <button class="kebab-item kebab-item--danger" @click="handleRemove" type="button">Move to Trash</button>
       </div>
     </div>
   </div>

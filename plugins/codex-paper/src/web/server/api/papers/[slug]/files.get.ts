@@ -1,6 +1,4 @@
-import fs from 'fs'
-import path from 'path'
-import { requirePaperDir, validateSlug } from '../../../utils/paperAccess'
+import { buildPublicFileTree, validateSlug } from '../../../utils/librarySecurity.mjs'
 
 interface FileNode {
   name: string
@@ -9,119 +7,24 @@ interface FileNode {
   children?: FileNode[]
 }
 
-const HIDDEN_MACHINE_FILES = new Set([
-  '.study-validation.json',
-  'analysis.json',
-  'evidence-ledger.json',
-  'external-evidence.json',
-  'facts.json',
-  'meta.json',
-  'paper-data.json',
-  'reasoning-analysis.json'
-])
+const ROOT_ITEM_ORDER = ['README.md', 'visual-assets.md', 'index.html', 'summary.md', 'insights.md', 'method.md', 'mental-model.md', 'reflection.md', 'qa.md', 'chat-notes.md', 'paper.pdf', 'images', 'code', 'quick-summary.md']
+const NESTED_ITEM_ORDER = ['README.md', 'summary.md', 'insights.md', 'index.html']
 
-const ROOT_ITEM_ORDER = [
-  'README.md',
-  'visual-assets.md',
-  'index.html',
-  'summary.md',
-  'insights.md',
-  'method.md',
-  'mental-model.md',
-  'reflection.md',
-  'qa.md',
-  'chat-notes.md',
-  'paper.pdf',
-  'images',
-  'code',
-  'quick-summary.md'
-]
-
-const NESTED_ITEM_ORDER = [
-  'README.md',
-  'summary.md',
-  'insights.md',
-  'index.html'
-]
-
-function orderForNode(node: FileNode) {
-  const orderedNames = node.path.includes('/') ? NESTED_ITEM_ORDER : ROOT_ITEM_ORDER
-  const index = orderedNames.indexOf(node.name)
-
-  if (index !== -1) {
-    return index
-  }
-
-  return orderedNames.length + (node.type === 'directory' ? 0 : 1)
-}
-
-function buildFileTree(dirPath: string, relativePath: string = ''): FileNode[] {
-  const items = fs.readdirSync(dirPath, { withFileTypes: true })
-  const nodes: FileNode[] = []
-
-  for (const item of items) {
-    // Skip hidden files and node_modules
-    if (item.name.startsWith('.') || item.name === 'node_modules') {
-      continue
-    }
-
-    if (HIDDEN_MACHINE_FILES.has(path.basename(item.name))) {
-      continue
-    }
-
-    const itemPath = path.join(dirPath, item.name)
-    const itemRelativePath = relativePath ? `${relativePath}/${item.name}` : item.name
-
-    if (item.isDirectory()) {
-      nodes.push({
-        name: item.name,
-        path: itemRelativePath,
-        type: 'directory',
-        children: buildFileTree(itemPath, itemRelativePath)
-      })
-    } else {
-      nodes.push({
-        name: item.name,
-        path: itemRelativePath,
-        type: 'file'
-      })
-    }
-  }
-
-  // Sort root materials in the study-package reading order. Inside nested
-  // folders, keep directories ahead of unknown files after known items.
-  return nodes.sort((a, b) => {
-    const orderDiff = orderForNode(a) - orderForNode(b)
-    if (orderDiff !== 0) {
-      return orderDiff
-    }
-
-    return a.name.localeCompare(b.name)
+function sortTree(nodes: FileNode[]) {
+  nodes.sort((left, right) => {
+    const order = left.path.includes('/') ? NESTED_ITEM_ORDER : ROOT_ITEM_ORDER
+    const leftIndex = order.indexOf(left.name)
+    const rightIndex = order.indexOf(right.name)
+    const leftOrder = leftIndex === -1 ? order.length + (left.type === 'directory' ? 0 : 1) : leftIndex
+    const rightOrder = rightIndex === -1 ? order.length + (right.type === 'directory' ? 0 : 1) : rightIndex
+    return leftOrder - rightOrder || left.name.localeCompare(right.name)
   })
+  for (const node of nodes) if (node.children) sortTree(node.children)
+  return nodes
 }
 
 export default defineEventHandler((event) => {
   const slug = getRouterParam(event, 'slug')
-
-  if (!validateSlug(slug)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Valid paper slug is required'
-    })
-  }
-
-  try {
-    const paperDir = requirePaperDir(slug!)
-
-    const fileTree = buildFileTree(paperDir)
-
-    return fileTree
-  } catch (e: any) {
-    if (e.statusCode) throw e
-
-    throw createError({
-      statusCode: 500,
-      statusMessage: e.message || 'Failed to load file tree'
-    })
-  }
+  if (!validateSlug(slug)) throw createError({ statusCode: 400, statusMessage: 'Valid paper slug is required' })
+  return sortTree(buildPublicFileTree(slug!))
 })

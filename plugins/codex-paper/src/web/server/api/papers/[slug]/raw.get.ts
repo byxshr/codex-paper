@@ -1,99 +1,31 @@
-import fs from 'fs'
-import path from 'path'
-import { requirePaperDir, validateSlug } from '../../../utils/paperAccess'
+import path from 'node:path'
+import { LIMITS, readFileNoFollow, resolvePublicFile, validateSlug } from '../../../utils/librarySecurity.mjs'
 
-const HIDDEN_MACHINE_FILES = new Set([
-  '.study-validation.json',
-  'analysis.json',
-  'evidence-ledger.json',
-  'external-evidence.json',
-  'facts.json',
-  'meta.json',
-  'paper-data.json',
-  'reasoning-analysis.json'
-])
-
-function hasHiddenPathSegment(relativePath: string) {
-  return relativePath
-    .split(path.sep)
-    .some((segment) => segment.startsWith('.'))
-}
-
-function isHiddenMachinePath(relativePath: string) {
-  return HIDDEN_MACHINE_FILES.has(path.basename(relativePath))
+const MIME_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
 }
 
 export default defineEventHandler((event) => {
   const slug = getRouterParam(event, 'slug')
-  const query = getQuery(event)
-  const filePath = query.path as string
-
-  if (!validateSlug(slug) || !filePath) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Valid slug and path are required'
-    })
+  const filePath = getQuery(event).path
+  if (!validateSlug(slug) || typeof filePath !== 'string') throw createError({ statusCode: 400, statusMessage: 'Valid slug and path are required' })
+  const resolved = resolvePublicFile(slug!, filePath)
+  const buffer = readFileNoFollow(resolved.path, LIMITS.rawBytes)
+  const extension = path.extname(resolved.path).toLowerCase()
+  setHeader(event, 'Content-Type', MIME_TYPES[extension] || 'application/octet-stream')
+  setHeader(event, 'Content-Length', String(buffer.length))
+  setHeader(event, 'X-Content-Type-Options', 'nosniff')
+  setHeader(event, 'Content-Security-Policy', "default-src 'none'; sandbox")
+  setHeader(event, 'Referrer-Policy', 'no-referrer')
+  if (extension === '.svg') {
+    const filename = path.basename(resolved.path).replace(/["\\\r\n]/g, '_')
+    setHeader(event, 'Content-Disposition', `attachment; filename="${filename}"`)
+  } else if (extension === '.pdf') {
+    setHeader(event, 'Content-Disposition', 'inline')
+  } else if (!MIME_TYPES[extension]) {
+    const filename = path.basename(resolved.path).replace(/["\\\r\n]/g, '_')
+    setHeader(event, 'Content-Disposition', `attachment; filename="${filename}"`)
   }
-
-  try {
-    const paperDir = requirePaperDir(slug!)
-    const fullPath = path.resolve(paperDir, filePath)
-    const relativeFullPath = path.relative(paperDir, fullPath)
-
-    // Security check
-    if (relativeFullPath.startsWith('..') || path.isAbsolute(relativeFullPath)) {
-      throw createError({
-        statusCode: 403,
-        statusMessage: 'Access denied'
-      })
-    }
-
-    if (
-      hasHiddenPathSegment(relativeFullPath) ||
-      isHiddenMachinePath(relativeFullPath)
-    ) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'File not found'
-      })
-    }
-
-    if (!fs.existsSync(fullPath)) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'File not found'
-      })
-    }
-
-    // Get file extension to set content type
-    const ext = path.extname(fullPath).toLowerCase()
-    const mimeTypes: Record<string, string> = {
-      '.pdf': 'application/pdf',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.svg': 'image/svg+xml',
-      '.webp': 'image/webp',
-      '.bmp': 'image/bmp'
-    }
-
-    const contentType = mimeTypes[ext] || 'application/octet-stream'
-
-    // Read file as buffer
-    const fileBuffer = fs.readFileSync(fullPath)
-
-    // Set headers
-    setHeader(event, 'Content-Type', contentType)
-    setHeader(event, 'Content-Length', fileBuffer.length.toString())
-
-    return fileBuffer
-  } catch (e: any) {
-    if (e.statusCode) throw e
-
-    throw createError({
-      statusCode: 500,
-      statusMessage: e.message || 'Failed to load file'
-    })
-  }
+  return buffer
 })

@@ -1,0 +1,18 @@
+{
+  "policyVersion": "1.0.0",
+  "httpsOnly": true,
+  "maxInputBytes": 134217728,
+  "maxPages": 2000,
+  "maxRedirects": 5,
+  "requestTimeoutMs": 30000,
+  "parserWallTimeMs": 60000,
+  "parserCpuSeconds": 45,
+  "parserMemoryBytes": 1073741824,
+  "parserOutputBytes": 67108864,
+  "parserStdoutBytes": 1048576,
+  "parserStderrBytes": 1048576,
+  "parserOpenFiles": 64,
+  "quarantineRetentionDays": 7,
+  "quarantineMaxEntries": 32,
+  "quarantineMaxBytes": 536870912
+}

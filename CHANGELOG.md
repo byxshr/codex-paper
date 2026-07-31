@@ -1,5 +1,95 @@
 # Changelog
 
+## Unreleased
+
+- Added P1-2b explicit two-stage migration: verified backup to reviewable generation workspace, current parser regeneration, complete standard Validation gate, and Manifest 2.0 publication.
+- Added Evidence Alias Map, Migration Source Record, Migration Transaction, and Migration Plan 1.1 contracts; direct current evidence, aliases, and frozen 2.0 fact projections now share one read-only resolution order.
+- Added journaled legacy authority archives, current-manifest CAS rollback, retained-target roll-forward, migration recovery, and authority-aware target reindex repair without in-place source mutation.
+- Hardened P1-2b after independent review: legacy commit crash windows now converge, rollback/roll-forward preconditions precede authority mutation, resumed current CAS remains enforced, managed freshness excludes overlay state, Doctor exposes migration residues, reindex plans predict apply output, and migration tests are count-gated.
+- Closed the second P1-2b review round with no blockers: target planning and authority-switch reindex now isolate unrelated damage, transaction scans tolerate corrupt/newer siblings, active/incomplete starts are actionable, Doctor 1.1 preserves Doctor 1.0 compatibility, and lock retryability is explicit.
+- Added P1-2a compatibility goldens for legacy v1, package 2.0/2.1, and Manifest/Identity 1.0/2.0; production-reader checks prove zero-write compatibility.
+- Added read-only library inventory/Doctor plus content-addressed paper backups, integrity verification, private journaled restore/recovery, and library-relative diagnostics.
+- Froze the old in-place migration implementation: `migrate` is now a `--dry-run` compatibility alias, while new-generation migration, reindex repair, and rollback remain deferred to P1-2b.
+- Hardened P1-2a after independent review: backups now preserve directory modes and empty directories, corrupt snapshots are quarantined and recreated, malformed restore journals are isolated, Doctor tolerates hostile names, and restore preserves live index envelopes and curated no-op metadata.
+- Closed the second P1-2a review round: Doctor now checks index drift per authority without unrelated fail-open, reports its payload-verification depth, keeps long target diagnostics actionable, cleans sealed private staging safely, emits missing/corrupt backup plan blockers, preserves precise retryable exit codes, and re-reads restore journals under lock.
+- Closed the third P1-2a review round with no blockers: Migration Plan 1.0 now distinguishes missing selected backups from not-found, invalid, and stale states; non-authority junk no longer emits misleading undetermined-drift findings; restore conflicts describe byte/mode divergence; and backup cleanup/race reporting is explicit.
+- Added Generation Manifest 2.0 as the authoritative provenance for new publications, covering redacted source acquisition, content runtime and software attestations, declared authoring WAL events, artifact dependencies, validation, execution bindings, diagnostics, and unsigned integrity metadata.
+- Added Paper Identity / Generation Contract 2.0 so content-affecting runtime and declared authoring model inputs participate in generation fingerprints while timestamps, repository state, OS patch level, cachebusters, and unavailable Codex metadata remain provenance-only.
+- Added `provenance-inspect`, `provenance-verify`, and `provenance-test`; Manifest and Identity 1.0 remain zero-write compatible, unknown versions fail closed, and post-seal execution reports bind the authoritative manifest without mutating it.
+- Hardened P1-4 after independent review: freeze Manifest 2.0, share Validation Report intrinsic hashing, make stale dependencies actionable, add audited ambiguous-WAL adoption, verify exact repository ownership, move observations outside locks, narrow content fingerprints, and improve runtime/authoring diagnostics.
+- Hardened P1-4 after the second review: demote validation state before WAL adoption, expose pending event IDs and redacted CLI details, distinguish adopted from reconciled events, normalize missing dependencies/projections, and re-derive manifest diagnostics.
+- Closed the third P1-4 review round: redact absolute paths and URL secrets in CLI messages as well as details, type missing provenance drafts, suppress empty details, preserve valid JSON under truncation, unify the checkout publish command, and document the frozen-schema adoption encoding.
+- Closed the fourth P1-4 review round with a conditional pass: path redaction now covers punctuation-adjacent and doubled-slash absolute paths, while URL sanitation no longer relies on collision-prone textual placeholders.
+- Added the P1-3a runtime and supply-chain baseline: exact Node/npm/CPython/PyMuPDF versions, a private hash-locked Python venv, Nuxt 4, digest-pinned sandbox Python, expiring dependency exceptions, secret scanning, and reviewed artifact hashes.
+- Added runtime, dependency-audit, secret-scan, and supply-chain commands plus dedicated CI and Repository Guard enforcement; existing generations and manifests remain untouched for P1-4 provenance integration.
+- Hardened the P1-3a baseline after review: runtime replacement is locked and rollback-safe, parser overrides are version checked, fixture provenance uses the managed interpreter, and the Docker sandbox keeps a complete package-manager-free Python standard library.
+- Closed the second P1-3a review round: the managed CPython runtime now contains and hashes its own standard library, parser callers cannot move the canonical interpreter anchor, diagnostics redact fixed ephemeral roots, audit engines validate their own policies, stale runtime locks have bounded recovery, and static Repository Guard tests have a Python-free entry point.
+- Closed the third P1-3a review round: the host runtime now dereferences every copied entry, relocates and verifies native dependencies, hashes its complete tree, imports extension-backed modules at setup/status/use time, and remains usable without its bootstrap; parser suites have exact execution-count gates and caller-controlled worker flags cannot restore a movable interpreter anchor.
+- Closed the fourth P1-3a review round: macOS relocation now covers `LC_RPATH`, Linux explicitly requires a relocatable bootstrap, loader overrides are removed from native probes, tree attestation includes modes, bootstrap discovery checks native modules early, and all repository/study test suites enforce exact counts while preserving failed TAP output.
+- Hardened the Linux P1-3a CI path by explicitly selecting and permission-normalizing the pinned setup-python bootstrap, then removing only the standard contained `lib64 -> lib` venv alias before enforcing the published runtime's zero-symlink contract.
+- Added bounded Linux ELF relocation for setup-python runtimes: bootstrap-contained RPATH/RUNPATH/absolute NEEDED entries become `$ORIGIN`-relative only when their copied target exists, followed by strict `readelf` and native-import verification.
+- Advanced the exact repository/security test gate from 204 to 207 after adding the Linux runtime alias and ELF relocation regressions.
+- Added Generation Publication 1.0 with standard Validation-gated sealing, immutable file manifests, authoritative current commits, rebuildable index projection, retained recovery journals, and idempotent crash recovery.
+- Added exact publish/recover/reindex commands, authoritative manifest verification in readers, a dedicated publication CI gate, and mandatory PDF regression coverage through Viewer-visible publication.
+- Hardened C2a after the seventh independent review: preserve generated Ask answers when rich Markdown rendering fails by returning escaped plain text, and move bounded stale initialization cleanup under the registry lock.
+- Hardened C2a after the sixth independent review: invalidate a paper thread when a successful reply is empty, compensate both report-write and final-state validation persistence failures, retain secondary compensation errors, and share workspace diagnostics plus the storage lock-timeout maximum.
+- Hardened C2a after the fifth independent review: invalidate only the affected paper thread after a failed Codex reply, compensate validation-report persistence failures with a bounded failed workspace diagnostic, remove disk-lock I/O from in-process Ask lease registration, and finish shared CAS/CLI mapping plus Guard mutation coverage.
+- Hardened C2a after the fourth independent review: closed managed-workspace migration bypasses, preserved every generated Ask answer across save failures while blocking concurrent Web deletion, classified `.init-*` crash residues as read-only/non-active, made validation report/state persistence one locked transaction, restored resolver Guard coverage, and consolidated CAS/lock-key predicates.
+- Hardened C2a after the third independent review: kept double-rename failure residues discoverable by exact workspace ID, allowed fresh retries after retained failures, isolated Ask request failures per paper, preserved generated answers on chat-note lock contention, normalized migration roots/locks, and made abandoned sandbox plans fail closed with structured diagnostics.
+
+- Added Generation Workspace 1.0 under `.codex-paper/workspaces-v1`: prepare now initializes private same-filesystem workspaces and does not create records, switch `current.json`, update the index, or expose partial packages before C2b.
+- Added hierarchical cross-process filesystem locks and one shared CAS/no-follow/fsync writer for workspace authoring, validation, Viewer overlays, chat, trash/index updates, sandbox reports, and explicit legacy migration.
+- Added explicit workspace list/inspect/write/tags/abandon commands, a dedicated storage test/CI gate, workspace-only mandatory regression authoring, and Repository Guard mutation coverage against early publication or writer bypass.
+- Hardened C2a after the second independent review: preserved failed initialized workspaces, made reclaim claims crash-recoverable, serialized same-paper Ask calls, bounded chat-note lock waits, reserved workspace routes, aligned legacy migration locks, and made sandbox approval/report targets portable and fail-closed before token issuance.
+- Added Paper Library Layout 1.0 with identity-keyed paper/source/generation storage, authoritative current records, stable alias-aware lock keys, and read-only flat-layout compatibility.
+- Moved tags and chat notes into a paper-level mutable overlay, added multi-generation prepare semantics and explicit identity reconciliation, and migrated Viewer/validator/sandbox/trash consumers to the shared no-follow resolver.
+- Hardened P0-C1b after independent review: fixed the third-tier route fallback to use the generation fingerprint value, and made explicit absolute paths into the legacy flat library remain read-only for every authoring and sandbox consumer.
+- Added Paper Identity 1.0 with separate canonical paper, exact source revision, and deterministic generation identifiers.
+- Added a versioned content-contract fingerprint that changes with workflow semantics while excluding cachebusters, timestamps, paths, and provenance-only runtime data.
+- Made flat-layout preparation fail closed on every ambiguous collision and reuse only complete identical generations without modifying files or mutable user state.
+- Added identity projection validation, study/summary explicit workflow inputs, deterministic identity tests, Repository Guard mutations, and a pre-validation CI gate.
+- Upgraded the single package validation report in place to Validation Report 1.0 with structured findings, explicit scope, reference coverage, three-state intrinsic health, publishability, and a stable intrinsic SHA-256.
+- Unified reasoning and complete-package validation around one engine; standard and strict policies now differ only in gate outcome and CLI exit.
+- Added deterministic cross-artifact checks for evidence references, ResultClaim projections, numeric divergence, result conflicts/disclosure, visible result claims, and parser front-matter contamination.
+- Added an authenticated read-only Viewer Validation API and quality panel with missing/legacy/corrupt degradation and evidence navigation.
+- Migrated mandatory fixtures to active Validation Report 1.0 assertions and added a dedicated `validation-test` CI gate.
+- Hardened P0-B3 after independent review: conflict disclosure now matches complete numeric tokens instead of substrings, and 2.0 compatibility validation no longer applies native 2.1 ResultClaim projection or grounding rules.
+- Added package contract 2.1 with typed `resultClaims`, deterministic metric/value binding, and a backward-compatible `keyResults` projection.
+- Switched newly generated facts and analysis to direct `ev-*` references while preserving read-only 2.0 legacy-reference compatibility across scripts and Viewer APIs.
+- Migrated mandatory B2 defect signatures to positive ResultClaim assertions; only P0-B3 parser-contamination and conflict-warning findings remain expected.
+- Hardened P0-B2 after independent review: reject metric-name digits and invalid table/evidence IDs, preserve evidence confidence, merge only corroborated contexts, schema-validate writer output, enforce 2.0 read-only writers, and avoid unnecessary Viewer ledger parsing.
+- Hardened P0-B2 after the second review: make candidate merging order-independent, require explicit read-only legacy validation, unify cross-endpoint compatibility verdicts, reject unsupported migrations before writes, and tighten reference limits, membership, and error handling.
+- Hardened P0-B2 after the third review: complete explicitly versioned 1.x migrations without partial writes, preserve readable core Viewer responses when ancillary compatibility JSON is corrupt, and surface fail-closed `PACKAGE_ARTIFACT_INVALID` diagnostics in readers and validators.
+- Hardened P0-B2 after the fourth review: preflight every existing migration artifact before writes, normalize corrupt migration diagnostics, preserve facts/analysis across corrupt meta sidecars, and accurately identify mixed unsupported artifact versions.
+- Added two byte-reproducible, MIT-licensed synthetic PDFs for front-matter contamination and conflicting translation-result regressions.
+- Added a non-skippable mandatory PDF-to-prepare-to-validator benchmark that freezes current audited defects as explicit expected findings and reserves P0-B2/B3 target contracts.
+- Split CI reporting between the mandatory synthetic gate and the optional allow-missing external paper corpus, with Repository Guard mutation coverage against zero execution and bypasses.
+- Harden P0-A4 PDF ingestion after independent review: reject deprecated IPv4-compatible IPv6 destinations and ensure synchronous staging write failures are rejected through the normal private-temp cleanup path.
+- Replaced the shared predictable PDF downloader with HTTPS-only, per-redirect SSRF validation, DNS-pinned/peer-verified connections, 128 MiB streaming limits, `%PDF-` verification, and private random staging.
+- Moved production PDF parsing behind a bounded process-group supervisor with wall/CPU/RSS/output/file/page budgets and fail-closed encrypted/malformed handling.
+- Added a private 7-day, 32-entry/512 MiB PDF quarantine plus deterministic downloader/parser security tests, Repository Guard rules, and a CI gate.
+- Removed generated-code execution from package validation and the default paper-study workflow; legacy `--run-code`/`--run-artifacts` flags now fail closed.
+- Added a digest-pinned Docker sandbox with capability/conformance gating, no network, read-only source, scrubbed credentials, bounded resources, and no host-execution fallback.
+- Added code-hash-bound five-minute single-use approvals and persistent structured execution reports for explicitly requested demo runs.
+- Added synthetic sandbox policy/authorization tests and a real Docker conformance gate in CI.
+- Incorporated P0-A3 security review feedback by documenting the workflow-only human-consent boundary, sweeping expired approvals, and validating/marking container resource measurements as non-authoritative.
+- Added bounded exit/stdout/stderr diagnostics for real Docker conformance failures and normalized temporary conformance paths across macOS/Linux.
+- Fixed the sandbox image to include the Python 3 standard library required by its trusted entrypoint, with a repository guard against minimal-only regressions.
+- Made file-size conformance recognize both Linux `SIGXFSZ` and the bounded `/tmp` filesystem reaching `ENOSPC`; the synthetic fixture frees its probe file so the trusted resource report can still be written.
+- Converted the Viewer to a client-only SPA with a strict self-only script CSP and an externalized Nuxt bootstrap, removing remote fonts and inline executable scripts.
+- Added one server-side active-content pipeline for Markdown, Ask answers, Notebook Markdown, static HTML previews, and paper metadata URLs.
+- Replaced executable HTML previews with explicit scriptless static previews; Notebook HTML/SVG/JavaScript outputs are shown as blocked text, and SVG files are source/download only.
+- Added active-content unit, static-source, real HTTP, and browser canary coverage for CSP, sanitization, rich-output downgrade, and safe raw headers.
+- Incorporated independent P0-A2 review feedback by removing a misleading unused v-html policy export and preserving complex KaTeX layout classes through the sanitizer.
+- Bound the Viewer to IPv4 loopback and added Host, pairing-session, Origin, and CSRF enforcement for library APIs.
+- Added shared no-follow/realpath library resolution, public-file budgets, fail-fast operation locks, and safer tag/Ask boundaries.
+- Replaced permanent paper deletion with session-bound confirmation tokens, persistent recoverable trash, and Viewer restore controls.
+- Added unit and real HTTP security integration coverage using isolated temporary paper libraries.
+- Made `plugins/codex-paper/` the only executable source tree and `.agents/plugins/marketplace.json` the only repository marketplace.
+- Added an immutable 2.0 contract baseline, compatible 2.1 evolution ADR, and a dependency-free repository/CI contract gate.
+- Updated plugin ingestion metadata to current Codex manifest and agent interface requirements.
+- Removed the divergent legacy tree; it remains available through Git history.
+
 ## 2.0.0 - Evidence and Reasoning v2
 
 - Added page-aware `evidence-ledger.json` with stable evidence IDs and parser quality flags.

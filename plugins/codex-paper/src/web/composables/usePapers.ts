@@ -14,10 +14,20 @@ export interface Paper {
   qualityFlags?: string[]
 }
 
+export interface TrashItem {
+  trashId: string
+  slug: string
+  deletedAt: string
+  title?: string
+}
+
 export const usePapers = () => {
   const papers = ref<Paper[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const trash = ref<TrashItem[]>([])
+  const trashError = ref<string | null>(null)
+  const { mutationHeaders } = useSecuritySession()
 
   const loadPapers = async () => {
     loading.value = true
@@ -49,8 +59,19 @@ export const usePapers = () => {
 
   const removePaper = async (slug: string): Promise<boolean> => {
     try {
-      await $fetch(`/api/papers/${slug}/delete`, { method: 'DELETE' })
+      const prepared = await $fetch<{ confirmationToken: string }>(`/api/papers/${slug}/delete/prepare`, {
+        method: 'POST',
+        headers: mutationHeaders()
+      })
+      await $fetch(`/api/papers/${slug}/delete`, {
+        method: 'DELETE',
+        headers: {
+          ...mutationHeaders(),
+          'X-Codex-Paper-Confirmation': prepared.confirmationToken
+        }
+      })
       papers.value = papers.value.filter(p => p.slug !== slug)
+      await loadTrash()
       return true
     } catch (e) {
       console.error('Failed to remove paper:', e)
@@ -62,6 +83,7 @@ export const usePapers = () => {
     try {
       await $fetch(`/api/papers/${slug}/tags`, {
         method: 'PATCH',
+        headers: mutationHeaders(),
         body: { tags }
       })
 
@@ -77,14 +99,42 @@ export const usePapers = () => {
     }
   }
 
+  const loadTrash = async () => {
+    trashError.value = null
+    try {
+      trash.value = await $fetch<TrashItem[]>('/api/trash')
+    } catch (e: any) {
+      trashError.value = e.data?.statusMessage || e.message || 'Failed to load trash'
+      trash.value = []
+    }
+  }
+
+  const restorePaper = async (trashId: string): Promise<boolean> => {
+    try {
+      await $fetch(`/api/trash/${trashId}/restore`, {
+        method: 'POST',
+        headers: mutationHeaders()
+      })
+      await Promise.all([loadPapers(), loadTrash()])
+      return true
+    } catch (e: any) {
+      trashError.value = e.data?.statusMessage || e.message || 'Failed to restore paper'
+      return false
+    }
+  }
+
   return {
     papers,
     loading,
     error,
+    trash,
+    trashError,
     loadPapers,
     getPaper,
     getPaperMarkdown,
     removePaper,
-    updatePaperTags
+    updatePaperTags,
+    loadTrash,
+    restorePaper
   }
 }

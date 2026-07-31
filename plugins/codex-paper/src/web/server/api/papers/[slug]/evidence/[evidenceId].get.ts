@@ -1,5 +1,5 @@
-import path from 'path'
-import { readJsonFile, readOptionalJson, requirePaperDir, truncateText, validateEvidenceId, validateSlug } from '../../../../utils/paperAccess'
+import { readJsonPath, readOptionalInternalJson, resolveInternalFile, truncateText, validateEvidenceId, validateSlug } from '../../../../utils/librarySecurity.mjs'
+import { resolveEvidenceRefs } from '../../../../utils/packageCompatibility.mjs'
 
 function sectionTitle(ledger: any, sectionId: string | null | undefined) {
   if (!sectionId) return null
@@ -13,9 +13,8 @@ export default defineEventHandler((event) => {
     throw createError({ statusCode: 400, statusMessage: 'Valid slug and evidence id are required' })
   }
 
-  const paperDir = requirePaperDir(slug!)
   if (evidenceId!.startsWith('ext-')) {
-    const external = readOptionalJson(path.join(paperDir, '.codex-paper', 'external-evidence.json'), 'external-evidence.json')
+    const external = readOptionalInternalJson(slug!, '.codex-paper/external-evidence.json', 'external-evidence.json')
     const evidence = (external?.evidence || []).find((item: any) => item.id === evidenceId)
     const source = (external?.sources || []).find((item: any) => item.id === evidence?.sourceId)
 
@@ -43,8 +42,16 @@ export default defineEventHandler((event) => {
     }
   }
 
-  const ledger = readJsonFile(path.join(paperDir, 'evidence-ledger.json'), 'evidence-ledger.json')
-  const evidence = (ledger.evidence || []).find((item: any) => item.id === evidenceId)
+  const ledger = readJsonPath(resolveInternalFile(slug!, 'evidence-ledger.json').path, 'evidence-ledger.json')
+  const facts = readJsonPath(resolveInternalFile(slug!, 'facts.json').path, 'facts.json')
+  const aliases = readOptionalInternalJson(slug!, '.codex-paper/evidence-aliases.json', 'evidence-aliases.json')
+  let resolvedId = evidenceId
+  try {
+    resolvedId = resolveEvidenceRefs([evidenceId], facts, ledger, aliases)[0] || evidenceId
+  } catch {
+    throw createError({ statusCode: 422, statusMessage: 'Evidence alias map is invalid' })
+  }
+  const evidence = (ledger.evidence || []).find((item: any) => item.id === resolvedId)
 
   if (!evidence) {
     throw createError({ statusCode: 404, statusMessage: 'Evidence not found' })
@@ -52,6 +59,7 @@ export default defineEventHandler((event) => {
 
   return {
     id: evidence.id,
+    requestedId: evidenceId === evidence.id ? undefined : evidenceId,
     kind: evidence.kind,
     roles: evidence.roles || [],
     text: truncateText(evidence.text || evidence.quote, 700),

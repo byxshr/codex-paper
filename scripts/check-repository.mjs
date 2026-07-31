@@ -1,0 +1,1355 @@
+#!/usr/bin/env node
+
+import { createHash } from 'node:crypto'
+import { existsSync, lstatSync, readFileSync, statSync } from 'node:fs'
+import { basename, extname, join, relative, resolve, sep } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const SCRIPT_DIR = fileURLToPath(new URL('.', import.meta.url))
+const DEFAULT_REPO_ROOT = resolve(SCRIPT_DIR, '..')
+const LEGACY_TREE = 'plugin'
+const DUPLICATE_MARKETPLACE = '.codex-plugin/marketplace.json'
+const ORIGINAL_PLUGIN = 'plugins/codex-paper/.codex-plugin/original-plugin.json'
+const BASELINE_PATH = 'docs/contracts/s0-contract-baseline.json'
+const EXPECTED_BASELINE_SHA256 = '85bb06acf0f22d7b979605d524717d45ac1f7097de8bf129b7d749eeb889a142'
+const FIXTURE_PDF_ROOT = 'benchmarks/fixtures/pdf/'
+const MANDATORY_MANIFEST = 'benchmarks/mandatory/manifest.json'
+const MANDATORY_RUNNER = 'benchmarks/run-mandatory-benchmark.mjs'
+const MANDATORY_WORKER = 'benchmarks/mandatory/run-fixture.mjs'
+const FIXTURE_GENERATOR = 'benchmarks/fixtures/generate-pdf-fixtures.py'
+const CI_WORKFLOW = '.github/workflows/ci.yml'
+const ROOT_SCRIPT = 'scripts/codex-paper.sh'
+const FACTS_SCHEMA = 'plugins/codex-paper/skills/study/schemas/facts-2.1.schema.json'
+const FACTS_EXTRACTOR = 'plugins/codex-paper/skills/study/scripts/extract-facts.js'
+const PACKAGE_COMPATIBILITY = 'plugins/codex-paper/src/shared/package-compatibility.mjs'
+const STUDY_VALIDATOR = 'plugins/codex-paper/skills/study/scripts/validate-study-package.js'
+const REASONING_VALIDATOR = 'plugins/codex-paper/skills/study/scripts/validate-reasoning.js'
+const MIGRATION_SCRIPT = 'plugins/codex-paper/skills/study/scripts/migrate-package.js'
+const LIBRARY_MAINTENANCE = 'plugins/codex-paper/src/shared/library-maintenance.mjs'
+const LIBRARY_MAINTENANCE_CLI = 'plugins/codex-paper/skills/study/scripts/library-maintenance-cli.js'
+const MIGRATION_TEST = 'scripts/tests/library-maintenance.test.mjs'
+const GENERATION_MIGRATION_TEST = 'scripts/tests/generation-migration.test.mjs'
+const GENERATION_MIGRATION_ENGINE = 'plugins/codex-paper/src/shared/generation-migration.mjs'
+const GENERATION_MIGRATION_CLI = 'plugins/codex-paper/skills/study/scripts/generation-migration-cli.js'
+const COMPATIBILITY_FIXTURE_GENERATOR = 'benchmarks/fixtures/generate-compatibility-fixtures.mjs'
+const COMPATIBILITY_FIXTURE_ROOT = 'benchmarks/fixtures/pdf/compatibility'
+const COMPATIBILITY_FIXTURE_MANIFEST = `${COMPATIBILITY_FIXTURE_ROOT}/manifest.json`
+const MAINTENANCE_SCHEMAS = [
+  'plugins/codex-paper/skills/study/schemas/library-doctor-report-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/paper-backup-manifest-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/backup-restore-transaction-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/migration-plan-1.0.schema.json',
+]
+const DOCTOR_SCHEMA_V1_1 = 'plugins/codex-paper/skills/study/schemas/library-doctor-report-1.1.schema.json'
+const GENERATION_MIGRATION_SCHEMAS = [
+  'plugins/codex-paper/skills/study/schemas/migration-plan-1.1.schema.json',
+  'plugins/codex-paper/skills/study/schemas/migration-transaction-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/migration-source-record-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/evidence-alias-map-1.0.schema.json',
+]
+const MAINTENANCE_SENTINELS = [
+  LIBRARY_MAINTENANCE,
+  LIBRARY_MAINTENANCE_CLI,
+  MIGRATION_TEST,
+  COMPATIBILITY_FIXTURE_GENERATOR,
+  COMPATIBILITY_FIXTURE_MANIFEST,
+  DOCTOR_SCHEMA_V1_1,
+  ...MAINTENANCE_SCHEMAS,
+]
+const GENERATION_MIGRATION_SENTINELS = [
+  GENERATION_MIGRATION_ENGINE,
+  GENERATION_MIGRATION_CLI,
+  GENERATION_MIGRATION_TEST,
+  ...GENERATION_MIGRATION_SCHEMAS,
+]
+const VIEWER_COMPATIBILITY = 'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs'
+const VALIDATION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json'
+const VALIDATION_ENGINE = 'plugins/codex-paper/skills/study/scripts/validation-report.js'
+const VALIDATION_INTRINSIC = 'plugins/codex-paper/src/shared/validation-report-intrinsic.mjs'
+const VALIDATION_API = 'plugins/codex-paper/src/web/server/api/papers/[slug]/validation.get.ts'
+const LEGACY_IDENTITY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-identity-1.0.schema.json'
+const IDENTITY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-identity-2.0.schema.json'
+const IDENTITY_ENGINE = 'plugins/codex-paper/skills/study/scripts/paper-identity.js'
+const LEGACY_GENERATION_CONTRACT = 'plugins/codex-paper/skills/study/generation-contract-1.0.json'
+const GENERATION_CONTRACT = 'plugins/codex-paper/skills/study/generation-contract-2.0.json'
+const PREPARE_SCRIPT = 'plugins/codex-paper/skills/study/scripts/prepare-paper.js'
+const LIBRARY_RESOLVER = 'plugins/codex-paper/src/shared/paper-library.mjs'
+const CURRENT_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-current-1.0.schema.json'
+const PAPER_RECORD_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-record-1.0.schema.json'
+const OVERLAY_SCHEMA = 'plugins/codex-paper/skills/study/schemas/paper-overlay-1.0.schema.json'
+const LAYOUT_TEST = 'scripts/tests/library-layout.test.mjs'
+const WORKSPACE_SCHEMA = 'plugins/codex-paper/skills/study/schemas/generation-workspace-1.0.schema.json'
+const WORKSPACE_ENGINE = 'plugins/codex-paper/src/shared/generation-workspace.mjs'
+const STORAGE_ENGINE = 'plugins/codex-paper/src/shared/storage-transaction.mjs'
+const WORKSPACE_WRITER = 'plugins/codex-paper/src/shared/workspace-writer.mjs'
+const WORKSPACE_CLI = 'plugins/codex-paper/skills/study/scripts/workspace-cli.js'
+const STORAGE_TEST = 'scripts/tests/storage-transaction.test.mjs'
+const LEGACY_GENERATION_MANIFEST_SCHEMA = 'plugins/codex-paper/skills/study/schemas/generation-manifest-1.0.schema.json'
+const GENERATION_MANIFEST_SCHEMA = 'plugins/codex-paper/skills/study/schemas/generation-manifest-2.0.schema.json'
+const FROZEN_GENERATION_MANIFEST_V2_SHA256 = '514daada9b02a53424835bbac43f36cccbaeb6a9d58bdf685dd471ff43be17ce'
+const PUBLICATION_TRANSACTION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/publication-transaction-1.0.schema.json'
+const GENERATION_MANIFEST_ENGINE = 'plugins/codex-paper/src/shared/generation-manifest.mjs'
+const PUBLICATION_ENGINE = 'plugins/codex-paper/src/shared/generation-publication.mjs'
+const PUBLICATION_CLI = 'plugins/codex-paper/skills/study/scripts/publication-cli.js'
+const PUBLICATION_TEST = 'scripts/tests/generation-publication.test.mjs'
+const PROVENANCE_ENGINE = 'plugins/codex-paper/src/shared/generation-provenance.mjs'
+const PROVENANCE_CLI = 'plugins/codex-paper/skills/study/scripts/provenance-cli.js'
+const PROVENANCE_TEST = 'plugins/codex-paper/skills/study/scripts/tests/generation-provenance.test.mjs'
+const CLI_ERROR_FORMAT = 'plugins/codex-paper/src/shared/cli-error-format.mjs'
+const LIBRARY_SECURITY = 'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs'
+const WEB_CONFIG = 'plugins/codex-paper/src/web/nuxt.config.ts'
+const RUNTIME_BASELINE = 'plugins/codex-paper/runtime/runtime-baseline.json'
+const DEPENDENCY_POLICY = 'security/dependency-policy.json'
+const SECRET_SCAN_POLICY = 'security/secret-scan-policy.json'
+const SUPPLY_CHAIN_REVIEW = 'security/supply-chain-review.json'
+const PYTHON_REQUIREMENTS = 'plugins/codex-paper/runtime/python/requirements.lock'
+const RUNTIME_POLICY_SCRIPT = 'scripts/runtime-policy.mjs'
+const DEPENDENCY_AUDIT_SCRIPT = 'scripts/dependency-audit.mjs'
+const SECRET_SCAN_SCRIPT = 'scripts/secret-scan.mjs'
+const SUPPLY_CHAIN_SCRIPT = 'scripts/supply-chain-check.mjs'
+const PARSER_COMPAT_TEST = 'plugins/codex-paper/skills/study/scripts/tests/parse-pdf-compat.test.mjs'
+const PARSER_TITLE_TEST = 'plugins/codex-paper/skills/study/scripts/tests/parse-pdf-title.test.mjs'
+const STUDY_SKILL = 'plugins/codex-paper/skills/study/SKILL.md'
+const SUMMARY_SKILL = 'plugins/codex-paper/skills/summary/SKILL.md'
+const MANDATORY_SENTINELS = [
+  MANDATORY_MANIFEST,
+  MANDATORY_RUNNER,
+  MANDATORY_WORKER,
+  'benchmarks/mandatory/contract.mjs',
+  'benchmarks/mandatory/authoring-boundary.mjs',
+  FIXTURE_GENERATOR,
+  CI_WORKFLOW,
+  ROOT_SCRIPT,
+]
+const EXPECTED_DEFAULT_PROMPT_COUNT = 3
+const EXPECTED_ACTIVE_PLUGIN = Object.freeze({
+  name: 'codex-paper',
+  sourcePath: 'plugins/codex-paper',
+  marketplacePath: '.agents/plugins/marketplace.json',
+  packageVersion: '2.0.0',
+})
+const FROZEN_SCHEMAS = Object.freeze({
+  'evidence-ledger': Object.freeze({
+    version: '2.0.0',
+    path: 'plugins/codex-paper/skills/study/schemas/evidence-ledger.schema.json',
+    sha256: '413d0a60300ea11ca0af36ef706f16904159e0df60a1448f5571d3dcec337df6',
+  }),
+  'external-evidence': Object.freeze({
+    version: '2.0.0',
+    path: 'plugins/codex-paper/skills/study/schemas/external-evidence.schema.json',
+    sha256: 'ffa9e0dd916db8f17ac1995624e00dace08cf0ecf56e8623fbab36981d7d49ca',
+  }),
+  'reasoning-analysis': Object.freeze({
+    version: '2.0.0',
+    path: 'plugins/codex-paper/skills/study/schemas/reasoning-analysis.schema.json',
+    sha256: '52fd874b0fb8843b2f175bb44cd7b4e93abfeefc431625db24918c310d1392c7',
+  }),
+})
+const SENTINELS = [
+  'plugins/codex-paper/.codex-plugin/plugin.json',
+  'plugins/codex-paper/package.json',
+  'plugins/codex-paper/package-lock.json',
+  'plugins/codex-paper/skills/study/SKILL.md',
+  'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
+  'plugins/codex-paper/skills/study/scripts/download-pdf.cjs',
+  'plugins/codex-paper/skills/study/scripts/parse-pdf.js',
+  PARSER_COMPAT_TEST,
+  PARSER_TITLE_TEST,
+  FACTS_EXTRACTOR,
+  FACTS_SCHEMA,
+  PACKAGE_COMPATIBILITY,
+  STUDY_VALIDATOR,
+  MIGRATION_SCRIPT,
+  VIEWER_COMPATIBILITY,
+  VALIDATION_SCHEMA,
+  VALIDATION_ENGINE,
+  VALIDATION_INTRINSIC,
+  VALIDATION_API,
+  IDENTITY_SCHEMA,
+  LEGACY_IDENTITY_SCHEMA,
+  IDENTITY_ENGINE,
+  GENERATION_CONTRACT,
+  LEGACY_GENERATION_CONTRACT,
+  PREPARE_SCRIPT,
+  LIBRARY_RESOLVER,
+  CURRENT_SCHEMA,
+  PAPER_RECORD_SCHEMA,
+  OVERLAY_SCHEMA,
+  LAYOUT_TEST,
+  WORKSPACE_SCHEMA,
+  WORKSPACE_ENGINE,
+  STORAGE_ENGINE,
+  WORKSPACE_WRITER,
+  WORKSPACE_CLI,
+  STORAGE_TEST,
+  GENERATION_MANIFEST_SCHEMA,
+  LEGACY_GENERATION_MANIFEST_SCHEMA,
+  PUBLICATION_TRANSACTION_SCHEMA,
+  GENERATION_MANIFEST_ENGINE,
+  PUBLICATION_ENGINE,
+  PUBLICATION_CLI,
+  PUBLICATION_TEST,
+  PROVENANCE_ENGINE,
+  PROVENANCE_CLI,
+  PROVENANCE_TEST,
+  CLI_ERROR_FORMAT,
+  LIBRARY_SECURITY,
+  WEB_CONFIG,
+  RUNTIME_BASELINE,
+  DEPENDENCY_POLICY,
+  SECRET_SCAN_POLICY,
+  SUPPLY_CHAIN_REVIEW,
+  PYTHON_REQUIREMENTS,
+  RUNTIME_POLICY_SCRIPT,
+  DEPENDENCY_AUDIT_SCRIPT,
+  SECRET_SCAN_SCRIPT,
+  SUPPLY_CHAIN_SCRIPT,
+  SUMMARY_SKILL,
+  'plugins/codex-paper/skills/study/scripts/pdf-parser-launcher.py',
+  'plugins/codex-paper/skills/study/scripts/pdf-parser-worker.js',
+  'plugins/codex-paper/skills/study/scripts/pdf-security-policy.json',
+  'plugins/codex-paper/sandbox/Dockerfile',
+  'plugins/codex-paper/sandbox/policy.json',
+  'plugins/codex-paper/src/web/package.json',
+  'plugins/codex-paper/hooks/hooks.json',
+  ...MAINTENANCE_SENTINELS,
+  ...GENERATION_MIGRATION_SENTINELS,
+  COMPATIBILITY_FIXTURE_ROOT,
+]
+const CONFIG_EXTENSIONS = new Set([
+  '.bash', '.cjs', '.js', '.json', '.mjs', '.mts', '.cts', '.py', '.sh', '.toml', '.ts', '.yaml', '.yml', '.zsh',
+])
+const LOCKFILE_NAMES = new Set([
+  'bun.lock', 'bun.lockb', 'npm-shrinkwrap.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock',
+])
+
+function normalizePath(path) {
+  return path.split(sep).join('/')
+}
+
+function readJson(path, errors, label) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'))
+  } catch (error) {
+    errors.push(`${label} is not valid JSON: ${error.message}`)
+    return null
+  }
+}
+
+function sha256(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
+function lexicallyExists(path) {
+  try {
+    lstatSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function isSymlink(path) {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
+function gitTrackedFiles(repoRoot) {
+  try {
+    return execFileSync('git', ['ls-files', '-z'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .split('\0')
+      .filter(Boolean)
+      // Keep dangling symlinks visible to lexical path checks. Deleted worktree
+      // entries are excluded so an unstaged deletion can be validated before staging.
+      .filter((path) => lexicallyExists(join(repoRoot, path)))
+  } catch (error) {
+    throw new Error(`cannot list tracked files: ${error.message}`)
+  }
+}
+
+function generatedArtifactReason(path) {
+  const segments = path.split('/')
+  const basename = segments.at(-1) || ''
+
+  if (segments.some((segment) => ['node_modules', '.nuxt', '.output', '.vitepress', '.vitepress.backup', 'dist', '__pycache__'].includes(segment))) {
+    return 'generated directory'
+  }
+  if (basename === '.DS_Store') return 'macOS metadata'
+  if (basename === '.installed') return 'installation marker'
+  if (/\.(?:pyc|pyo)$/i.test(basename)) return 'Python bytecode'
+  if (/\.(?:log|pid)$/i.test(basename)) return 'log/PID file'
+  return null
+}
+
+function isSafeRepositoryRelativePath(path) {
+  return typeof path === 'string'
+    && path.length > 0
+    && !path.startsWith('/')
+    && !path.includes('\\')
+    && path.split('/').every((segment) => segment && segment !== '.' && segment !== '..')
+}
+
+function isExecutableOrConfig(repoRoot, path) {
+  if (path === 'scripts/check-repository.mjs' || path.startsWith('scripts/tests/')) return false
+  if (LOCKFILE_NAMES.has(basename(path))) return false
+  if (CONFIG_EXTENSIONS.has(extname(path).toLowerCase())) return true
+  try {
+    return Boolean(statSync(join(repoRoot, path)).mode & 0o111)
+  } catch {
+    return false
+  }
+}
+
+export function checkRepository({
+  repoRoot = DEFAULT_REPO_ROOT,
+  trackedFiles,
+  actualActivePluginRelative = EXPECTED_ACTIVE_PLUGIN.sourcePath,
+} = {}) {
+  const root = resolve(repoRoot)
+  const errors = []
+  const tracked = (trackedFiles || gitTrackedFiles(root)).map(normalizePath)
+  const trackedSet = new Set(tracked)
+
+  if (actualActivePluginRelative !== EXPECTED_ACTIVE_PLUGIN.sourcePath) {
+    errors.push(`root automation active plugin must be ${EXPECTED_ACTIVE_PLUGIN.sourcePath}; found ${JSON.stringify(actualActivePluginRelative)}`)
+  }
+
+  if (existsSync(join(root, LEGACY_TREE))) {
+    errors.push(`legacy tree must not exist in the working tree: ${LEGACY_TREE}/`)
+  }
+  const trackedLegacy = tracked.filter((path) => path === LEGACY_TREE || path.startsWith(`${LEGACY_TREE}/`))
+  if (trackedLegacy.length) {
+    errors.push(`legacy tree contains tracked files: ${trackedLegacy.join(', ')}`)
+  }
+  for (const forbiddenPath of [DUPLICATE_MARKETPLACE, ORIGINAL_PLUGIN]) {
+    if (existsSync(join(root, forbiddenPath)) || trackedSet.has(forbiddenPath)) {
+      errors.push(`redundant plugin entry must not exist: ${forbiddenPath}`)
+    }
+  }
+
+  for (const sentinel of SENTINELS) {
+    if (!existsSync(join(root, sentinel))) errors.push(`active plugin sentinel is missing: ${sentinel}`)
+    else if (isSymlink(join(root, sentinel))) errors.push(`active plugin sentinel must not be a symlink: ${sentinel}`)
+  }
+  for (const sentinel of MANDATORY_SENTINELS) {
+    if (!existsSync(join(root, sentinel))) errors.push(`mandatory regression sentinel is missing: ${sentinel}`)
+    else if (isSymlink(join(root, sentinel))) errors.push(`mandatory regression sentinel must not be a symlink: ${sentinel}`)
+    if (trackedSet.has(MANDATORY_MANIFEST) && !trackedSet.has(sentinel)) errors.push(`mandatory regression sentinel must be tracked: ${sentinel}`)
+  }
+  for (const sentinel of MAINTENANCE_SENTINELS) {
+    if (trackedSet.has(COMPATIBILITY_FIXTURE_MANIFEST) && !trackedSet.has(sentinel)) {
+      errors.push(`P1-2a maintenance sentinel must be tracked: ${sentinel}`)
+    }
+  }
+
+  const pluginManifests = tracked.filter((path) => path === '.codex-plugin/plugin.json' || path.endsWith('/.codex-plugin/plugin.json'))
+  const canonicalManifest = `${EXPECTED_ACTIVE_PLUGIN.sourcePath}/.codex-plugin/plugin.json`
+  if (pluginManifests.length !== 1 || pluginManifests[0] !== canonicalManifest) {
+    errors.push(`tracked plugin manifests must contain only ${canonicalManifest}; found ${pluginManifests.join(', ') || 'none'}`)
+  }
+
+  const baseline = readJson(join(root, BASELINE_PATH), errors, BASELINE_PATH)
+  if (isSymlink(join(root, BASELINE_PATH))) errors.push(`${BASELINE_PATH} must not be a symlink`)
+  if (existsSync(join(root, BASELINE_PATH)) && sha256(join(root, BASELINE_PATH)) !== EXPECTED_BASELINE_SHA256) {
+    errors.push(`${BASELINE_PATH} immutable baseline hash does not match ${EXPECTED_BASELINE_SHA256}`)
+  }
+  for (const [field, expected] of Object.entries(EXPECTED_ACTIVE_PLUGIN)) {
+    if (baseline?.activePlugin?.[field] !== expected) {
+      errors.push(`${BASELINE_PATH} activePlugin.${field} must be ${JSON.stringify(expected)}; found ${JSON.stringify(baseline?.activePlugin?.[field])}`)
+    }
+  }
+  const activePath = EXPECTED_ACTIVE_PLUGIN.sourcePath
+  const marketplacePath = EXPECTED_ACTIVE_PLUGIN.marketplacePath
+  const manifestPath = join(root, activePath, '.codex-plugin/plugin.json')
+  const packagePath = join(root, activePath, 'package.json')
+  const lockPath = join(root, activePath, 'package-lock.json')
+  const marketplace = readJson(join(root, marketplacePath), errors, marketplacePath)
+  const manifest = readJson(manifestPath, errors, normalizePath(relative(root, manifestPath)))
+  const packageJson = readJson(packagePath, errors, normalizePath(relative(root, packagePath)))
+  const lockJson = readJson(lockPath, errors, normalizePath(relative(root, lockPath)))
+
+  if (marketplace) {
+    if (isSymlink(join(root, marketplacePath))) errors.push(`canonical marketplace must not be a symlink: ${marketplacePath}`)
+    const entries = marketplace.plugins?.filter((entry) => entry?.name === 'codex-paper') || []
+    if (entries.length !== 1) {
+      errors.push(`canonical marketplace must contain exactly one codex-paper entry; found ${entries.length}`)
+    } else {
+      const source = entries[0].source
+      if (source?.source !== 'local') errors.push('canonical marketplace source.source must be "local"')
+      if (source?.path !== './plugins/codex-paper') {
+        errors.push(`canonical marketplace source.path must be "./plugins/codex-paper"; found ${JSON.stringify(source?.path)}`)
+      }
+    }
+  }
+
+  if (manifest && packageJson && lockJson) {
+    const folderName = basename(activePath)
+    const names = [folderName, manifest.name, packageJson.name, lockJson.name, lockJson.packages?.['']?.name]
+    if (names.some((name) => name !== folderName)) {
+      errors.push(`active plugin names must match folder ${folderName}: ${names.map((name) => JSON.stringify(name)).join(', ')}`)
+    }
+
+    const baseVersion = String(manifest.version || '').split('+', 1)[0]
+    const packageVersions = [packageJson.version, lockJson.version, lockJson.packages?.['']?.version]
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(baseVersion)) {
+      errors.push(`plugin base version is not semver: ${JSON.stringify(baseVersion)}`)
+    }
+    if (packageVersions.some((version) => version !== baseVersion)) {
+      errors.push(`plugin base version ${baseVersion} must match package and lockfile versions: ${packageVersions.join(', ')}`)
+    }
+
+    const defaultPrompts = manifest.interface?.defaultPrompt
+    if (!Array.isArray(defaultPrompts) || defaultPrompts.length !== EXPECTED_DEFAULT_PROMPT_COUNT) {
+      errors.push(`plugin interface.defaultPrompt must contain exactly ${EXPECTED_DEFAULT_PROMPT_COUNT} core prompts; found ${Array.isArray(defaultPrompts) ? defaultPrompts.length : 'non-array'}`)
+    }
+  }
+
+  for (const path of tracked) {
+    const reason = generatedArtifactReason(path)
+    if (reason) errors.push(`tracked generated artifact (${reason}): ${path}`)
+  }
+
+  for (const pdfPath of tracked.filter((path) => path.toLowerCase().endsWith('.pdf'))) {
+    if (!pdfPath.startsWith(FIXTURE_PDF_ROOT)) {
+      errors.push(`tracked PDF is outside the fixture allowlist ${FIXTURE_PDF_ROOT}: ${pdfPath}`)
+      continue
+    }
+    const absolutePdfPath = join(root, pdfPath)
+    if (isSymlink(absolutePdfPath)) {
+      errors.push(`fixture PDF must not be a symlink: ${pdfPath}`)
+      continue
+    }
+    const manifestPath = `${pdfPath}.manifest.json`
+    if (!trackedSet.has(manifestPath) || !existsSync(join(root, manifestPath))) {
+      errors.push(`fixture PDF requires a tracked manifest: ${manifestPath}`)
+      continue
+    }
+    if (isSymlink(join(root, manifestPath))) {
+      errors.push(`fixture manifest must not be a symlink: ${manifestPath}`)
+      continue
+    }
+    const fixtureManifest = readJson(join(root, manifestPath), errors, manifestPath)
+    const requiredFields = baseline?.fixturePolicy?.requiredManifestFields || []
+    const stringFields = requiredFields.filter((field) => field !== 'redistributable')
+    for (const field of stringFields) {
+      if (typeof fixtureManifest?.[field] !== 'string' || fixtureManifest[field].trim() === '') {
+        errors.push(`fixture manifest ${manifestPath} field ${field} must be a non-empty string`)
+      }
+    }
+    if (fixtureManifest?.redistributable !== true) {
+      errors.push(`fixture manifest ${manifestPath} must set redistributable to true`)
+    }
+    if (fixtureManifest?.kind !== 'pdf') {
+      errors.push(`fixture manifest ${manifestPath} kind must be "pdf"`)
+    }
+    if (typeof fixtureManifest?.spdx === 'string' && !/^[A-Za-z0-9][A-Za-z0-9.+-]*$/.test(fixtureManifest.spdx)) {
+      errors.push(`fixture manifest ${manifestPath} spdx must be a valid SPDX identifier token`)
+    }
+    const allowedOrigins = baseline?.fixturePolicy?.allowedOrigins || []
+    if (!allowedOrigins.includes(fixtureManifest?.origin)) {
+      errors.push(`fixture manifest ${manifestPath} has unsupported origin: ${JSON.stringify(fixtureManifest?.origin)}`)
+    }
+    const actualPdfHash = sha256(absolutePdfPath)
+    if (fixtureManifest?.sha256 !== actualPdfHash) {
+      errors.push(`fixture manifest ${manifestPath} sha256 mismatch: expected ${actualPdfHash}, found ${fixtureManifest?.sha256}`)
+    }
+  }
+
+  if (existsSync(join(root, MANDATORY_MANIFEST))) {
+    const mandatory = readJson(join(root, MANDATORY_MANIFEST), errors, MANDATORY_MANIFEST)
+    const fixtures = mandatory?.fixtures
+    if (mandatory?.schemaVersion !== '1.0.0') errors.push(`${MANDATORY_MANIFEST} schemaVersion must be 1.0.0`)
+    if (!Array.isArray(fixtures) || fixtures.length === 0) {
+      errors.push(`${MANDATORY_MANIFEST} must declare at least one fixture`)
+    } else {
+      const fixtureIds = new Set()
+      for (const fixture of fixtures) {
+        const fixtureId = fixture?.id
+        if (typeof fixtureId !== 'string' || !fixtureId) {
+          errors.push(`${MANDATORY_MANIFEST} fixture id must be a non-empty string`)
+          continue
+        }
+        if (fixtureIds.has(fixtureId)) errors.push(`${MANDATORY_MANIFEST} has duplicate fixture id: ${fixtureId}`)
+        fixtureIds.add(fixtureId)
+        for (const field of ['pdf', 'licenseManifest', 'gold']) {
+          const relativePath = fixture[field]
+          if (!isSafeRepositoryRelativePath(relativePath)) {
+            errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} has unsafe ${field} path`)
+            continue
+          }
+          const absolutePath = join(root, relativePath)
+          if (!existsSync(absolutePath)) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} ${field} is missing: ${relativePath}`)
+          else if (isSymlink(absolutePath)) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} ${field} must not be a symlink: ${relativePath}`)
+          if (trackedSet.has(MANDATORY_MANIFEST) && !trackedSet.has(relativePath)) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} ${field} must be tracked: ${relativePath}`)
+        }
+        if (![fixture.pdf, fixture.licenseManifest, fixture.gold].every((value) => isSafeRepositoryRelativePath(value) && existsSync(join(root, value)))) continue
+        if (fixture.pdf !== `${FIXTURE_PDF_ROOT}${fixtureId}.pdf`) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} PDF path must match its id`)
+        if (fixture.licenseManifest !== `${fixture.pdf}.manifest.json`) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} license manifest must be adjacent to its PDF`)
+        const license = readJson(join(root, fixture.licenseManifest), errors, fixture.licenseManifest)
+        const gold = readJson(join(root, fixture.gold), errors, fixture.gold)
+        if (license?.id !== fixtureId || license?.origin !== 'original-synthetic' || license?.redistributable !== true) {
+          errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must use its original-synthetic redistributable license manifest`)
+        }
+        const expectedGenerator = `bash plugins/codex-paper/scripts/runtime-python.sh ${FIXTURE_GENERATOR} --fixture ${fixtureId}`
+        if (license?.generator !== expectedGenerator) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} generator mismatch`)
+        if (license?.sha256 !== sha256(join(root, fixture.pdf))) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} sha256 mismatch`)
+        if (gold?.schemaVersion !== '1.2.0' || gold?.fixtureId !== fixtureId) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold identity mismatch`)
+        if (!gold?.requiredAssertions || !gold?.authoring) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} gold must define requiredAssertions and authoring`)
+        if (!gold?.requiredAssertions?.resultClaims2_1 || !gold?.requiredAssertions?.validationReport1_0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must require B2 and Validation Report 1.0`)
+        if (gold?.reservedTargets?.validationReport1_0) errors.push(`${MANDATORY_MANIFEST} fixture ${fixtureId} must activate, not reserve, Validation Report 1.0`)
+      }
+    }
+  }
+
+  if (existsSync(join(root, MANDATORY_WORKER))) {
+    const worker = readFileSync(join(root, MANDATORY_WORKER), 'utf8')
+    if (!worker.includes('preparePaper')) errors.push(`${MANDATORY_WORKER} must enter the bounded pipeline through preparePaper`)
+    if (/parsePdfDetailedWorkerInternal|pdf-parser-worker|CODEX_PAPER_PARSER_WORKER|CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS/.test(worker)) {
+      errors.push(`${MANDATORY_WORKER} must not bypass the parser supervisor or honor the optional skip flag`)
+    }
+  }
+  if (existsSync(join(root, MANDATORY_RUNNER))) {
+    const runner = readFileSync(join(root, MANDATORY_RUNNER), 'utf8')
+    if (!runner.includes('mandatoryTotalsPass') || !runner.includes('executed') || /CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS/.test(runner)) {
+      errors.push(`${MANDATORY_RUNNER} must fail closed on zero execution and must not honor the optional skip flag`)
+    }
+  }
+  if (existsSync(join(root, ROOT_SCRIPT))) {
+    const rootScript = readFileSync(join(root, ROOT_SCRIPT), 'utf8')
+    if (!rootScript.includes('benchmark-mandatory') || !rootScript.includes('run-mandatory-benchmark.mjs')) {
+      errors.push(`${ROOT_SCRIPT} must expose benchmark-mandatory`)
+    }
+    if (!rootScript.includes('validation-test') || !rootScript.includes('validation-report.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose validation-test`)
+    if (!rootScript.includes('identity-test') || !rootScript.includes('paper-identity.test.mjs') || !rootScript.includes('prepare-paper-identity.test.mjs')) {
+      errors.push(`${ROOT_SCRIPT} must expose identity-test`)
+    }
+    if (!rootScript.includes('layout-test') || !rootScript.includes('library-layout.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose layout-test`)
+    if (!rootScript.includes('storage-test') || !rootScript.includes('storage-transaction.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose storage-test`)
+    if (!rootScript.includes('publication-test') || !rootScript.includes('generation-publication.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose publication-test`)
+    if (!rootScript.includes('provenance-test') || !rootScript.includes('generation-provenance.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose provenance-test`)
+    if (!rootScript.includes('migration-test') || !rootScript.includes('library-maintenance.test.mjs')
+      || !rootScript.includes('generation-migration.test.mjs') || !rootScript.includes('migrate-package.test.mjs')) {
+      errors.push(`${ROOT_SCRIPT} must expose the complete migration-test gate`)
+    }
+    for (const command of ['provenance-inspect', 'provenance-verify']) {
+      if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
+    }
+    for (const command of ['publish-workspace', 'publication-recover', 'reindex']) {
+      if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
+    }
+    for (const command of [
+      'library-inventory', 'library-doctor', 'backup-list', 'backup-inspect', 'backup-create',
+      'backup-verify', 'backup-restore', 'backup-recover', 'migration-dry-run',
+      'migration-start', 'migration-inspect', 'migration-commit', 'migration-recover',
+      'migration-rollback', 'migration-rollforward',
+    ]) {
+      if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
+    }
+  }
+  if (existsSync(join(root, CI_WORKFLOW))) {
+    const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
+    const mandatoryIndex = workflow.indexOf('benchmark-mandatory')
+    const optionalIndex = workflow.indexOf('CODEX_PAPER_ALLOW_MISSING_BENCHMARK_PDFS')
+    if (mandatoryIndex < 0 || optionalIndex < 0 || mandatoryIndex > optionalIndex) {
+      errors.push(`${CI_WORKFLOW} must run benchmark-mandatory before the optional external corpus`)
+    }
+    const validationIndex = workflow.indexOf('validation-test')
+    if (validationIndex < 0 || validationIndex > mandatoryIndex) errors.push(`${CI_WORKFLOW} must run validation-test before benchmark-mandatory`)
+    const identityIndex = workflow.indexOf('identity-test')
+    if (identityIndex < 0 || identityIndex > validationIndex || identityIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run identity-test before validation-test and benchmark-mandatory`)
+    }
+    const layoutIndex = workflow.indexOf('layout-test')
+    if (layoutIndex < 0 || layoutIndex > validationIndex || layoutIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run layout-test before validation-test and benchmark-mandatory`)
+    }
+    const storageIndex = workflow.indexOf('storage-test')
+    if (storageIndex < 0 || storageIndex < layoutIndex || storageIndex > validationIndex || storageIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run storage-test after layout-test and before validation-test and benchmark-mandatory`)
+    }
+    const publicationIndex = workflow.indexOf('publication-test')
+    if (publicationIndex < 0 || publicationIndex < storageIndex || publicationIndex > validationIndex || publicationIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run publication-test after storage-test and before validation-test and benchmark-mandatory`)
+    }
+    const provenanceIndex = workflow.indexOf('provenance-test')
+    if (provenanceIndex < publicationIndex || provenanceIndex > validationIndex) {
+      errors.push(`${CI_WORKFLOW} must run provenance-test after publication-test and before validation-test`)
+    }
+    const migrationIndex = workflow.indexOf('migration-test')
+    if (migrationIndex < provenanceIndex || migrationIndex > validationIndex || migrationIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run migration-test after provenance-test and before validation-test and benchmark-mandatory`)
+    }
+  }
+
+  if (existsSync(join(root, LIBRARY_RESOLVER))) {
+    const resolver = readFileSync(join(root, LIBRARY_RESOLVER), 'utf8')
+    for (const required of ['managed_v1', 'legacy_flat', 'current.json', 'overlay', 'paperLockKey', 'generationLockKey']) {
+      if (!resolver.includes(required)) errors.push(`${LIBRARY_RESOLVER} must implement ${required}`)
+    }
+    if (!resolver.includes('verifyGenerationManifest')) errors.push(`${LIBRARY_RESOLVER} must verify sealed generations during authoritative resolution`)
+  }
+  if (existsSync(join(root, WEB_CONFIG)) && !readFileSync(join(root, WEB_CONFIG), 'utf8').includes('generation-manifest\\.mjs$')) {
+    errors.push(`${WEB_CONFIG} must inline generation-manifest.mjs with the shared paper resolver`)
+  }
+  for (const consumer of [
+    PREPARE_SCRIPT,
+    'plugins/codex-paper/skills/study/scripts/validate-reasoning.js',
+    'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
+    'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
+    'plugins/codex-paper/src/web/server/utils/librarySecurity.mjs',
+  ]) {
+    if (!existsSync(join(root, consumer))) continue
+    const source = readFileSync(join(root, consumer), 'utf8')
+    if (!source.includes('paper-library.mjs')) errors.push(`${consumer} must use the shared paper library resolver`)
+  }
+  for (const consumer of [
+    'plugins/codex-paper/skills/study/scripts/build-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/render-from-analysis.js',
+    'plugins/codex-paper/skills/study/scripts/scaffold-reasoning-analysis.js',
+  ]) {
+    if (existsSync(join(root, consumer)) && !readFileSync(join(root, consumer), 'utf8').includes('workspace-writer.mjs')) {
+      errors.push(`${consumer} must use the shared workspace writer`)
+    }
+  }
+
+  if (existsSync(join(root, GENERATION_CONTRACT))) {
+    const contract = readJson(join(root, GENERATION_CONTRACT), errors, GENERATION_CONTRACT)
+    if (contract?.version !== '2.0.0') {
+      errors.push(`${GENERATION_CONTRACT} must declare version 2.0.0`)
+    }
+    for (const [group, paths] of [
+      ['common', contract?.common],
+      ['study', contract?.workflows?.study],
+      ['summary', contract?.workflows?.summary],
+    ]) {
+      if (!Array.isArray(paths) || paths.length === 0) {
+        errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} must be non-empty`)
+        continue
+      }
+      const seen = new Set()
+      for (const contractPath of paths) {
+        if (!isSafeRepositoryRelativePath(contractPath)) {
+          errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} contains unsafe path: ${JSON.stringify(contractPath)}`)
+          continue
+        }
+        if (seen.has(contractPath)) errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} contains duplicate path: ${contractPath}`)
+        seen.add(contractPath)
+        const absolutePath = join(root, EXPECTED_ACTIVE_PLUGIN.sourcePath, contractPath)
+        if (!existsSync(absolutePath)) errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} path is missing: ${contractPath}`)
+        else if (isSymlink(absolutePath)) errors.push(`${GENERATION_CONTRACT} trustedFiles.${group} path must not be a symlink: ${contractPath}`)
+      }
+    }
+    const allTrustedPaths = [
+      ...(contract?.common || []),
+      ...(contract?.workflows?.study || []),
+      ...(contract?.workflows?.summary || []),
+    ]
+    for (const forbidden of [
+      '.codex-plugin/plugin.json',
+      'package-lock.json',
+      'skills/study/schemas/generation-manifest-2.0.schema.json',
+      'src/shared/generation-manifest.mjs',
+    ]) {
+      if (allTrustedPaths.includes(forbidden)) errors.push(`${GENERATION_CONTRACT} must exclude provenance-only file from fingerprint: ${forbidden}`)
+    }
+    for (const required of [
+      'runtime/runtime-baseline.json',
+      'skills/study/scripts/paper-identity.js',
+      'skills/study/schemas/paper-identity-2.0.schema.json',
+      'src/shared/generation-provenance.mjs',
+    ]) {
+      if (!allTrustedPaths.includes(required)) errors.push(`${GENERATION_CONTRACT} must trust ${required}`)
+    }
+  }
+
+  if (existsSync(join(root, IDENTITY_SCHEMA))) {
+    const schema = readJson(join(root, IDENTITY_SCHEMA), errors, IDENTITY_SCHEMA)
+    if (schema?.$id !== 'https://github.com/byxshr/codex-paper/schemas/paper-identity-2.0.schema.json'
+      || schema?.properties?.schemaVersion?.const !== '2.0.0'
+      || !schema?.required?.includes('paperId')
+      || !schema?.required?.includes('generationId')) {
+      errors.push(`${IDENTITY_SCHEMA} must preserve the strict Paper Identity 2.0 contract`)
+    }
+  }
+  if (existsSync(join(root, IDENTITY_ENGINE))) {
+    const source = readFileSync(join(root, IDENTITY_ENGINE), 'utf8')
+    for (const required of ['CANONICAL_ID_CONFLICT', 'canonicalStringify', 'buildContentContract', "gen:sha256:", 'pluginBuildVersion', 'runtimeContract', 'authoringEngine', 'validateLegacyIdentitySchema']) {
+      if (!source.includes(required)) errors.push(`${IDENTITY_ENGINE} must preserve identity boundary ${required}`)
+    }
+    if (!source.includes('sha256(canonicalStringify(generationInputs))')) {
+      errors.push(`${IDENTITY_ENGINE} generation fingerprint must hash canonical inputs without provenance`)
+    }
+  }
+  if (existsSync(join(root, PREPARE_SCRIPT))) {
+    const source = readFileSync(join(root, PREPARE_SCRIPT), 'utf8')
+    for (const required of ['resolvePreparationAction', 'PAPER_IDENTITY_RECONCILIATION_REQUIRED', 'RESUME_GENERATION_NOT_FOUND', 'createGenerationWorkspace', 'isActiveGenerationWorkspace', 'resumeWorkspace', 'IDENTITY_RELATIVE_PATH', 'assertContentRuntime', 'collectSoftwareProvenance', '--authoring-provider', '--authoring-model']) {
+      if (!source.includes(required)) errors.push(`${PREPARE_SCRIPT} must preserve fail-closed identity boundary ${required}`)
+    }
+    if (source.indexOf('collectSoftwareProvenance(identity)') > source.indexOf('createGenerationWorkspace({')) {
+      errors.push(`${PREPARE_SCRIPT} must collect software provenance before acquiring workspace storage locks`)
+    }
+    if (/writeLibraryIndex|writeCurrentRecord|writePaperRecord|writeJsonAtomicNoFollow|writeIndexPreserveShape|\bwriteFileSync\b|\bwriteFile\s*\(|['"](?:index|current|paper)\.json['"]/.test(source)) {
+      errors.push(`${PREPARE_SCRIPT} must not publish current, record, or index during C2a`)
+    }
+    if (/--force\b|force\s*:\s*true|copyFileSync\([^\n]*COPYFILE_FICLONE_FORCE/.test(source)) {
+      errors.push(`${PREPARE_SCRIPT} must not restore overwrite or force preparation`)
+    }
+  }
+  if (existsSync(join(root, MIGRATION_SCRIPT))) {
+    const source = readFileSync(join(root, MIGRATION_SCRIPT), 'utf8')
+    for (const required of ['MIGRATION_EXECUTION_DEFERRED', '--dry-run', 'buildMigrationPlan']) {
+      if (!source.includes(required)) errors.push(`${MIGRATION_SCRIPT} must remain a read-only migration planner: ${required}`)
+    }
+    if (/parsePdfDetailed|buildEvidenceLedger|withStorageLocks|atomicWrite|writeFile|--force|--external-path/.test(source)) {
+      errors.push(`${MIGRATION_SCRIPT} must not retain parser, writer, lock, force, or external-path execution capabilities`)
+    }
+  }
+  if (existsSync(join(root, LIBRARY_MAINTENANCE))) {
+    const source = readFileSync(join(root, LIBRARY_MAINTENANCE), 'utf8')
+    for (const required of [
+      'BACKUPS_RELATIVE_PATH', 'RESTORE_TRANSACTIONS_RELATIVE_PATH', 'RESTORE_STAGING_RELATIVE_PATH',
+      'O_NOFOLLOW', 'withStorageLocks', 'BACKUP_RESTORE_CONFLICT', 'LIBRARY_SCAN_UNSTABLE',
+      "MIGRATION_PLAN_VERSION = '1.1.0'", 'validateMigrationPlanDocument', 'assertSchema', 'rootMode', 'directories',
+      'inventoryMatchesManifest', '.invalid-', 'lockHandle.assertOwns', 'readRestoreJournal',
+      "existing?.state === 'target_restored'", "index.shape === 'object'", 'verifyPayloads',
+      'removeTreeForcingWritable', 'LIBRARY_INDEX_DRIFT_UNDETERMINED', 'targetReportPath',
+      'payloadsVerified', 'MIGRATION_BACKUP_INVALID', 'sourceDiagnosticAuthority', 'maybeFault',
+      'MIGRATION_TRANSACTIONS_RELATIVE_PATH', 'MIGRATION_ARCHIVES_RELATIVE_PATH',
+      'migrationSourceSnapshot', 'pendingMigrations', 'migrationArchiveBytes',
+      "DOCTOR_REPORT_VERSION = '1.1.0'", 'validateDoctorReportDocument', 'descriptorForMigrationTarget',
+    ]) {
+      if (!source.includes(required)) errors.push(`${LIBRARY_MAINTENANCE} must preserve maintenance boundary ${required}`)
+    }
+    const lockIndex = source.indexOf('return withStorageLocks(lockKeys')
+    const journalIndex = source.indexOf('const existing = existingRestoreJournal', lockIndex)
+    if (lockIndex < 0 || journalIndex < lockIndex) {
+      errors.push(`${LIBRARY_MAINTENANCE} must re-read the deterministic restore journal under the restore lock`)
+    }
+  }
+  if (existsSync(join(root, GENERATION_MIGRATION_ENGINE))) {
+    const source = readFileSync(join(root, GENERATION_MIGRATION_ENGINE), 'utf8')
+    for (const required of [
+      'verifyBackup', 'preparePaper', 'writeAuthoringWithProvenance', 'validateEvidenceAliasMap',
+      'publishGenerationWorkspace', 'allowLegacyRoute', 'MIGRATION_VALIDATION_REQUIRED',
+      'expectedManifestHash', 'moveLegacySourceToArchive', 'recoverGenerationMigrations',
+      'migrationSourceSnapshot', 'sameCurrent', 'liveManagedCurrent', 'MIGRATION_SOURCE_MISSING',
+      'activeTransactionsForTarget', 'MIGRATION_START_INCOMPLETE', 'MIGRATION_TRANSACTION_UNSUPPORTED',
+      'targetedIndex', 'replaceLegacyRoute', 'replaceManagedRoute',
+    ]) {
+      if (!source.includes(required)) errors.push(`${GENERATION_MIGRATION_ENGINE} must preserve migration boundary ${required}`)
+    }
+    if (/latestWorkspace|selectLatestWorkspace/i.test(source)) {
+      errors.push(`${GENERATION_MIGRATION_ENGINE} must never choose an implicit latest workspace`)
+    }
+  }
+  if (existsSync(join(root, PACKAGE_COMPATIBILITY))) {
+    const source = readFileSync(join(root, PACKAGE_COMPATIBILITY), 'utf8')
+    for (const required of ['validateEvidenceAliasMap', 'bySource.has(ref)', 'resolveLegacyEvidenceRef']) {
+      if (!source.includes(required)) errors.push(`${PACKAGE_COMPATIBILITY} must preserve Evidence Alias resolution ${required}`)
+    }
+  }
+  if (existsSync(join(root, VALIDATION_ENGINE))) {
+    const source = readFileSync(join(root, VALIDATION_ENGINE), 'utf8')
+    if (!source.includes('evidence-aliases.json') || !source.includes('validateEvidenceAliasMap')) {
+      errors.push(`${VALIDATION_ENGINE} must validate Evidence Alias Maps before resolving migrated references`)
+    }
+  }
+  for (const schemaPath of GENERATION_MIGRATION_SCHEMAS) {
+    if (!existsSync(join(root, schemaPath))) continue
+    const schema = readJson(join(root, schemaPath), errors, schemaPath)
+    if (schema?.additionalProperties !== false) errors.push(`${schemaPath} must remain a strict migration contract`)
+  }
+  if (existsSync(join(root, WORKSPACE_SCHEMA))) {
+    const schema = readJson(join(root, WORKSPACE_SCHEMA), errors, WORKSPACE_SCHEMA)
+    for (const state of ['authoring', 'validating', 'validated', 'failed', 'abandoned']) {
+      if (!schema?.properties?.state?.enum?.includes(state)) errors.push(`${WORKSPACE_SCHEMA} must preserve workspace state ${state}`)
+    }
+  }
+  if (existsSync(join(root, STORAGE_ENGINE))) {
+    const source = readFileSync(join(root, STORAGE_ENGINE), 'utf8')
+    for (const required of ['registry', 'paper', 'source', 'generation', 'workspace', 'trash', 'index', 'O_NOFOLLOW', 'expectedSha256', 'fileWritePrecondition', 'storageCliExitCode', 'MAX_LOCK_TIMEOUT_MS', 'fsyncSync', 'hostname', 'heartbeatAt', 'reclaimGuard', 'releaseAcquired']) {
+      if (!source.includes(required)) errors.push(`${STORAGE_ENGINE} must preserve storage boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, LIBRARY_SECURITY)) && !readFileSync(join(root, LIBRARY_SECURITY), 'utf8').includes('fileWritePrecondition')) {
+    errors.push(`${LIBRARY_SECURITY} must use the shared CAS precondition helper`)
+  }
+  for (const cli of [PREPARE_SCRIPT, WORKSPACE_CLI]) {
+    if (!existsSync(join(root, cli))) continue
+    const source = readFileSync(join(root, cli), 'utf8')
+    if (!source.includes('storageCliExitCode')) errors.push(`${cli} must use the shared storage CLI exit mapping`)
+    if (!source.includes('MAX_LOCK_TIMEOUT_MS')) errors.push(`${cli} must use the shared storage lock timeout maximum`)
+  }
+  if (existsSync(join(root, WORKSPACE_ENGINE))) {
+    const source = readFileSync(join(root, WORKSPACE_ENGINE), 'utf8')
+    for (const required of ['SHARED_WORKSPACES_RELATIVE_PATH', '.init-', 'WORKSPACE_EXISTS', 'resolveGenerationWorkspace', 'createWorkspaceDiagnostic', 'abandoned', 'writeWorkspaceAuthoring', 'resolveWorkspaceAuthoringEvent', "maybeFault(options, 'after_authoring_demotion')", 'AUTHORING_EVENT_ADOPTED', 'publicationInvalid', 'buildProvenanceDraft', 'writeInitialProvenanceDraft', 'writeAuthoringWithProvenance', 'provenance?.software']) {
+      if (!source.includes(required)) errors.push(`${WORKSPACE_ENGINE} must preserve workspace boundary ${required}`)
+    }
+    if (/latest workspace|selectLatest|most recent workspace/i.test(source)) errors.push(`${WORKSPACE_ENGINE} must not select an implicit latest workspace`)
+    const lockIndex = source.indexOf('return withStorageLocks(keys')
+    const cleanupIndex = source.indexOf('cleanupInitDirectories(layout)')
+    if (cleanupIndex < 0 || lockIndex < 0 || cleanupIndex < lockIndex) {
+      errors.push(`${WORKSPACE_ENGINE} must clean initialization residues while holding the registry lock`)
+    }
+    const resolution = source.slice(source.indexOf('export async function resolveWorkspaceAuthoringEvent'))
+    const demotionIndex = resolution.indexOf('transitionWorkspaceToAuthoringLocked')
+    const adoptionIndex = resolution.indexOf('resolveUnresolvedAuthoringEvent')
+    if (demotionIndex < 0 || adoptionIndex < 0 || demotionIndex > adoptionIndex) {
+      errors.push(`${WORKSPACE_ENGINE} must demote validation state before adopting an ambiguous authoring event`)
+    }
+  }
+  if (existsSync(join(root, GENERATION_MANIFEST_SCHEMA))) {
+    const schema = readJson(join(root, GENERATION_MANIFEST_SCHEMA), errors, GENERATION_MANIFEST_SCHEMA)
+    if (sha256(join(root, GENERATION_MANIFEST_SCHEMA)) !== FROZEN_GENERATION_MANIFEST_V2_SHA256) {
+      errors.push(`frozen Generation Manifest 2.0 schema hash mismatch: ${GENERATION_MANIFEST_SCHEMA}`)
+    }
+    if (schema?.properties?.schemaVersion?.const !== '2.0.0' || schema?.additionalProperties !== false) {
+      errors.push(`${GENERATION_MANIFEST_SCHEMA} must preserve the strict Generation Manifest 2.0 contract`)
+    }
+    for (const field of ['manifestId', 'transactionId', 'paperKey', 'generationId', 'source', 'generation', 'software', 'runtime', 'artifacts', 'validation', 'executions', 'authoring', 'migrations', 'diagnostics', 'integrity', 'files', 'manifestHash']) {
+      if (!schema?.required?.includes(field)) errors.push(`${GENERATION_MANIFEST_SCHEMA} must require ${field}`)
+    }
+  }
+  if (existsSync(join(root, GENERATION_MANIFEST_ENGINE))) {
+    const source = readFileSync(join(root, GENERATION_MANIFEST_ENGINE), 'utf8')
+    for (const required of ['GENERATION_MANIFEST_RELATIVE_PATH', 'LEGACY_GENERATION_MANIFEST_VERSION', 'validateLegacyGenerationManifest', 'validateManifestV2Schema', 'inventoryGenerationFiles', 'return files.sort', 'verifyGenerationManifestBinding', 'readManifestBoundFile', 'verifyGenerationManifest', 'unsealGenerationPackageForLifecycle', 'containmentRoot', 'GENERATION_MANIFEST_DIRTY', 'readFileNoFollowBounded', 'buildArtifactGraph', 'collectExecutionReports', 'expectedDiagnostics', 'deferred_to_p2_5']) {
+      if (!source.includes(required)) errors.push(`${GENERATION_MANIFEST_ENGINE} must preserve generation manifest boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, PROVENANCE_ENGINE))) {
+    const source = readFileSync(join(root, PROVENANCE_ENGINE), 'utf8')
+    for (const required of ['provenance-draft.json', 'PROVENANCE_DRAFT_MISSING', 'writeAuthoringWithProvenance', 'recoverPendingAuthoringEvents', 'resolveUnresolvedAuthoringEvent', 'MAX_AUTHORING_EVENTS', 'MAX_AUTHORING_DEPENDENCIES', 'defaultDependencies', 'buildArtifactGraph', 'PROVENANCE_DEPENDENCY_STALE', 'PROVENANCE_EVENT_UNRESOLVED', 'collectExecutionReports', 'reportIntrinsicHash', 'SOURCE_LOCATOR_REDACTED', 'AUTHORING_ACTOR_UNDECLARED', 'AUTHORING_EVENT_ADOPTED', 'AUTHORING_EVENT_RECONCILED']) {
+      if (!source.includes(required)) errors.push(`${PROVENANCE_ENGINE} must preserve provenance boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, CLI_ERROR_FORMAT))) {
+    const source = readFileSync(join(root, CLI_ERROR_FORMAT), 'utf8')
+    for (const required of ['formatCliError', 'sanitizeText', 'sanitizeHttpUrl', 'redactPathText', 'matchAll(HTTP_URL)', 'redacted-path', 'Details:', "details === '{}'", 'truncated: true']) {
+      if (!source.includes(required)) errors.push(`${CLI_ERROR_FORMAT} must preserve bounded redacted CLI detail ${required}`)
+    }
+    if (source.includes("code.includes('CONFLICT')") || source.includes("code.includes('RECOVERY')")) {
+      errors.push(`${CLI_ERROR_FORMAT} must not classify permanent conflict or recovery failures as retryable`)
+    }
+    if (!source.includes("code === 'BACKUP_RESTORE_CONFLICT'")) {
+      errors.push(`${CLI_ERROR_FORMAT} must preserve the explicit retryable backup restore conflict mapping`)
+    }
+  }
+  if (existsSync(join(root, PUBLICATION_ENGINE))) {
+    const source = readFileSync(join(root, PUBLICATION_ENGINE), 'utf8')
+    for (const required of ['validateValidationReportForPublication', 'publication.json', 'generation_committed', 'current_committed', 'index_committed', 'after_current_commit', 'before_index_commit', 'after_new_payload_rename', 'after_existing_payload_rename', 'after_new_payload_staged', 'persistedJournal', 'indexDiagnostics', 'withStorageLocks', 'verifyGenerationManifestBinding', 'readManifestBoundFile', 'verifyGenerationManifest', 'rebuildLibraryIndex', 'recoverPendingAuthoringEvents', 'assertContentRuntime', 'verifyReadmeProjection', 'provenanceDraft']) {
+      if (!source.includes(required)) errors.push(`${PUBLICATION_ENGINE} must preserve publication boundary ${required}`)
+    }
+    if (/rmSync\([^\n]*generation|rmSync\([^\n]*package/.test(source)) errors.push(`${PUBLICATION_ENGINE} must not delete committed generations or workspace packages`)
+    if (!source.includes('managedStrict: false') || !source.includes('legacyStrict: false')
+      || !source.includes("'LIBRARY_INDEX_REPAIR_BLOCKED'")) {
+      errors.push(`${PUBLICATION_ENGINE} must preserve tolerant planning and explicit blocked index repair policy`)
+    }
+  }
+  if (existsSync(join(root, PUBLICATION_CLI))) {
+    const source = readFileSync(join(root, PUBLICATION_CLI), 'utf8')
+    for (const required of ['publishGenerationWorkspace', 'recoverPublications', 'rebuildLibraryIndex', 'MAX_LOCK_TIMEOUT_MS', 'formatCliError']) {
+      if (!source.includes(required)) errors.push(`${PUBLICATION_CLI} must expose exact publication operation ${required}`)
+    }
+    if (/latest workspace|selectLatest|most recent workspace/i.test(source)) errors.push(`${PUBLICATION_CLI} must not select an implicit latest workspace`)
+  }
+  if (existsSync(join(root, PROVENANCE_CLI))) {
+    const source = readFileSync(join(root, PROVENANCE_CLI), 'utf8')
+    for (const required of ['workspace_draft', 'native_2_0', 'compatible_1_0', 'unsupported', 'postSealEvents', 'pendingEvents', 'intendedSha256', 'verifyGenerationManifest', 'formatCliError']) {
+      if (!source.includes(required)) errors.push(`${PROVENANCE_CLI} must expose provenance mode ${required}`)
+    }
+  }
+  if (existsSync(join(root, WORKSPACE_CLI)) && !readFileSync(join(root, WORKSPACE_CLI), 'utf8').includes('formatCliError')) {
+    errors.push(`${WORKSPACE_CLI} must print bounded redacted operation details`)
+  }
+  if (existsSync(join(root, MANDATORY_WORKER)) && !readFileSync(join(root, MANDATORY_WORKER), 'utf8').includes('publishGenerationWorkspace')) {
+    errors.push(`${MANDATORY_WORKER} must complete the mandatory pipeline through publication`)
+  }
+  const authoringBoundary = 'benchmarks/mandatory/authoring-boundary.mjs'
+  if (existsSync(join(root, MANDATORY_WORKER)) && existsSync(join(root, authoringBoundary))) {
+    const authoring = readFileSync(join(root, authoringBoundary), 'utf8')
+    if (!authoring.includes('writeWorkspaceAuthoring') || /writeFileSync|writeFile\(/.test(authoring)) {
+      errors.push(`${authoringBoundary} must author through the shared workspace writer`)
+    }
+  }
+  for (const [skillPath, workflow] of [[STUDY_SKILL, 'study'], [SUMMARY_SKILL, 'summary']]) {
+    if (!existsSync(join(root, skillPath))) continue
+    const source = readFileSync(join(root, skillPath), 'utf8')
+    if (!source.includes(`--workflow ${workflow}`) || !source.includes('--language')) {
+      errors.push(`${skillPath} must pass explicit --workflow ${workflow} and --language to prepare-paper.js`)
+    }
+    if (!source.includes('--authoring-provider unavailable --authoring-model unavailable') || !source.includes('--actor codex')) {
+      errors.push(`${skillPath} must declare authoring provenance and use the codex actor for workspace writes`)
+    }
+    if (!source.includes('../../../../scripts/codex-paper.sh prepare')
+      || !source.includes('../../../../scripts/codex-paper.sh runtime-status')
+      || !source.includes('installed plugin cache')) {
+      errors.push(`${skillPath} must use repository-root runtime commands only when the checkout wrapper exists`)
+    }
+    if (workflow === 'study' && !source.includes('../../../../scripts/codex-paper.sh publish-workspace')) {
+      errors.push(`${skillPath} must publish through the same checkout-relative root wrapper`)
+    }
+    if (workflow === 'study' && (!source.includes('PROVENANCE_DEPENDENCY_STALE') || !source.includes('provenance-resolve'))) {
+      errors.push(`${skillPath} must document stale dependency regeneration and audited event recovery`)
+    }
+  }
+
+  const legacyReference = new RegExp(`(^|[^A-Za-z0-9_-])${LEGACY_TREE}/`)
+  for (const path of tracked) {
+    if (!isExecutableOrConfig(root, path)) continue
+    try {
+      const content = readFileSync(join(root, path), 'utf8')
+      if (legacyReference.test(content)) errors.push(`executable/config references legacy path: ${path}`)
+    } catch (error) {
+      errors.push(`cannot inspect executable/config ${path}: ${error.message}`)
+    }
+  }
+
+  for (const readmePath of ['README.md', 'README.zh-CN.md']) {
+    if (!existsSync(join(root, readmePath))) continue
+    const content = readFileSync(join(root, readmePath), 'utf8')
+    if (!content.includes('plugins/codex-paper/') || !content.includes('.agents/plugins/marketplace.json')) {
+      errors.push(`${readmePath} must document the canonical plugin and marketplace paths`)
+    }
+    if (/├── plugin\/|Historical source copy retained|历史源码副本保留在/.test(content)) {
+      errors.push(`${readmePath} still presents the legacy tree as repository layout`)
+    }
+    if (legacyReference.test(content)) {
+      errors.push(`${readmePath} references the legacy plugin path`)
+    }
+  }
+
+  const validatorRelative = `${activePath}/skills/study/scripts/validate-study-package.js`
+  const studySkillRelative = `${activePath}/skills/study/SKILL.md`
+  const sandboxRunnerRelative = `${activePath}/skills/study/scripts/sandbox-code.js`
+  const sandboxPolicyRelative = `${activePath}/sandbox/policy.json`
+  const sandboxDockerfileRelative = `${activePath}/sandbox/Dockerfile`
+  const validatorSource = existsSync(join(root, validatorRelative)) ? readFileSync(join(root, validatorRelative), 'utf8') : ''
+  if (/node:child_process|from ['"]child_process['"]|require\(['"](?:node:)?child_process['"]\)/.test(validatorSource)) {
+    errors.push(`${validatorRelative} must remain static-only and must not execute child processes`)
+  }
+  for (const prosePath of ['README.md', 'README.zh-CN.md', studySkillRelative]) {
+    if (!existsSync(join(root, prosePath))) continue
+    const content = readFileSync(join(root, prosePath), 'utf8')
+    if (/validate-study-package\.js[^\n`]*--run-(?:code|artifacts)/.test(content)) {
+      errors.push(`${prosePath} must not recommend legacy generated-code execution through the package validator`)
+    }
+  }
+  if (existsSync(join(root, studySkillRelative))) {
+    const studySkill = readFileSync(join(root, studySkillRelative), 'utf8')
+    if (!studySkill.includes('does not authenticate a human') || !studySkill.includes('Never issue and consume a token in one uninterrupted turn')) {
+      errors.push(`${studySkillRelative} must preserve the explicit human-consent workflow boundary`)
+    }
+    if (!studySkill.includes('bash ../../scripts/runtime-python.sh ./scripts/extract-images.py')) {
+      errors.push(`${studySkillRelative} must invoke image extraction through paths relative to the study skill directory`)
+    }
+  }
+  if (existsSync(join(root, sandboxRunnerRelative))) {
+    const runnerSource = readFileSync(join(root, sandboxRunnerRelative), 'utf8')
+    if (/\bshell\s*:\s*true\b|import\s*\{[^}]*\bexec(?:File)?(?:Sync)?\b[^}]*\}\s*from\s*['"](?:node:)?child_process['"]/.test(runnerSource)) {
+      errors.push(`${sandboxRunnerRelative} must use argv-array process execution without a shell or exec fallback`)
+    }
+    if (!runnerSource.includes('import bz2, ctypes, hashlib, importlib.util, lzma')
+      || !runnerSource.includes('("pip", "setuptools", "wheel", "pkg_resources")')
+      || !runnerSource.includes('which("npm") is None')
+      || !runnerSource.includes('unexpected Node=\\${process.versions.node}')) {
+      errors.push(`${sandboxRunnerRelative} must verify complete package-manager-free Python and report the container Node version`)
+    }
+  }
+  if (existsSync(join(root, sandboxDockerfileRelative))) {
+    const dockerfile = readFileSync(join(root, sandboxDockerfileRelative), 'utf8')
+    if (!/^ARG BASE_IMAGE=[^\s]+@sha256:[a-f0-9]{64}$/m.test(dockerfile)) {
+      errors.push(`${sandboxDockerfileRelative} base image must be pinned to an exact sha256 manifest digest`)
+    }
+    if (!/^ARG PYTHON_BASE_IMAGE=python:3\.11\.15-slim-bookworm@sha256:[a-f0-9]{64}$/m.test(dockerfile)
+      || !/FROM \$\{BASE_IMAGE\} AS node-runtime/.test(dockerfile)
+      || !/FROM \$\{PYTHON_BASE_IMAGE\}/.test(dockerfile)
+      || !/COPY --from=node-runtime \/usr\/local\/bin\/node \/usr\/local\/bin\/node/.test(dockerfile)
+      || !/import bz2, ctypes, hashlib, lzma, readline, sqlite3, ssl, uuid, zlib/.test(dockerfile)
+      || !/\("pip", "setuptools", "wheel", "pkg_resources"\)/.test(dockerfile)
+      || !/which\("npm"\) is None/.test(dockerfile)
+      || /apt-get|apk add|yum install/.test(dockerfile)) {
+      errors.push(`${sandboxDockerfileRelative} must compose digest-pinned Node with the complete package-manager-free CPython 3.11.15 image`)
+    }
+  }
+  if (existsSync(join(root, sandboxPolicyRelative))) {
+    const policy = readJson(join(root, sandboxPolicyRelative), errors, sandboxPolicyRelative)
+    if (!String(policy?.baseImage || '').match(/@sha256:[a-f0-9]{64}$/)) errors.push(`${sandboxPolicyRelative} baseImage must be digest-pinned`)
+    if (!String(policy?.pythonBaseImage || '').match(/^python:3\.11\.15-slim-bookworm@sha256:[a-f0-9]{64}$/)) errors.push(`${sandboxPolicyRelative} pythonBaseImage must pin CPython 3.11.15 by digest`)
+    if (policy?.runtime?.node !== '20.20.2' || policy?.runtime?.python !== '3.11.15') errors.push(`${sandboxPolicyRelative} must freeze sandbox Node 20.20.2 and Python 3.11.15`)
+    if (policy?.policyVersion !== '1.0.0' || policy?.conformanceVersion !== '1.0.0') {
+      errors.push(`${sandboxPolicyRelative} must declare P0-A3 policy and conformance version 1.0.0`)
+    }
+    if (policy?.executionReportVersion !== '2.0.0') errors.push(`${sandboxPolicyRelative} must use provenance-bound execution reports 2.0.0`)
+  }
+
+  if (existsSync(join(root, RUNTIME_BASELINE))) {
+    const runtime = readJson(join(root, RUNTIME_BASELINE), errors, RUNTIME_BASELINE)
+    const expected = { node: '22.23.1', npm: '10.9.8', python: '3.11.15', pyMuPDF: '1.28.0' }
+    for (const [field, value] of Object.entries(expected)) {
+      if (runtime?.host?.[field] !== value) errors.push(`${RUNTIME_BASELINE} host.${field} must be ${value}`)
+    }
+    if (runtime?.provenanceConsumer !== 'P1-4' || runtime?.retroactiveManifestRewrite !== false) {
+      errors.push(`${RUNTIME_BASELINE} must remain a non-retroactive P1-4 provenance input`)
+    }
+    const runtimeSites = [
+      ['scripts/common.sh', `python-${runtime?.host?.python}/bin/python`, 'managed Python path'],
+      ['scripts/common.sh', `NODE_REQUIRED="${runtime?.host?.node}"`, 'Node version'],
+      [`${activePath}/scripts/runtime-python.sh`, `python-${runtime?.host?.python}/bin/python`, 'managed Python path'],
+      [`${activePath}/scripts/start-webui.sh`, `NODE_REQUIRED="${runtime?.host?.node}"`, 'Node version'],
+      [`${activePath}/skills/study/scripts/parse-pdf.js`, `'python-${runtime?.host?.python}'`, 'managed Python path'],
+      ['benchmarks/run-mandatory-benchmark.mjs', `'python-${runtime?.host?.python}'`, 'managed Python path'],
+    ]
+    for (const [relativePath, required, boundary] of runtimeSites) {
+      if (existsSync(join(root, relativePath)) && !readFileSync(join(root, relativePath), 'utf8').includes(required)) {
+        errors.push(`${relativePath} ${boundary} must match ${RUNTIME_BASELINE}`)
+      }
+    }
+    const runtimePolicyPath = 'scripts/runtime-policy.mjs'
+    if (existsSync(join(root, runtimePolicyPath))) {
+      const source = readFileSync(join(root, runtimePolicyPath), 'utf8')
+      for (const required of [
+        '--copies',
+        'acquireSetupLock',
+        'publishPreparedRuntime',
+        'managedExecutableSha256',
+        'managedStdlibSha256',
+        'managedTreeSha256',
+        'managedRuntimeContained',
+        'nativeRuntimeSelfContained',
+        'normalizeManagedVenvAliases',
+        'sanitizeDiagnostic',
+        "name === '__pycache__'",
+        'rewriteMacNativeReferences',
+        'rewriteLinuxNativeReferences',
+        'relocateLinuxSearchPath',
+        'replaceNullTerminatedNativeString',
+        'verifyNativeReferences',
+        'macRpaths',
+        "['-rpath', rpath, replacement",
+        'runtimeProbeEnvironment',
+        'info.mode & 0o777',
+        'import bz2, ctypes, hashlib, json, lzma, os, platform, readline, sqlite3, ssl',
+      ]) {
+        if (!source.includes(required)) errors.push(`${runtimePolicyPath} must preserve locked rollback-safe runtime replacement: ${required}`)
+      }
+      if ((source.match(/import bz2, ctypes, hashlib/g) || []).length < 2) {
+        errors.push(`${runtimePolicyPath} must reject a bootstrap that lacks required native extension modules before installation`)
+      }
+      if (!source.includes('if (!isSharedLibraryName(name)) continue')
+        || source.includes('command = ${path.join(target')) {
+        errors.push(`${runtimePolicyPath} must keep a minimal relocatable native runtime without fabricated venv provenance`)
+      }
+      const setupStart = source.indexOf('export function setupRuntime')
+      const publishCall = source.indexOf('publishPreparedRuntime(temporary', setupStart)
+      const setupBody = source.slice(setupStart, publishCall)
+      if (/rmSync\(target,\s*\{\s*recursive:\s*true/.test(setupBody)) {
+        errors.push(`${runtimePolicyPath} must not delete the active runtime before publishing its replacement`)
+      }
+    }
+  }
+  if (existsSync(join(root, PYTHON_REQUIREMENTS))) {
+    const requirements = readFileSync(join(root, PYTHON_REQUIREMENTS), 'utf8')
+    if (!/^PyMuPDF==1\.28\.0\b/m.test(requirements) || (requirements.match(/--hash=sha256:/g) || []).length !== 4) {
+      errors.push(`${PYTHON_REQUIREMENTS} must pin PyMuPDF 1.28.0 to four supported wheel hashes`)
+    }
+  }
+  if (existsSync(join(root, CI_WORKFLOW))) {
+    const workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8')
+    for (const required of ['node-version: "22.23.1"', 'python-version: "3.11.15"', 'npm@10.9.8', 'sudo chmod go-w "$pythonLocation" "$python_stdlib"', 'CODEX_PAPER_BOOTSTRAP_PYTHON: ${{ env.pythonLocation }}/bin/python', 'codex-paper.sh secret-scan', 'codex-paper.sh supply-chain-test', 'codex-paper.sh dependency-audit', 'codex-paper.sh runtime-status']) {
+      if (!workflow.includes(required)) errors.push(`${CI_WORKFLOW} must preserve P1-3a gate ${required}`)
+    }
+    const supplyChainGates = [...workflow.matchAll(/codex-paper\.sh supply-chain-test/g)]
+    if (supplyChainGates.length < 2 || workflow.lastIndexOf('codex-paper.sh supply-chain-test') < workflow.indexOf('codex-paper.sh install')) {
+      errors.push(`${CI_WORKFLOW} must verify supply-chain policy again after dependency installation`)
+    }
+    for (const actionLine of workflow.matchAll(/^\s*uses:\s*([^\s#]+)/gm)) {
+      const reference = actionLine[1].replace(/^['"]|['"]$/g, '')
+      if (reference.startsWith('./.github/actions/')) continue
+      if (reference.startsWith('docker://')) {
+        if (!/@sha256:[a-f0-9]{64}$/.test(reference)) errors.push(`${CI_WORKFLOW} Docker action ${reference} must use a sha256 digest`)
+      } else {
+        const separator = reference.lastIndexOf('@')
+        if (separator <= 0 || !/^[a-f0-9]{40}$/.test(reference.slice(separator + 1))) {
+          errors.push(`${CI_WORKFLOW} action ${reference} must use a full commit SHA`)
+        }
+      }
+    }
+  }
+
+  const pdfPolicyRelative = `${activePath}/skills/study/scripts/pdf-security-policy.json`
+  const downloaderRelative = `${activePath}/skills/study/scripts/download-pdf.cjs`
+  const parserRelative = `${activePath}/skills/study/scripts/parse-pdf.js`
+  const parserWorkerRelative = `${activePath}/skills/study/scripts/pdf-parser-worker.js`
+  const parserLauncherRelative = `${activePath}/skills/study/scripts/pdf-parser-launcher.py`
+  const prepareRelative = `${activePath}/skills/study/scripts/prepare-paper.js`
+  if (existsSync(join(root, pdfPolicyRelative))) {
+    const policy = readJson(join(root, pdfPolicyRelative), errors, pdfPolicyRelative)
+    const expected = {
+      policyVersion: '1.0.0', httpsOnly: true, maxInputBytes: 134217728, maxPages: 2000,
+      maxRedirects: 5, requestTimeoutMs: 30000, parserWallTimeMs: 60000,
+      parserCpuSeconds: 45, parserMemoryBytes: 1073741824, parserOutputBytes: 67108864,
+      parserStdoutBytes: 1048576, parserStderrBytes: 1048576, parserOpenFiles: 64,
+      quarantineRetentionDays: 7, quarantineMaxEntries: 32, quarantineMaxBytes: 536870912,
+    }
+    for (const [field, value] of Object.entries(expected)) {
+      if (policy?.[field] !== value) errors.push(`${pdfPolicyRelative} ${field} must be ${JSON.stringify(value)}`)
+    }
+  }
+  if (existsSync(join(root, downloaderRelative))) {
+    const source = readFileSync(join(root, downloaderRelative), 'utf8')
+    for (const required of ['https.request', 'resolveSafeTarget', 'remoteAddress', 'O_EXCL', 'O_NOFOLLOW', '%PDF-']) {
+      if (!source.includes(required)) errors.push(`${downloaderRelative} must preserve secure download boundary ${required}`)
+    }
+    if (/require\(['"](?:node:)?http['"]\)|codex-paper-downloads|url\.startsWith\(['"]http/.test(source)) {
+      errors.push(`${downloaderRelative} must not restore HTTP or shared predictable staging`)
+    }
+  }
+  if (existsSync(join(root, parserRelative))) {
+    const source = readFileSync(join(root, parserRelative), 'utf8')
+    for (const required of ['parserWallTimeMs', 'parserMemoryBytes', 'killParserGroup', 'copyPdfSnapshot', 'preflightPdfFile', 'quarantinePdf', "process.env.CODEX_PAPER_PARSER_WORKER !== '1'", 'parserRuntimeProbeCache', 'MANAGED_VERSION_ROOT', 'pyvenv.cfg', 'basePrefix', 'runtime facts are outside the managed tree']) {
+      if (!source.includes(required)) errors.push(`${parserRelative} must preserve bounded parser control ${required}`)
+    }
+    if (/CODEX_PAPER_ALLOW_TEST_PYTHON_OVERRIDE|CODEX_PAPER_FORCE_PYMUPDF_FAILURE|CANONICAL_PYTHON_PATH/.test(source)) {
+      errors.push(`${parserRelative} must not expose ambient test-only parser downgrade switches`)
+    }
+  }
+  if (existsSync(join(root, ROOT_SCRIPT))) {
+    const source = readFileSync(join(root, ROOT_SCRIPT), 'utf8')
+    for (const required of ['run_counted_test_suite', '"repository-security" 259', '"study" 102', '"migration" 55', '"repository-guard-static" 87', 'provenance-resolve', 'cmd_prepare', 'preserved output: $output']) {
+      if (!source.includes(required)) errors.push(`${ROOT_SCRIPT} must fail and preserve diagnostics when a regression test is silently not executed: ${required}`)
+    }
+  }
+  if (existsSync(join(root, parserWorkerRelative))) {
+    const source = readFileSync(join(root, parserWorkerRelative), 'utf8')
+    if (!source.includes('CODEX_PAPER_PARSER_WORKER') || !source.includes('parserOutputBytes')) {
+      errors.push(`${parserWorkerRelative} must remain supervisor-only and output-bounded`)
+    }
+  }
+  if (existsSync(join(root, parserLauncherRelative))) {
+    const source = readFileSync(join(root, parserLauncherRelative), 'utf8')
+    for (const required of ['RLIMIT_CPU', 'RLIMIT_FSIZE', 'RLIMIT_NOFILE', 'os.execve', 'CODEX_PAPER_RUNTIME_DIR']) {
+      if (!source.includes(required)) errors.push(`${parserLauncherRelative} must preserve hard parser resource limit ${required}`)
+    }
+    if (source.includes('CODEX_PAPER_MANAGED_PYTHON_BIN')) {
+      errors.push(`${parserLauncherRelative} must not trust a caller-movable canonical runtime anchor`)
+    }
+  }
+  if (existsSync(join(root, prepareRelative))) {
+    const source = readFileSync(join(root, prepareRelative), 'utf8')
+    if (!source.includes('stagePdfInput') || !source.includes('resolvedInput.cleanup()') || /execFileSync/.test(source)) {
+      errors.push(`${prepareRelative} must use and clean secure PDF staging without a downloader subprocess`)
+    }
+    for (const required of ["const PACKAGE_VERSION = '2.1.0'", "const EVIDENCE_SCHEMA_VERSION = '2.0.0'", 'buildFactsFromLedger', 'validateFactsSchema(facts)']) {
+      if (!source.includes(required)) errors.push(`${prepareRelative} must preserve package 2.1 writer boundary ${required}`)
+    }
+    if (/evidenceSchemaVersion:\s*PACKAGE_VERSION/.test(source)) errors.push(`${prepareRelative} must not couple frozen evidence schema to package contract version`)
+  }
+
+  if (existsSync(join(root, FACTS_SCHEMA))) {
+    const factsSchema = readJson(join(root, FACTS_SCHEMA), errors, FACTS_SCHEMA)
+    if (factsSchema?.properties?.schemaVersion?.const !== '2.1.0' || !factsSchema?.properties?.resultClaims) {
+      errors.push(`${FACTS_SCHEMA} must define facts schema 2.1 with resultClaims`)
+    }
+  }
+  if (existsSync(join(root, FACTS_EXTRACTOR))) {
+    const source = readFileSync(join(root, FACTS_EXTRACTOR), 'utf8')
+    for (const required of ['extractResultClaims', 'projectKeyResults', 'validateFactsEvidenceRefs', 'PAPER_EVIDENCE_ID_PATTERN', 'compareCandidatesForMerge']) {
+      if (!source.includes(required)) errors.push(`${FACTS_EXTRACTOR} must preserve ResultClaim writer boundary ${required}`)
+    }
+  }
+  if (existsSync(join(root, PACKAGE_COMPATIBILITY))) {
+    const source = readFileSync(join(root, PACKAGE_COMPATIBILITY), 'utf8')
+    for (const required of ['native_2_1', 'compatible_2_0', 'legacy_v1', 'unknown_read_only', 'PACKAGE_VERSION_UNSUPPORTED', 'PACKAGE_ARTIFACT_INVALID', 'assertWritablePackage', 'evidenceRefExists', 'isLegacyMigrationSourceVersion', 'classifyInvalidPackageArtifacts', 'unsupportedVersions']) {
+      if (!source.includes(required)) errors.push(`${PACKAGE_COMPATIBILITY} must preserve reader compatibility mode ${required}`)
+    }
+  }
+  if (existsSync(join(root, STUDY_VALIDATOR))) {
+    const source = readFileSync(join(root, STUDY_VALIDATOR), 'utf8')
+    if (!source.includes('LEGACY_PACKAGE_REQUIRES_LEGACY_OK')) errors.push(`${STUDY_VALIDATOR} must preserve explicit read-only legacy validation`)
+    if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${STUDY_VALIDATOR} must diagnose corrupt compatibility artifacts`)
+  }
+  for (const validator of [REASONING_VALIDATOR, STUDY_VALIDATOR]) {
+    if (!existsSync(join(root, validator))) continue
+    const source = readFileSync(join(root, validator), 'utf8')
+    if (!source.includes('persistWorkspaceValidationReport') || source.includes('updateWorkspaceRecordSync') || source.includes('writeValidationReportAtomic')) {
+      errors.push(`${validator} must persist validation state and report through one atomic workspace transaction`)
+    }
+  }
+  for (const schemaPath of MAINTENANCE_SCHEMAS) {
+    if (!existsSync(join(root, schemaPath))) continue
+    const schema = readJson(join(root, schemaPath), errors, schemaPath)
+    if (schema?.properties?.schemaVersion?.const !== '1.0.0' || schema?.additionalProperties !== false) {
+      errors.push(`${schemaPath} must define a strict 1.0.0 maintenance contract`)
+    }
+    if (schemaPath.endsWith('paper-backup-manifest-1.0.schema.json')
+      && (!schema?.required?.includes('rootMode') || !schema?.required?.includes('directories')
+        || schema?.properties?.directories?.items?.additionalProperties !== false)) {
+      errors.push(`${schemaPath} must preserve directory metadata in the Backup Manifest 1.0 contract`)
+    }
+    if (schemaPath.endsWith('library-doctor-report-1.0.schema.json')
+      && (schema?.properties?.items?.items?.additionalProperties !== false
+        || schema?.properties?.items?.items?.properties?.compatibility?.additionalProperties !== false
+        || schema?.properties?.summary?.required?.includes('migrationTransactions')
+        || schema?.properties?.items?.items?.properties?.kind?.enum?.includes('migration_transaction'))) {
+      errors.push(`${schemaPath} must preserve strict bounded Doctor item contracts`)
+    }
+    if (schemaPath.endsWith('migration-plan-1.0.schema.json')
+      && (schema?.properties?.diagnostics?.items?.additionalProperties !== false
+        || !schema?.properties?.diagnostics?.items?.required?.includes('severity')
+        || !schema?.properties?.backup?.properties?.status?.enum?.includes('not_found')
+        || !schema?.properties?.backup?.properties?.status?.enum?.includes('invalid'))) {
+      errors.push(`${schemaPath} must preserve strict Migration Plan diagnostics`)
+    }
+  }
+  if (existsSync(join(root, DOCTOR_SCHEMA_V1_1))) {
+    const schema = readJson(join(root, DOCTOR_SCHEMA_V1_1), errors, DOCTOR_SCHEMA_V1_1)
+    const summary = schema?.properties?.summary
+    const itemKinds = schema?.properties?.items?.items?.properties?.kind?.enum || []
+    if (schema?.properties?.schemaVersion?.const !== '1.1.0'
+      || schema?.additionalProperties !== false
+      || !summary?.required?.includes('migrationTransactions')
+      || !summary?.required?.includes('migrationArchiveBytes')
+      || !itemKinds.includes('migration_transaction')
+      || !itemKinds.includes('migration_archive')) {
+      errors.push(`${DOCTOR_SCHEMA_V1_1} must define the strict migration-aware Doctor Report 1.1 contract`)
+    }
+  }
+  if (existsSync(join(root, COMPATIBILITY_FIXTURE_MANIFEST))) {
+    const manifest = readJson(join(root, COMPATIBILITY_FIXTURE_MANIFEST), errors, COMPATIBILITY_FIXTURE_MANIFEST)
+    const requiredIds = new Set([
+      'legacy-v1-flat',
+      'package-2.0-flat',
+      'package-2.1-flat',
+      'managed-manifest-1-identity-1',
+      'managed-manifest-2-identity-2',
+    ])
+    const fixtureIds = new Set(Array.isArray(manifest?.fixtures) ? manifest.fixtures.map((fixture) => fixture.id) : [])
+    if (manifest?.schemaVersion !== '1.0.0' || fixtureIds.size !== requiredIds.size
+      || [...requiredIds].some((fixtureId) => !fixtureIds.has(fixtureId))) {
+      errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} must enumerate the five P1-2a compatibility goldens`)
+    }
+    if (manifest?.generator !== `node ${COMPATIBILITY_FIXTURE_GENERATOR} --write`) {
+      errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} must identify the deterministic compatibility generator`)
+    }
+    for (const fixture of Array.isArray(manifest?.fixtures) ? manifest.fixtures : []) {
+      if (fixture?.origin !== 'original-synthetic' || fixture?.spdx !== 'MIT'
+        || fixture?.license !== 'MIT License' || fixture?.redistributable !== true
+        || !Array.isArray(fixture?.files) || fixture.files.length === 0) {
+        errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} fixture ${fixture?.id || '<unknown>'} must be original MIT synthetic content`)
+        continue
+      }
+      for (const file of fixture.files) {
+        const relativePath = `${COMPATIBILITY_FIXTURE_ROOT}/${fixture.id}/${file.path}`
+        if (!existsSync(join(root, relativePath))) {
+          errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} fixture file is missing: ${relativePath}`)
+          continue
+        }
+        if (file.sha256 !== sha256(join(root, relativePath)) || file.bytes !== statSync(join(root, relativePath)).size) {
+          errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} fixture inventory mismatch: ${relativePath}`)
+        }
+        if (trackedSet.has(COMPATIBILITY_FIXTURE_MANIFEST) && !trackedSet.has(relativePath)) {
+          errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} fixture file must be tracked: ${relativePath}`)
+        }
+      }
+    }
+  }
+  if (existsSync(join(root, VIEWER_COMPATIBILITY))) {
+    const source = readFileSync(join(root, VIEWER_COMPATIBILITY), 'utf8')
+    if (!source.includes('classifyStoredPackageCompatibility')) errors.push(`${VIEWER_COMPATIBILITY} must preserve cross-endpoint compatibility classification`)
+    if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${VIEWER_COMPATIBILITY} must preserve corrupt-artifact compatibility diagnostics`)
+    if (!source.includes("readCompatibilityArtifact(slug, 'meta.json'")) errors.push(`${VIEWER_COMPATIBILITY} must preserve corrupt-meta compatibility fallback`)
+  }
+  if (existsSync(join(root, VALIDATION_ENGINE))) {
+    const source = readFileSync(join(root, VALIDATION_ENGINE), 'utf8')
+    for (const required of ['pass_with_warnings', 'allow_authoring', 'allow_publish', 'reportHash', 'validationReportIntrinsicHash', 'writeValidationReportAtomic', 'persistWorkspaceValidationReport', 'updateWorkspaceRecordLocked', 'createWorkspaceDiagnostic', 'validation_report_write_failed', 'validation_state_update_failed', 'preservationError', 'RESULT_VALUE_CONFLICT', 'PARSER_FRONT_MATTER_CONTAMINATION']) {
+      if (!source.includes(required)) errors.push(`${VALIDATION_ENGINE} must preserve Validation Report 1.0 contract ${required}`)
+    }
+    if (source.includes('validation-report-v2') || source.includes('validation-report-1.0.json')) errors.push(`${VALIDATION_ENGINE} must write only .codex-paper/validation-report.json`)
+  }
+
+  if (Array.isArray(baseline?.schemas)) {
+    const declaredNames = baseline.schemas.map((schema) => schema.name).sort()
+    const expectedNames = Object.keys(FROZEN_SCHEMAS).sort()
+    if (JSON.stringify(declaredNames) !== JSON.stringify(expectedNames)) {
+      errors.push(`${BASELINE_PATH} must declare exactly the frozen schemas: ${expectedNames.join(', ')}`)
+    }
+    for (const [name, expected] of Object.entries(FROZEN_SCHEMAS)) {
+      const schema = baseline.schemas.find((candidate) => candidate.name === name)
+      if (!schema) continue
+      for (const field of ['version', 'path', 'sha256']) {
+        if (schema[field] !== expected[field]) {
+          errors.push(`${BASELINE_PATH} schema ${name}.${field} must be ${JSON.stringify(expected[field])}; found ${JSON.stringify(schema[field])}`)
+        }
+      }
+      const schemaPath = join(root, expected.path)
+      if (!existsSync(schemaPath)) {
+        errors.push(`frozen schema is missing: ${expected.path}`)
+        continue
+      }
+      if (isSymlink(schemaPath)) {
+        errors.push(`frozen schema must not be a symlink: ${expected.path}`)
+        continue
+      }
+      const actualHash = sha256(schemaPath)
+      if (actualHash !== expected.sha256) {
+        errors.push(`frozen schema hash mismatch: ${expected.path} expected ${expected.sha256}, found ${actualHash}`)
+      }
+    }
+  } else {
+    errors.push(`${BASELINE_PATH} must declare schemas`)
+  }
+
+  return { ok: errors.length === 0, errors, trackedFileCount: tracked.length }
+}
+
+function parseCliArgs(argv) {
+  const parsed = {
+    repoRoot: DEFAULT_REPO_ROOT,
+    actualActivePluginRelative: EXPECTED_ACTIVE_PLUGIN.sourcePath,
+  }
+  const optionTargets = new Map([
+    ['--repo-root', 'repoRoot'],
+    ['--active-plugin-relative', 'actualActivePluginRelative'],
+  ])
+  const seen = new Set()
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const option = argv[index]
+    const target = optionTargets.get(option)
+    if (!target) throw new Error(`unknown option: ${option}`)
+    if (seen.has(option)) throw new Error(`duplicate option: ${option}`)
+
+    const value = argv[index + 1]
+    if (!value || value.startsWith('--')) throw new Error(`${option} requires a value`)
+
+    parsed[target] = target === 'repoRoot' ? resolve(value) : value
+    seen.add(option)
+    index += 1
+  }
+
+  return parsed
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    const result = checkRepository(parseCliArgs(process.argv.slice(2)))
+    if (!result.ok) {
+      console.error(`Repository contract failed with ${result.errors.length} error(s):`)
+      for (const error of result.errors) console.error(`- ${error}`)
+      process.exitCode = 1
+    } else {
+      console.log(`Repository contract passed (${result.trackedFileCount} tracked files inspected).`)
+    }
+  } catch (error) {
+    console.error(`Repository contract could not run: ${error.message}`)
+    process.exitCode = 1
+  }
+}

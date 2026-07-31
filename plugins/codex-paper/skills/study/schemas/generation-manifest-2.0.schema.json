@@ -1,0 +1,480 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-paper.local/schemas/generation-manifest-2.0.schema.json",
+  "title": "Codex Paper Generation Manifest 2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "manifestId", "transactionState", "transactionId", "paperKey", "paperId", "sourceRevisionId", "generationId", "sourceSha256", "generationFingerprint", "source", "generation", "software", "runtime", "artifacts", "validation", "executions", "authoring", "migrations", "diagnostics", "integrity", "sealedAt", "files", "manifestHash"],
+  "properties": {
+    "schemaVersion": { "const": "2.0.0" },
+    "manifestId": { "type": "string", "pattern": "^gm-sha256-[a-f0-9]{64}$" },
+    "transactionState": { "const": "sealed" },
+    "transactionId": { "type": "string", "pattern": "^pub-[a-f0-9]{32}$" },
+    "paperKey": { "type": "string", "pattern": "^p-[a-f0-9]{64}$" },
+    "paperId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "sourceRevisionId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "generationId": { "type": "string", "pattern": "^gen:sha256:[a-f0-9]{64}$" },
+    "sourceSha256": { "$ref": "#/$defs/hash" },
+    "generationFingerprint": { "$ref": "#/$defs/hash" },
+    "source": { "$ref": "#/$defs/source" },
+    "generation": { "$ref": "#/$defs/generation" },
+    "software": { "$ref": "#/$defs/software" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graph"],
+      "properties": { "graph": { "$ref": "#/$defs/graph" } }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "fileSha256", "schemaVersion", "status", "phase", "publishable", "reportHash", "validator"],
+      "properties": {
+        "path": { "const": ".codex-paper/validation-report.json" },
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "schemaVersion": { "const": "1.0.0" },
+        "status": { "enum": ["pass", "pass_with_warnings"] },
+        "phase": { "const": "complete" },
+        "publishable": { "const": true },
+        "reportHash": { "$ref": "#/$defs/hash" },
+        "validator": { "$ref": "#/$defs/validator" }
+      }
+    },
+    "executions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atSeal"],
+      "properties": { "atSeal": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/execution" } } }
+    },
+    "authoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "lastEditedAt", "events"],
+      "properties": {
+        "status": { "enum": ["codex_only", "human_involved", "unknown"] },
+        "lastEditedAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+        "events": { "type": "array", "maxItems": 2048, "items": { "$ref": "#/$defs/authoringEvent" } }
+      }
+    },
+    "migrations": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/migration" } },
+    "diagnostics": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/diagnostic" } },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalization", "hashAlgorithm", "signature"],
+      "properties": {
+        "canonicalization": { "const": "sorted-json-v1" },
+        "hashAlgorithm": { "const": "sha256" },
+        "signature": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": { "const": "unsigned" },
+            "reason": { "const": "deferred_to_p2_5" }
+          }
+        }
+      }
+    },
+    "sealedAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$", "maxLength": 512 },
+          "sha256": { "$ref": "#/$defs/hash" },
+          "bytes": { "type": "integer", "minimum": 0, "maximum": 536870912 }
+        }
+      }
+    },
+    "manifestHash": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "nullableString": { "type": ["string", "null"], "maxLength": 2048 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "requestedLocator", "resolvedLocator", "queryPresent", "credentialsPresent", "filename", "bytes", "sha256", "acquiredAt", "canonical"],
+      "properties": {
+        "kind": { "enum": ["local_file", "remote_https"] },
+        "requestedLocator": { "anyOf": [{ "type": "string", "pattern": "^https://", "maxLength": 2048 }, { "type": "null" }] },
+        "resolvedLocator": { "anyOf": [{ "type": "string", "pattern": "^https://", "maxLength": 2048 }, { "type": "null" }] },
+        "queryPresent": { "type": "boolean" },
+        "credentialsPresent": { "type": "boolean" },
+        "filename": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "bytes": { "type": "integer", "minimum": 5, "maximum": 536870912 },
+        "sha256": { "$ref": "#/$defs/hash" },
+        "acquiredAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+        "canonical": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["doi", "arxiv", "arxivVersion"],
+          "properties": {
+            "doi": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 255 }, { "type": "null" }] },
+            "arxiv": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 255 }, { "type": "null" }] },
+            "arxivVersion": { "anyOf": [{ "type": "string", "pattern": "^v[0-9]+$" }, { "type": "null" }] }
+          }
+        }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parameters", "identitySchemaVersion", "generationContractVersion"],
+      "properties": {
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sourceSha256", "identityPolicyVersion", "generationContractVersion", "packageVersion", "pluginBaseVersion", "evidenceSchemaVersion", "factsSchemaVersion", "reasoningSchemaVersion", "workflow", "language", "contextMode", "requestedPaperProfile", "parser", "runtimeContract", "authoringEngine", "externalSourceLocator", "contentContract"],
+          "properties": {
+            "sourceSha256": { "$ref": "#/$defs/hash" },
+            "identityPolicyVersion": { "const": "2.0.0" },
+            "generationContractVersion": { "const": "2.0.0" },
+            "packageVersion": { "const": "2.1.0" },
+            "pluginBaseVersion": { "const": "2.0.0" },
+            "evidenceSchemaVersion": { "const": "2.0.0" },
+            "factsSchemaVersion": { "const": "2.1.0" },
+            "reasoningSchemaVersion": { "const": "2.0.0" },
+            "workflow": { "enum": ["study", "summary"] },
+            "language": { "enum": ["zh", "en"] },
+            "contextMode": { "enum": ["paper-only", "canonical", "literature"] },
+            "requestedPaperProfile": { "enum": ["auto", "empirical", "theoretical", "architecture", "system", "benchmark", "survey", "post-training", "position", "other"] },
+            "parser": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["backend", "backendVersion", "contractVersion"],
+              "properties": {
+                "backend": { "type": "string", "minLength": 1, "maxLength": 80 },
+                "backendVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+                "contractVersion": { "const": "2.0.0" }
+              }
+            },
+            "runtimeContract": { "$ref": "#/$defs/runtimeContract" },
+            "authoringEngine": { "$ref": "#/$defs/authoringEngine" },
+            "externalSourceLocator": { "anyOf": [{ "type": "string", "pattern": "^https://", "maxLength": 2048 }, { "type": "null" }] },
+            "contentContract": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "sha256", "files"],
+              "properties": {
+                "version": { "const": "2.0.0" },
+                "sha256": { "$ref": "#/$defs/hash" },
+                "files": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path", "sha256"],
+                    "properties": {
+                      "path": { "type": "string", "minLength": 1, "maxLength": 300 },
+                      "sha256": { "$ref": "#/$defs/hash" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "identitySchemaVersion": { "const": "2.0.0" },
+        "generationContractVersion": { "const": "2.0.0" }
+      }
+    },
+    "authoringEngine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "evidence"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "evidence": { "enum": ["declared", "unavailable"] }
+      }
+    },
+    "runtimeContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "policySha256", "node", "python", "pyMuPDF", "parserPolicyVersion", "parserPolicySha256"],
+      "properties": {
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "policySha256": { "$ref": "#/$defs/hash" },
+        "node": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "python": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "pyMuPDF": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "parserPolicyVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "parserPolicySha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "value"],
+      "properties": {
+        "status": { "enum": ["observed", "unavailable"] },
+        "value": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "software": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "plugin", "skill", "codex", "schemas", "validator", "diagnostics"],
+      "properties": {
+        "repository": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "status", "treeState"],
+          "properties": {
+            "commit": { "$ref": "#/$defs/nullableString" },
+            "status": { "enum": ["observed", "unavailable"] },
+            "treeState": { "enum": ["clean", "dirty", "unavailable"] }
+          }
+        },
+        "plugin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseVersion", "buildVersion"],
+          "properties": {
+            "baseVersion": { "const": "2.0.0" },
+            "buildVersion": { "type": "string", "minLength": 1, "maxLength": 160 }
+          }
+        },
+        "skill": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "sha256"],
+          "properties": {
+            "name": { "enum": ["paper-study", "paper-summary"] },
+            "sha256": { "$ref": "#/$defs/hash" }
+          }
+        },
+        "codex": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["product", "cliVersion", "status", "authoringEngine"],
+          "properties": {
+            "product": { "const": "codex" },
+            "cliVersion": { "$ref": "#/$defs/nullableString" },
+            "status": { "enum": ["observed", "unavailable"] },
+            "authoringEngine": { "$ref": "#/$defs/authoringEngine" }
+          }
+        },
+        "schemas": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version", "path", "sha256"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "version": { "type": "string", "minLength": 1, "maxLength": 40 },
+              "path": { "type": "string", "minLength": 1, "maxLength": 300 },
+              "sha256": { "$ref": "#/$defs/hash" }
+            }
+          }
+        },
+        "validator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "sha256"],
+          "properties": {
+            "name": { "const": "codex-paper-validation" },
+            "version": { "const": "1.0.0" },
+            "sha256": { "$ref": "#/$defs/hash" }
+          }
+        },
+        "diagnostics": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/diagnostic" } }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "policyVersion", "policySha256", "contentStatus", "contentChecks", "host", "tooling", "parserPolicy", "sandbox", "contentAffecting", "toolingOnly"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "policySha256": { "$ref": "#/$defs/hash" },
+        "contentStatus": { "const": "conformant" },
+        "contentChecks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["node", "python", "pyMuPDF", "parserPolicy"],
+          "properties": {
+            "node": { "const": true },
+            "python": { "const": true },
+            "pyMuPDF": { "const": true },
+            "parserPolicy": { "const": true }
+          }
+        },
+        "host": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "arch", "release", "node", "python"],
+          "properties": {
+            "os": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "arch": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "release": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "node": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "python": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "implementation", "pyMuPDF"],
+              "properties": {
+                "version": { "type": "string", "minLength": 1, "maxLength": 40 },
+                "implementation": { "const": "CPython" },
+                "pyMuPDF": { "type": "string", "minLength": 1, "maxLength": 40 }
+              }
+            }
+          }
+        },
+        "tooling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["npm"],
+          "properties": { "npm": { "$ref": "#/$defs/nullableString" } }
+        },
+        "parserPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "sha256"],
+          "properties": {
+            "version": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "sha256": { "$ref": "#/$defs/hash" }
+          }
+        },
+        "sandbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["node", "python", "nodeBaseImage", "pythonBaseImage", "scope"],
+          "properties": {
+            "node": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "python": { "type": "string", "minLength": 1, "maxLength": 40 },
+            "nodeBaseImage": { "type": "string", "pattern": "@sha256:[a-f0-9]{64}$", "maxLength": 300 },
+            "pythonBaseImage": { "type": "string", "pattern": "@sha256:[a-f0-9]{64}$", "maxLength": 300 },
+            "scope": { "const": "sandbox-only" }
+          }
+        },
+        "contentAffecting": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 120 } },
+        "toolingOnly": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 120 } }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5002,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "sha256"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "maxLength": 600 },
+              "kind": { "enum": ["file", "input"] },
+              "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "sha256": { "$ref": "#/$defs/hash" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 20000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string", "minLength": 1, "maxLength": 600 },
+              "to": { "type": "string", "minLength": 1, "maxLength": 600 }
+            }
+          }
+        }
+      }
+    },
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "pluginBaseVersion"],
+      "properties": {
+        "name": { "const": "codex-paper-validation" },
+        "version": { "const": "1.0.0" },
+        "pluginBaseVersion": { "const": "2.0.0" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "fileSha256", "reportHash", "executionId", "outcome", "policyVersion", "imageId"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^\\.codex-paper/execution-reports/", "maxLength": 512 },
+        "fileSha256": { "$ref": "#/$defs/hash" },
+        "reportHash": { "$ref": "#/$defs/hash" },
+        "executionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "outcome": { "enum": ["pass", "fail"] },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "imageId": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "authoringEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "eventId", "state", "actor", "attestation", "operation", "path", "beforeSha256", "afterSha256", "dependencies", "createdAt", "completedAt"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 2048 },
+        "eventId": { "type": "string", "pattern": "^ae-[a-f0-9]{32}$" },
+        "state": { "enum": ["completed", "aborted"] },
+        "actor": { "enum": ["codex", "human", "unknown", "tool"] },
+        "attestation": { "const": "declared" },
+        "operation": { "enum": ["create", "replace"] },
+        "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "beforeSha256": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "afterSha256": { "$ref": "#/$defs/hash" },
+        "dependencies": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/dependency" } },
+        "createdAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+        "completedAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+        "recovered": { "type": "boolean" }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["migrationId", "fromVersion", "toVersion", "toolVersion", "appliedAt", "backupId", "rollbackAvailable"],
+      "properties": {
+        "migrationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "fromVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "toVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "toolVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "appliedAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+        "backupId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "rollbackAvailable": { "type": "boolean" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,79}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 300 }
+      }
+    }
+  }
+}

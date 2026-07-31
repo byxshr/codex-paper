@@ -1,13 +1,12 @@
-import fs from 'fs'
-import path from 'path'
-import { homedir } from 'os'
 import { askCodexWorker } from '../../../utils/codexWorker'
 import { appendChatNote } from '../../../utils/chatNotes'
+import { requireWritablePaperAccess, resolvePublicFile, validateSlug } from '../../../utils/librarySecurity.mjs'
+import { withOperationLocks } from '../../../utils/operationLocks.mjs'
+import { renderSafeMarkdownForDelivery } from '../../../utils/activeContentSecurity.mjs'
+import { acquirePaperAskLease } from '../../../utils/askLeases.mjs'
 
 const MAX_QUESTION_LENGTH = 4_000
 const MAX_SELECTED_FILE_LENGTH = 500
-
-const activeRequests = new Set<string>()
 
 const FORBIDDEN_RESIDUES = [
   'analysisVersion',
@@ -23,32 +22,6 @@ const FORBIDDEN_RESIDUE_PATTERNS = [
   { label: 'ev-*', pattern: /\bev-p\d{3,}-[a-z]+-[a-f0-9]{10}\b/g },
   { label: 'ext-*', pattern: /\bext-[a-zA-Z0-9._-]+\b/g }
 ]
-
-function validateSlug(slug: string) {
-  return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(slug)
-}
-
-function getPaperDir(slug: string) {
-  const papersRoot = path.join(homedir(), 'codex-papers/papers')
-  const paperDir = path.resolve(papersRoot, slug)
-  const relativePath = path.relative(papersRoot, paperDir)
-
-  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Access denied'
-    })
-  }
-
-  if (!fs.existsSync(paperDir) || !fs.statSync(paperDir).isDirectory()) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Paper directory not found'
-    })
-  }
-
-  return paperDir
-}
 
 function normalizeBodyText(value: unknown, maxLength: number) {
   if (typeof value !== 'string') {
@@ -138,22 +111,16 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const paperDir = getPaperDir(slug)
+  const descriptor = requireWritablePaperAccess(slug)
+  const paperDir = descriptor.packageDir
+  if (selectedFile) resolvePublicFile(slug, selectedFile)
   const fallbackPrompt = buildPaperChatPrompt(paperDir, question, selectedFile)
+  const safeFallbackPrompt = fallbackPrompt.split(paperDir).join('[local paper package]')
 
-  if (activeRequests.has(slug)) {
-    throw createFallbackError(
-      409,
-      'Codex is already answering a question for this paper',
-      fallbackPrompt
-    )
-  }
-
-  activeRequests.add(slug)
-
+  const releaseAskLease = acquirePaperAskLease(descriptor.paperLockKey)
   try {
     const { answer } = await askCodexWorker({
-      slug,
+      slug: descriptor.paperLockKey,
       paperDir,
       prompt: fallbackPrompt
     })
@@ -162,7 +129,7 @@ export default defineEventHandler(async (event) => {
       throw createFallbackError(
         502,
         'Codex returned an empty answer',
-        fallbackPrompt
+        safeFallbackPrompt
       )
     }
 
@@ -171,35 +138,53 @@ export default defineEventHandler(async (event) => {
       throw createFallbackError(
         502,
         'Codex answer contained internal extraction residue',
-        fallbackPrompt,
+        safeFallbackPrompt,
         `Forbidden residues: ${forbiddenResidues.join(', ')}`
       )
     }
 
-    const savedNote = appendChatNote(
-      paperDir,
-      redactForbiddenResidues(question),
-      redactForbiddenResidues(answer),
-      selectedFile
-    )
+    let savedNote: { savedTo: string; entryId: string } | null = null
+    let saveWarning: string | null = null
+    let completedNote: { savedTo: string; entryId: string } | null = null
+    try {
+      savedNote = await withOperationLocks([descriptor.paperLockKey], async () => (
+        completedNote = appendChatNote(
+          descriptor.overlayDir,
+          redactForbiddenResidues(question),
+          redactForbiddenResidues(answer),
+          selectedFile,
+          descriptor.paperLockKey
+        )
+      ), { timeoutMs: 3_000 })
+    } catch (saveError: any) {
+      savedNote = completedNote
+      saveWarning = completedNote
+        ? '回答已写入聊天记录，但保存确认遇到异常。请检查历史记录后再重试。'
+        : '回答已生成，但聊天记录暂未保存。请先复制回答，稍后重试。'
+    }
+
+    const renderedAnswer = renderSafeMarkdownForDelivery(answer, { slug, sourcePath: savedNote?.savedTo || 'chat-notes.md' })
+    if (renderedAnswer.degraded) {
+      const renderWarning = '回答已生成，但富文本渲染失败，已使用安全纯文本显示。'
+      saveWarning = saveWarning ? `${saveWarning} ${renderWarning}` : renderWarning
+    }
 
     return {
       answer,
-      savedTo: savedNote.savedTo,
-      entryId: savedNote.entryId
+      answerHtml: renderedAnswer.html,
+      saved: Boolean(savedNote),
+      saveWarning,
+      savedTo: savedNote?.savedTo || null,
+      entryId: savedNote?.entryId || null
     }
   } catch (e: any) {
-    if (e.statusCode) {
-      throw e
-    }
-
+    if (e.statusCode) throw e
     throw createFallbackError(
       502,
       'Failed to run Codex for this question',
-      fallbackPrompt,
-      e.message
+      safeFallbackPrompt
     )
   } finally {
-    activeRequests.delete(slug)
+    releaseAskLease()
   }
 })

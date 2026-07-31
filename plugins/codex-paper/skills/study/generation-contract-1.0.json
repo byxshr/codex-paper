@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "common": [
+    "skills/study/generation-contract-1.0.json",
+    "skills/study/schemas/paper-identity-1.0.schema.json",
+    "skills/study/schemas/generation-workspace-1.0.schema.json",
+    "skills/study/schemas/evidence-ledger.schema.json",
+    "skills/study/schemas/facts-2.1.schema.json",
+    "skills/study/scripts/paper-identity.js",
+    "skills/study/scripts/prepare-paper.js",
+    "skills/study/scripts/parse-pdf.js",
+    "skills/study/scripts/pdf-parser-worker.js",
+    "skills/study/scripts/pdf-parser-launcher.py",
+    "skills/study/scripts/pdf-security.js",
+    "skills/study/scripts/pdf-security-policy.json",
+    "skills/study/scripts/build-evidence-ledger.js",
+    "skills/study/scripts/evidence-utils.js",
+    "skills/study/scripts/extract-facts.js",
+    "skills/study/scripts/build-analysis.js",
+    "src/shared/generation-workspace.mjs",
+    "src/shared/storage-transaction.mjs",
+    "src/shared/workspace-writer.mjs"
+  ],
+  "workflows": {
+    "study": [
+      "skills/study/SKILL.md",
+      "skills/study/profiles/profile-rules.js",
+      "skills/study/profiles/empirical.md",
+      "skills/study/profiles/theoretical.md",
+      "skills/study/profiles/architecture.md",
+      "skills/study/profiles/system.md",
+      "skills/study/profiles/benchmark.md",
+      "skills/study/profiles/survey.md",
+      "skills/study/profiles/post-training.md",
+      "skills/study/profiles/position.md",
+      "skills/study/profiles/other.md",
+      "skills/study/scripts/scaffold-reasoning-analysis.js",
+      "skills/study/scripts/validate-reasoning.js",
+      "skills/study/scripts/validate-study-package.js",
+      "skills/study/scripts/validation-report.js",
+      "skills/study/scripts/workspace-cli.js",
+      "skills/study/scripts/extract-images.py",
+      "skills/study/schemas/reasoning-analysis.schema.json",
+      "skills/study/schemas/validation-report-1.0.schema.json",
+      "skills/study/schemas/external-evidence.schema.json",
+      "src/shared/package-compatibility.mjs"
+    ],
+    "summary": [
+      "skills/summary/SKILL.md",
+      "skills/study/scripts/render-from-analysis.js"
+    ]
+  }
+}

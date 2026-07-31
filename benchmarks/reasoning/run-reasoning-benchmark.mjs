@@ -18,12 +18,30 @@ function node(id, statement, sourceType = 'paper_claim', refs = [EVIDENCE_ID]) {
 
 function ledger(text = 'The method reports a 3% improvement on the benchmark.') {
   return {
+    schemaVersion: '2.0.0',
+    paperSlug: 'reasoning-fixture',
+    parserVersion: 'benchmark',
+    generatedAt: '2026-07-20T00:00:00.000Z',
+    document: {
+      title: 'Reasoning benchmark fixture',
+      authors: [],
+      pageCount: 1,
+      language: 'en',
+      sourceUrl: null,
+      sha256: 'a'.repeat(64)
+    },
+    sections: [],
+    pages: [],
     evidence: [{
       id: EVIDENCE_ID,
+      kind: 'paragraph',
+      roles: ['claim_candidate', 'result'],
       text,
       quote: text,
-      location: { page: 1 },
-      labels: {}
+      location: { page: 1, sectionId: null, charStart: 0, charEnd: text.length, blockIndex: 0, bbox: null },
+      labels: { figureNumber: null, tableNumber: null, equationNumber: null },
+      source: 'paper',
+      confidence: 'high'
     }],
     quality: {
       parser: 'pymupdf',
@@ -151,6 +169,23 @@ function baseReasoning(paperType = 'empirical') {
 
 function makePackage(reasoning) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-reasoning-bench-'));
+  fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ packageVersion: '2.1.0' }, null, 2));
+  fs.writeFileSync(path.join(dir, 'paper-data.json'), JSON.stringify({ paperSlug: reasoning.paperSlug, abstract: 'Reasoning benchmark fixture.' }, null, 2));
+  fs.writeFileSync(path.join(dir, 'facts.json'), JSON.stringify({
+    schemaVersion: '2.1.0',
+    paperSlug: reasoning.paperSlug,
+    parserVersion: 'benchmark',
+    coreClaims: [],
+    resultClaims: [],
+    keyResults: [],
+    limitations: []
+  }, null, 2));
+  fs.writeFileSync(path.join(dir, 'analysis.json'), JSON.stringify({
+    paperSlug: reasoning.paperSlug,
+    parserVersion: 'benchmark',
+    analysisVersion: '1.0.0',
+    resultsTable: []
+  }, null, 2));
   fs.writeFileSync(path.join(dir, 'evidence-ledger.json'), JSON.stringify(ledger(), null, 2));
   fs.writeFileSync(path.join(dir, 'reasoning-analysis.json'), JSON.stringify(reasoning, null, 2));
   return dir;
@@ -178,7 +213,7 @@ for (const fixture of fixtures) {
   const dir = makePackage(reasoning);
   try {
     const result = validateReasoningPackage(dir, { strict: fixture.strict });
-    const codes = result.report.errors.map((error) => error.code);
+    const codes = result.report.findings.map((finding) => finding.code);
     const pass = fixture.expect?.status === 'pass'
       ? result.report.status === 'pass'
       : codes.includes(fixture.expectCode);

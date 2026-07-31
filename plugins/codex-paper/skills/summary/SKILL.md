@@ -31,7 +31,7 @@ Before generating a summary:
 
 - Install Node dependencies from [package.json](../../package.json) if they are missing.
 - Reuse the parser utilities in [../study/scripts](../study/scripts).
-- Ensure the paper library root exists at `~/codex-papers/papers/`.
+- Ensure the paper library root exists at `~/codex-papers/`; do not construct generation paths from slugs.
 
 ---
 
@@ -39,21 +39,36 @@ Before generating a summary:
 
 Supports multiple input formats:
 - **Local path**: `~/Downloads/paper.pdf`
-- **Direct PDF URL**: `https://arxiv.org/pdf/1706.03762.pdf`
+- **Direct HTTPS PDF URL**: `https://arxiv.org/pdf/1706.03762.pdf`
 - **arXiv URL**: `https://arxiv.org/abs/1706.03762`
 
-Use the shared preparation entrypoint:
+Use the shared preparation entrypoint. From this skill directory in a
+repository checkout, prefer the root wrapper:
 
 ```bash
 USER_INPUT="<user-input>"
-node ../study/scripts/prepare-paper.js "$USER_INPUT"
+OUTPUT_LANG="en"   # or zh, based on the user's request
+bash ../../../../scripts/codex-paper.sh prepare "$USER_INPUT" --workflow summary --language "$OUTPUT_LANG" --context paper-only --profile auto \
+  --authoring-provider unavailable --authoring-model unavailable
 ```
 
-The preparation step now writes `analysis.json` automatically. If it is missing or needs a refresh, rebuild it explicitly:
+In an installed plugin cache without the repository wrapper, use
+`node ../study/scripts/prepare-paper.js ...` with the same arguments. If
+preparation reports `PROVENANCE_RUNTIME_NONCONFORMANT`, use
+`../../../../scripts/codex-paper.sh runtime-status` and `runtime-setup` only
+when that repository script exists. Otherwise stop and ask the user to run the
+root commands from a codex-paper repository checkout; never bypass the
+content-runtime gate.
+
+The preparation identity includes the summary workflow and output language. A new run creates a private generation workspace and returns its exact `workspaceId`, `workspaceDir`, and package `paperDir`; preparation does not update `paper.json`, `current.json`, or `index.json`, and it is not visible in the Viewer. An already published exact generation may still be reused read-only with `--resume`. Legacy flat packages remain read-only; if migration is requested, use the repository's verified-backup `migration-start` workflow and do not edit or migrate in place.
+
+Do not bypass this entrypoint with `curl`, `wget`, browser downloads, or in-process parsing. It enforces HTTPS redirect/SSRF checks, DNS pinning, bounded private staging, PDF magic, parser resource/page limits, and private quarantine for rejected inputs.
+
+The preparation step writes `analysis.json` inside the workspace automatically. If it is missing or needs a refresh, rebuild it by passing the exact workspace package path:
 
 ```bash
-PAPER_SLUG="<paper-slug>"
-node ../study/scripts/build-analysis.js "$PAPER_SLUG"
+PAPER_DIR="<prepare-output.paperDir>"
+node ../study/scripts/build-analysis.js "$PAPER_DIR"
 ```
 
 After preparation, treat these files as the only trusted inputs, in this order:
@@ -68,20 +83,20 @@ Use `paper-data.json` and `facts.json` only as fallback context or source-checki
 
 # Step 2: Generate Quick Summary
 
-Pick the render language:
+Reuse the preparation language for rendering:
 
 ```bash
 OUTPUT_LANG="en"   # or "zh"
 ```
 
-Read `paperSlug` from the JSON output of `prepare-paper.js`, then render the quick summary from `analysis.json`:
+Read the exact `paperDir` from the JSON output of `prepare-paper.js`, then render the quick summary from `analysis.json`:
 
 ```bash
-PAPER_SLUG="<paper-slug>"
-node ../study/scripts/render-from-analysis.js "$PAPER_SLUG" summary "$OUTPUT_LANG"
+PAPER_DIR="<prepare-output.paperDir>"
+node ../study/scripts/render-from-analysis.js "$PAPER_DIR" summary "$OUTPUT_LANG"
 ```
 
-This creates `quick-summary.md` from the structured analysis layer. If you make any manual refinement afterward, preserve the same structure and do not add new facts.
+This creates `quick-summary.md` from the structured analysis layer through the shared workspace writer. Any manual refinement must use `workspace-write ... --actor codex` with the current file SHA-256; never edit workspace files directly. Preserve the same structure and do not add new facts.
 
 If the user language differs from the paper language, use the rendered file as a scaffold and translate the prose sections into the user language while preserving technical terms, metric values, and `Source:` notes.
 
@@ -142,19 +157,11 @@ Additional constraints:
 
 ---
 
-# Step 3: Reuse the Prepared Metadata
+# Step 3: Keep the Quick Summary Private
 
-`prepare-paper.js` already updates `meta.json`, copies the PDF, preserves the existing `~/codex-papers/index.json` root structure, and writes `analysis.json`.
+`prepare-paper.js` writes `meta.json`, the PDF, and `analysis.json` only in the private workspace package. Do not create or update formal paper records, `current.json`, or `index.json`, and do not claim the summary has been published. C2b intentionally accepts only a complete standard study-package Validation Report; a quick-summary-only workspace remains private unless it is completed through `$paper-study` and passes that gate.
 
----
-
-# Step 4: Relaunch Web UI
-
-After updating the paper library, invoke the sibling [paper-webui](../webui/SKILL.md) skill so the local viewer reflects the new paper.
-
----
-
-# Step 5: Present Summary to User
+# Step 4: Present Summary to User
 
 After generating the summary:
 
@@ -166,8 +173,8 @@ After generating the summary:
    - "Would you like me to explain any section in more detail?"
 
 3. **File location reminder:**
-   - Summary saved to: `~/codex-papers/papers/{paper-slug}/quick-summary.md`
-   - Web UI available at: `http://localhost:5815`
+   - Summary saved to: `{prepare-output.paperDir}/quick-summary.md`
+   - State clearly that the quick-summary-only file remains in a private generation workspace and is not available in the Viewer unless completed and published through `$paper-study`.
 
 ---
 

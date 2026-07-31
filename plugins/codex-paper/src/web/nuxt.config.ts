@@ -1,13 +1,22 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  ssr: false,
+  srcDir: '.',
+  serverDir: 'server',
   compatibilityDate: '2024-11-01',
-  devtools: { enabled: true },
+  devtools: { enabled: false },
+  telemetry: false,
 
   devServer: {
+    host: '127.0.0.1',
     port: 5815
   },
 
-  modules: ['@nuxt/content'],
+  nitro: {
+    externals: {
+      inline: [/package-compatibility\.mjs$/, /paper-library\.mjs$/, /generation-manifest\.mjs$/, /storage-transaction\.mjs$/]
+    }
+  },
 
   app: {
     head: {

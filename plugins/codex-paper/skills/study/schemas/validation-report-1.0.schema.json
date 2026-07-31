@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codex-paper.local/schemas/validation-report-1.0.schema.json",
+  "title": "Codex Paper Validation Report 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "phase",
+    "publishable",
+    "scope",
+    "gate",
+    "validator",
+    "generatedAt",
+    "findings",
+    "referenceCoverage",
+    "reportHash",
+    "errors",
+    "warnings"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "status": { "enum": ["pass", "pass_with_warnings", "fail"] },
+    "phase": { "enum": ["draft", "complete"] },
+    "publishable": { "type": "boolean" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["included", "excluded"],
+      "properties": {
+        "included": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scopeItem" }
+        },
+        "excluded": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scopeItem" }
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "outcome", "blockingFindingCodes"],
+      "properties": {
+        "policy": { "enum": ["standard", "strict"] },
+        "outcome": { "enum": ["allow_authoring", "allow_publish", "block"] },
+        "blockingFindingCodes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "pluginBaseVersion"],
+      "properties": {
+        "name": { "const": "codex-paper-validation" },
+        "version": { "const": "1.0.0" },
+        "pluginBaseVersion": { "const": "2.0.0" }
+      }
+    },
+    "generatedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$"
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "referenceCoverage": { "$ref": "#/$defs/referenceCoverage" },
+    "reportHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "$defs": {
+    "scopeItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "reason"],
+      "properties": {
+        "artifact": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceRef", "page", "table"],
+      "properties": {
+        "evidenceRef": { "type": ["string", "null"] },
+        "page": { "type": ["integer", "null"], "minimum": 1 },
+        "table": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "code",
+        "category",
+        "artifact",
+        "path",
+        "message",
+        "evidenceRefs",
+        "locations"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^finding-[a-f0-9]{16}$" },
+        "severity": { "enum": ["error", "warning"] },
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "category": {
+          "enum": ["schema", "compatibility", "evidence", "cross_artifact", "parser", "coverage", "security", "package"]
+        },
+        "artifact": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "locations": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/location" }
+        }
+      }
+    },
+    "coverageItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "total", "valid", "invalid", "ratio"],
+      "properties": {
+        "artifact": { "type": "string", "minLength": 1 },
+        "total": { "type": "integer", "minimum": 0 },
+        "valid": { "type": "integer", "minimum": 0 },
+        "invalid": { "type": "integer", "minimum": 0 },
+        "ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "referenceCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "valid", "invalid", "ratio", "byArtifact"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "valid": { "type": "integer", "minimum": 0 },
+        "invalid": { "type": "integer", "minimum": 0 },
+        "ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "byArtifact": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/coverageItem" }
+        }
+      }
+    }
+  }
+}

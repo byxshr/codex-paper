@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.2.0",
+  "fixtureId": "result-conflict",
+  "requiredAssertions": {
+    "title": "Synthetic Translation Result Conflict",
+    "paperSlug": "synthetic-translation-result-conflict",
+    "pageCount": 1,
+    "authors": ["Cara North", "Dylan West"],
+    "abstractPhrases": ["28.4 BLEU", "WMT 2014", "41.8 BLEU"],
+    "sectionPhrases": {
+      "introduction": ["controlled translation systems"],
+      "conclusion": ["41.0 BLEU", "conflicting with Table 2"]
+    },
+    "evidencePhrases": ["28.4 BLEU", "WMT 2014", "41.8 BLEU", "41.0 BLEU"],
+    "parserBackend": "pymupdf",
+    "resultClaims2_1": {
+      "required": [
+        { "metric": "BLEU", "value": 28.4, "languagePair": "EN-DE" },
+        { "metric": "BLEU", "value": 41.8, "languagePair": "EN-FR", "dataset": "WMT 2014", "table": 2 },
+        { "metric": "BLEU", "value": 41.0, "languagePair": "EN-FR" }
+      ],
+      "forbiddenValues": [2014],
+      "requiresDirectEvidenceRefs": true,
+      "requiresKeyResultsProjection": true,
+      "forbiddenCorePhrases": [],
+      "forbiddenAnalysisPhrases": []
+    },
+    "validationReport1_0": {
+      "expectedStatus": "pass_with_warnings",
+      "expectedFindingCodes": ["RESULT_VALUE_CONFLICT"]
+    }
+  },
+  "authoring": {
+    "summary": "The synthetic paper reports 28.4 BLEU on EN-DE and 41.8 BLEU on WMT 2014 EN-FR.",
+    "primaryResult": "41.8 BLEU",
+    "primaryEvidenceSelector": "On WMT 2014 EN-FR, the model achieves 41.8 BLEU.",
+    "supportingEvidenceSelectors": [
+      "We present a translation model that reaches 28.4 BLEU on EN-DE.",
+      "On WMT 2014 EN-FR, the model achieves 41.8 BLEU.",
+      "The prose reports 41.0 BLEU for EN-FR, conflicting with Table 2."
+    ],
+    "conflictEvidenceSelector": "The prose reports 41.0 BLEU for EN-FR, conflicting with Table 2.",
+    "visibleConflict": "The prose reports 41.0 BLEU while the abstract and Table 2 report 41.8 BLEU; the discrepancy remains unresolved."
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/byxshr/codex-paper/schemas/migration-source-record-1.0.schema.json",
+  "title": "Codex Paper Migration Source Record 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "migrationId", "planId", "backupId", "source", "transform", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "migrationId": { "$ref": "#/$defs/migrationId" },
+    "planId": { "type": "string", "pattern": "^mp-sha256-[a-f0-9]{64}$" },
+    "backupId": { "type": "string", "pattern": "^bk-sha256-[a-f0-9]{64}$" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "relativePath", "snapshotHash", "packageVersion", "identityVersion", "manifestVersion", "manifestId", "manifestHash"],
+      "properties": {
+        "kind": { "enum": ["legacy_flat", "managed_paper"] },
+        "relativePath": { "$ref": "#/$defs/path" },
+        "snapshotHash": { "$ref": "#/$defs/hash" },
+        "packageVersion": { "type": ["string", "null"], "maxLength": 40 },
+        "identityVersion": { "type": ["string", "null"], "maxLength": 40 },
+        "manifestVersion": { "type": ["string", "null"], "maxLength": 40 },
+        "manifestId": { "type": ["string", "null"], "maxLength": 160 },
+        "manifestHash": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] }
+      }
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "policySha256", "authoringProvider", "authoringModel"],
+      "properties": {
+        "policyVersion": { "const": "1.0.0" },
+        "policySha256": { "$ref": "#/$defs/hash" },
+        "authoringProvider": { "const": "codex-paper-migration" },
+        "authoringModel": { "const": "p1-2b-1.0.0" }
+      }
+    },
+    "createdAt": { "type": "string", "minLength": 20, "maxLength": 40 }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "migrationId": { "type": "string", "pattern": "^mig-sha256-[a-f0-9]{64}$" },
+    "path": { "type": "string", "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$", "maxLength": 2048 }
+  }
+}

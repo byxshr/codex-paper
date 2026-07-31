@@ -205,7 +205,38 @@ function makeReasoning(overrides = {}) {
 
 function writePackage(reasoning, externalEvidence = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-paper-reasoning-test-'));
-  fs.writeFileSync(path.join(dir, 'evidence-ledger.json'), `${JSON.stringify(makeLedger(), null, 2)}\n`);
+  const ledger = makeLedger();
+  const facts = {
+    schemaVersion: '2.1.0',
+    paperSlug: 'valid-paper',
+    parserVersion: '2.0.0',
+    coreClaims: [{
+      text: 'The method reports a 3% improvement on the benchmark.',
+      evidence: { section: 'results', quote: 'The method reports a 3% improvement on the benchmark.' },
+      evidenceRefs: [EVIDENCE_ID]
+    }],
+    resultClaims: [],
+    keyResults: [],
+    limitations: []
+  };
+  const analysis = {
+    paperSlug: 'valid-paper',
+    parserVersion: '2.0.0',
+    analysisVersion: '1.0.0',
+    generatedAt: '2026-06-23T00:00:00.000Z',
+    oneSentence: { text: 'The method reports a 3% improvement on the benchmark.', evidenceRefs: [EVIDENCE_ID] },
+    problem: { text: '', evidenceRefs: [] },
+    coreIdea: { text: '', evidenceRefs: [] },
+    contributions: [],
+    resultsTable: [],
+    limitations: [],
+    openQuestions: []
+  };
+  fs.writeFileSync(path.join(dir, 'meta.json'), `${JSON.stringify({ packageVersion: '2.1.0' }, null, 2)}\n`);
+  fs.writeFileSync(path.join(dir, 'paper-data.json'), `${JSON.stringify({ abstract: 'The method reports a 3% improvement on the benchmark.' }, null, 2)}\n`);
+  fs.writeFileSync(path.join(dir, 'facts.json'), `${JSON.stringify(facts, null, 2)}\n`);
+  fs.writeFileSync(path.join(dir, 'analysis.json'), `${JSON.stringify(analysis, null, 2)}\n`);
+  fs.writeFileSync(path.join(dir, 'evidence-ledger.json'), `${JSON.stringify(ledger, null, 2)}\n`);
   fs.writeFileSync(path.join(dir, 'reasoning-analysis.json'), `${JSON.stringify(reasoning, null, 2)}\n`);
   if (externalEvidence) {
     fs.mkdirSync(path.join(dir, '.codex-paper'), { recursive: true });
@@ -219,7 +250,8 @@ test('validateReasoningPackage accepts a complete evidence-grounded reasoning fi
   try {
     const result = validateReasoningPackage(dir);
     assert.equal(result.report.status, 'pass', JSON.stringify(result.report, null, 2));
-    assert.equal(fs.existsSync(path.join(dir, '.codex-paper', 'validation-report.json')), true);
+    assert.equal(result.reportWritten, false);
+    assert.equal(fs.existsSync(path.join(dir, '.codex-paper', 'validation-report.json')), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -314,7 +346,10 @@ test('validateReasoningPackage can acknowledge draft skeletons without full sche
   const dir = writePackage(reasoning);
   try {
     const result = validateReasoningPackage(dir, { allowDraft: true });
-    assert.equal(result.report.status, 'draft');
+    assert.equal(result.report.status, 'pass_with_warnings');
+    assert.equal(result.report.phase, 'draft');
+    assert.equal(result.report.publishable, false);
+    assert.equal(result.report.gate.outcome, 'allow_authoring');
     assert.equal(result.report.errors.length, 0);
     assert.equal(result.report.warnings[0].code, 'REASONING_DRAFT_NOT_VALIDATED');
   } finally {

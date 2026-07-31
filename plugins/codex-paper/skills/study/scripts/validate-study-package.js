@@ -2,9 +2,19 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import { validateReasoningPackage } from './validate-reasoning.js';
 import { REQUIRED_REFLECTION_HEADINGS } from '../profiles/profile-rules.js';
+import { classifyInvalidPackageArtifacts, classifyPackageCompatibility } from '../../../src/shared/package-compatibility.mjs';
+import { resolveExplicitPackage } from '../../../src/shared/paper-library.mjs';
+import {
+  canWriteValidationReport,
+  createValidationReport,
+  makeFinding,
+  persistWorkspaceValidationReport
+} from './validation-report.js';
+
+const __filename = fileURLToPath(import.meta.url);
 
 const REQUIRED_FILES = [
   'README.md',
@@ -78,16 +88,16 @@ const BODY_IMAGE_MIN_HEIGHT = 220;
 const BODY_IMAGE_MIN_PIXELS = 160000;
 
 function usage() {
-  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--run-code|--run-artifacts] [--legacy-ok] [--timeout-ms 20000]');
+  console.error('Usage: node validate-study-package.js <paper-slug-or-dir> [--lang zh|en] [--legacy-ok] [--json] [--strict]');
 }
 
 function parseArgs(argv) {
   const args = {
     input: null,
     lang: null,
-    runCode: false,
     legacyOk: false,
-    timeoutMs: 20000
+    json: false,
+    strict: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -96,12 +106,13 @@ function parseArgs(argv) {
       args.lang = argv[index + 1];
       index += 1;
     } else if (arg === '--run-code' || arg === '--run-artifacts') {
-      args.runCode = true;
+      throw new Error(`${arg} was removed because package validation must never execute generated code. Use "bash scripts/codex-paper.sh sandbox-plan <paper>" and, after explicit user approval, sandbox-run.`);
     } else if (arg === '--legacy-ok') {
       args.legacyOk = true;
-    } else if (arg === '--timeout-ms') {
-      args.timeoutMs = Number(argv[index + 1]);
-      index += 1;
+    } else if (arg === '--json') {
+      args.json = true;
+    } else if (arg === '--strict') {
+      args.strict = true;
     } else if (!args.input) {
       args.input = arg;
     } else {
@@ -117,34 +128,27 @@ function parseArgs(argv) {
     throw new Error('--lang must be zh or en.');
   }
 
-  if (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0) {
-    throw new Error('--timeout-ms must be a positive number.');
-  }
-
   return args;
 }
 
 function resolvePaperDir(input) {
-  const expanded = input.replace(/^~(?=$|\/)/, os.homedir());
-  const direct = path.resolve(expanded);
-  if (fs.existsSync(direct)) {
-    return fs.statSync(direct).isDirectory() ? direct : path.dirname(direct);
-  }
-
-  return path.join(os.homedir(), 'codex-papers', 'papers', input);
+  return resolveExplicitPackage(input.replace(/^~(?=$|\/)/, os.homedir()), {
+    libraryRoot: process.env.PAPERS_DIR
+  }).packageDir;
 }
 
 function readText(filePath) {
   return fs.readFileSync(filePath, 'utf8');
 }
 
-function readJsonIfExists(filePath) {
+function readJsonIfExists(filePath, label, invalidArtifacts) {
   if (!fs.existsSync(filePath)) {
     return null;
   }
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
+    invalidArtifacts.push(label);
     return null;
   }
 }
@@ -380,29 +384,35 @@ function addFinding(findings, level, message) {
   findings[level].push(message);
 }
 
-function isV2Package(paperDir) {
-  const meta = readJsonIfExists(path.join(paperDir, 'meta.json'));
-  return meta?.packageVersion === '2.0.0'
-    || fs.existsSync(path.join(paperDir, 'reasoning-analysis.json'))
-    || fs.existsSync(path.join(paperDir, 'evidence-ledger.json'));
+function compatibilityForPackage(paperDir) {
+  const invalidArtifacts = [];
+  const meta = readJsonIfExists(path.join(paperDir, 'meta.json'), 'meta.json', invalidArtifacts);
+  const reasoning = readJsonIfExists(path.join(paperDir, 'reasoning-analysis.json'), 'reasoning-analysis.json', invalidArtifacts);
+  const ledger = readJsonIfExists(path.join(paperDir, 'evidence-ledger.json'), 'evidence-ledger.json', invalidArtifacts);
+  if (invalidArtifacts.length > 0) return classifyInvalidPackageArtifacts(invalidArtifacts);
+  return classifyPackageCompatibility({ meta, reasoning, ledger });
 }
 
-function checkReasoningLayer(paperDir, args, findings) {
-  if (!isV2Package(paperDir)) {
-    const message = args.legacyOk
-      ? 'Legacy v1 package: v2 reasoning validation was skipped because --legacy-ok was provided.'
-      : 'Legacy v1 package: v2 reasoning files are absent; existing package checks continue.';
-    addFinding(findings, 'warnings', message);
-    return;
+function checkReasoningLayer(paperDir, args, findings, compatibility) {
+  if (compatibility.mode === 'unknown_read_only') {
+    const primaryDiagnostic = compatibility.diagnostics[0] || { code: 'PACKAGE_VERSION_UNSUPPORTED', message: 'Package compatibility could not be established.' };
+    addFinding(findings, 'errors', `${primaryDiagnostic.code}: ${primaryDiagnostic.message}`);
+    return null;
+  }
+  if (compatibility.mode === 'legacy_v1') {
+    if (!args.legacyOk) {
+      addFinding(findings, 'errors', 'LEGACY_PACKAGE_REQUIRES_LEGACY_OK: Legacy v1 packages require --legacy-ok for limited read-only validation; this flag does not authorize artifact writes.');
+      return null;
+    }
+    addFinding(findings, 'warnings', 'Legacy v1 package: limited read-only validation is enabled by --legacy-ok; v2 reasoning validation is skipped and artifact writers remain disabled.');
+    return null;
   }
 
-  const result = validateReasoningPackage(paperDir, { strict: false });
-  for (const error of result.report.errors) {
-    addFinding(findings, 'errors', `Reasoning ${error.code} at ${error.path}: ${error.message}`);
-  }
-  for (const warning of result.report.warnings) {
-    addFinding(findings, 'warnings', `Reasoning ${warning.code} at ${warning.path}: ${warning.message}`);
-  }
+  return validateReasoningPackage(paperDir, {
+    strict: args.strict,
+    phase: 'complete',
+    writeReport: false
+  });
 }
 
 function checkRequiredFiles(paperDir, findings) {
@@ -911,54 +921,19 @@ function checkVisualAssetsIndex(paperDir, findings) {
   }
 }
 
-function commandForCodeFile(filename) {
-  const ext = path.extname(filename).toLowerCase();
-  if (ext === '.py') {
-    return { command: 'python3', args: [filename] };
-  }
-  if (ext === '.js' || ext === '.mjs') {
-    return { command: 'node', args: [filename] };
-  }
-  return null;
+function structuredStudyFinding(message, severity) {
+  const artifactMatch = String(message).match(/\b([A-Za-z0-9._-]+\.(?:md|html|json|pdf))(?:[:\s]|$)/);
+  return makeFinding({
+    severity,
+    code: severity === 'error' ? 'STUDY_PACKAGE_CONTRACT_FAILED' : 'STUDY_PACKAGE_CONTRACT_WARNING',
+    category: 'package',
+    artifact: artifactMatch?.[1] || 'user-visible materials',
+    path: '/',
+    message
+  });
 }
 
-function runCodeDemos(paperDir, codeFiles, timeoutMs, findings) {
-  const codeDir = path.join(paperDir, 'code');
-  const runnable = codeFiles
-    .map((filename) => ({ filename, runner: commandForCodeFile(filename) }))
-    .filter((item) => item.runner);
-
-  if (runnable.length === 0) {
-    addFinding(findings, 'errors', '--run-code was requested, but no Python or JavaScript demo was found.');
-    return;
-  }
-
-  for (const item of runnable) {
-    const result = spawnSync(item.runner.command, item.runner.args, {
-      cwd: codeDir,
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      maxBuffer: 1024 * 1024
-    });
-
-    if (result.error?.code === 'ETIMEDOUT') {
-      addFinding(findings, 'errors', `code/${item.filename} timed out after ${timeoutMs}ms.`);
-      continue;
-    }
-
-    if (result.error) {
-      addFinding(findings, 'errors', `code/${item.filename} failed to run: ${result.error.message}`);
-      continue;
-    }
-
-    if (result.status !== 0) {
-      const stderr = (result.stderr || result.stdout || '').trim().split('\n').slice(-4).join(' ');
-      addFinding(findings, 'errors', `code/${item.filename} exited with ${result.status}.${stderr ? ` Output: ${stderr}` : ''}`);
-    }
-  }
-}
-
-function validate(args) {
+export function validateStudyPackage(args) {
   const paperDir = resolvePaperDir(args.input);
   const findings = {
     errors: [],
@@ -970,10 +945,11 @@ function validate(args) {
     return { paperDir, findings };
   }
 
-  const v2Package = isV2Package(paperDir);
-  checkReasoningLayer(paperDir, args, findings);
+  const compatibility = compatibilityForPackage(paperDir);
+  const v2Package = ['native_2_1', 'compatible_2_0'].includes(compatibility.mode);
+  const reasoningResult = checkReasoningLayer(paperDir, args, findings, compatibility);
 
-  const codeFiles = checkRequiredFiles(paperDir, findings);
+  checkRequiredFiles(paperDir, findings);
   checkForbiddenResidues(paperDir, findings);
   checkNoImagegenResidues(paperDir, findings);
   checkQa(paperDir, findings);
@@ -986,42 +962,67 @@ function validate(args) {
     checkV2VisibleContentContract(paperDir, findings);
   }
 
-  if (args.runCode) {
-    runCodeDemos(paperDir, codeFiles, args.timeoutMs, findings);
+  if (!v2Package || !reasoningResult) {
+    return { paperDir, findings, report: null, reportWritten: false };
   }
-
-  return { paperDir, findings };
+  const report = createValidationReport({
+    phase: 'complete',
+    strict: args.strict,
+    scope: reasoningResult.report.scope,
+    referenceCoverage: reasoningResult.report.referenceCoverage,
+    findings: [
+      ...reasoningResult.report.findings,
+      ...findings.errors.map((message) => structuredStudyFinding(message, 'error')),
+      ...findings.warnings.map((message) => structuredStudyFinding(message, 'warning'))
+    ]
+  });
+  const reportWritten = canWriteValidationReport(paperDir);
+  if (reportWritten) {
+    persistWorkspaceValidationReport(paperDir, report);
+  }
+  return { paperDir, findings, report, reportWritten };
 }
 
 function printReport(result) {
-  const { paperDir, findings } = result;
-  const status = findings.errors.length === 0 ? 'PASS' : 'FAIL';
+  const { paperDir, findings, report } = result;
+  const status = report?.status || (findings.errors.length === 0 ? 'pass' : 'fail');
 
-  console.log(`Study package validation: ${status}`);
+  console.log(`Study package validation: ${status.toUpperCase()}`);
   console.log(`Paper directory: ${paperDir}`);
 
-  if (findings.errors.length > 0) {
+  const errors = report?.errors || findings.errors;
+  const warnings = report?.warnings || findings.warnings;
+  if (errors.length > 0) {
     console.log('\nErrors:');
-    findings.errors.forEach((message) => console.log(`- ${message}`));
+    errors.forEach((finding) => console.log(`- ${finding?.code ? `${finding.code} ${finding.artifact}:${finding.path}: ${finding.message}` : finding}`));
   }
 
-  if (findings.warnings.length > 0) {
+  if (warnings.length > 0) {
     console.log('\nWarnings:');
-    findings.warnings.forEach((message) => console.log(`- ${message}`));
+    warnings.forEach((finding) => console.log(`- ${finding?.code ? `${finding.code} ${finding.artifact}:${finding.path}: ${finding.message}` : finding}`));
   }
 
-  if (findings.errors.length === 0 && findings.warnings.length === 0) {
+  if (errors.length === 0 && warnings.length === 0) {
     console.log('\nNo issues found.');
   }
+  if (report) console.log(`\nGate: ${report.gate.policy}/${report.gate.outcome}`);
 }
 
-try {
-  const args = parseArgs(process.argv.slice(2));
-  const result = validate(args);
-  printReport(result);
-  process.exit(result.findings.errors.length === 0 ? 0 : 1);
-} catch (error) {
-  usage();
-  console.error(`Error: ${error.message}`);
-  process.exit(1);
+if (process.argv[1] === __filename) {
+  try {
+    const args = parseArgs(process.argv.slice(2));
+    const result = validateStudyPackage(args);
+    if (args.json && result.report) {
+      process.stdout.write(`${JSON.stringify(result.report, null, 2)}\n`);
+    } else {
+      printReport(result);
+    }
+    process.exit(result.report
+      ? (result.report.gate.outcome === 'block' ? 1 : 0)
+      : (result.findings.errors.length === 0 ? 0 : 1));
+  } catch (error) {
+    usage();
+    console.error(`Error: ${error.message}`);
+    process.exit(2);
+  }
 }

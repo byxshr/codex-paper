@@ -1,0 +1,91 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 708 >>
+stream
+BT
+/F1 18 Tf
+72 760 Td
+(Synthetic Translation Result Conflict) Tj
+ET
+BT
+/F1 12 Tf
+72 730 Td
+(Cara North, Dylan West) Tj
+ET
+BT
+/F1 14 Tf
+72 690 Td
+(Abstract) Tj
+ET
+BT
+/F1 11 Tf
+72 665 Td
+(We present a translation model that reaches 28.4 BLEU on EN-DE.) Tj
+ET
+BT
+/F1 11 Tf
+72 644 Td
+(On WMT 2014 EN-FR, the model achieves 41.8 BLEU.) Tj
+ET
+BT
+/F1 14 Tf
+72 606 Td
+(1 Introduction) Tj
+ET
+BT
+/F1 11 Tf
+72 582 Td
+(The benchmark compares controlled translation systems.) Tj
+ET
+BT
+/F1 14 Tf
+72 544 Td
+(2 Results) Tj
+ET
+BT
+/F1 11 Tf
+72 520 Td
+(Table 2: EN-FR BLEU 41.8.) Tj
+ET
+BT
+/F1 14 Tf
+72 482 Td
+(3 Conclusion) Tj
+ET
+BT
+/F1 11 Tf
+72 458 Td
+(The prose reports 41.0 BLEU for EN-FR, conflicting with Table 2.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Title (Synthetic Translation Result Conflict) /Author (Cara North; Dylan West) /Creator (Codex Paper deterministic fixture generator 1.0) /Producer (Codex Paper) /CreationDate (D:20260713000000Z) /ModDate (D:20260713000000Z) >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000001005 00000 n 
+0000001102 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R /Info 6 0 R /ID [<4ee77e9c5b6f5fe2b391256e3c09227e><3a558e6f74e168743a4408210d22e663>] >>
+startxref
+1349
+%%EOF
