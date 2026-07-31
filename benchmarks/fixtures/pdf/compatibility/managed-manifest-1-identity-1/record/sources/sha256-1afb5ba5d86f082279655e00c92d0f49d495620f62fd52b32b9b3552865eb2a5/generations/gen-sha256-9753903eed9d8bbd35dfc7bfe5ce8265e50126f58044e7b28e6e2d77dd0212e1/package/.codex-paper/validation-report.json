@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "1.0.0",
+  "status": "pass",
+  "phase": "complete",
+  "publishable": true,
+  "scope": {
+    "included": [
+      {
+        "artifact": "meta.json",
+        "reason": "Package version and identity declarations."
+      },
+      {
+        "artifact": "paper-data.json",
+        "reason": "Parser output and abstract contamination signals."
+      },
+      {
+        "artifact": "evidence-ledger.json",
+        "reason": "Paper evidence authority and reference targets."
+      },
+      {
+        "artifact": "facts.json",
+        "reason": "Typed facts, ResultClaims, and compatibility projection."
+      },
+      {
+        "artifact": "analysis.json",
+        "reason": "Low-level projection consistency and references."
+      },
+      {
+        "artifact": "reasoning-analysis.json",
+        "reason": "Final research reasoning authority and references."
+      },
+      {
+        "artifact": "user-visible materials",
+        "reason": "Metric-bound numeric claims and conflict disclosure."
+      }
+    ],
+    "excluded": [
+      {
+        "artifact": "code/** execution",
+        "reason": "Generated code execution requires the independent Docker sandbox authorization flow."
+      },
+      {
+        "artifact": "scientific truth outside supplied evidence",
+        "reason": "The validator checks traceability and consistency, not external scientific truth."
+      },
+      {
+        "artifact": "complex table-grid reconstruction",
+        "reason": "Advanced layout reconstruction remains P1-1."
+      },
+      {
+        "artifact": "directly opened exported index.html",
+        "reason": "Viewer isolation is enforced by P0-A2; direct browser execution of exports is outside this report."
+      }
+    ]
+  },
+  "validator": {
+    "name": "codex-paper-validation",
+    "version": "1.0.0",
+    "pluginBaseVersion": "2.0.0"
+  },
+  "findings": [],
+  "referenceCoverage": {
+    "total": 0,
+    "valid": 0,
+    "invalid": 0,
+    "ratio": 1,
+    "byArtifact": []
+  },
+  "gate": {
+    "policy": "standard",
+    "outcome": "allow_publish",
+    "blockingFindingCodes": []
+  },
+  "generatedAt": "2026-07-30T00:00:00.000Z",
+  "reportHash": {
+    "algorithm": "sha256",
+    "value": "98d2800d12b49123ba1ce7e411fa3a70074ebd530d4bf74095f31c0c6b4dff9c"
+  },
+  "errors": [],
+  "warnings": []
+}

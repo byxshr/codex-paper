@@ -55,6 +55,19 @@ meta.json
 
 Never copy JSON field names, extraction labels, or machine traces into user-facing files. Forbidden visible residues include `analysisVersion`, `evidenceRefs`, `coreClaims`, `keyResults`, parser object paths, raw JSON snippets, machine evidence IDs, and template placeholders.
 
+## Existing Packages And Migration
+
+Do not run or recreate the retired in-place migration flow. P1-2a permits only read-only inventory/Doctor, a verified paper-scoped backup, and migration dry-run:
+
+```bash
+bash ../../../../scripts/codex-paper.sh library-doctor --json
+bash ../../../../scripts/codex-paper.sh backup-create "<paper-ref>" --json
+bash ../../../../scripts/codex-paper.sh backup-verify "<backup-id>" --json
+bash ../../../../scripts/codex-paper.sh migration-dry-run "<paper-ref>" --backup-id "<backup-id>" --json
+```
+
+The deprecated `migrate` command is only a `--dry-run` alias. Never pass or recommend `--force`, `--external-path`, or a package filesystem path. Never edit a sealed generation, restore over different existing content, or claim that the dry-run migrated anything. Actual new-generation migration and rollback are deferred to P1-2b.
+
 ## V2 Evidence And Reasoning Contract
 
 New packages are v2 packages. They must include:

@@ -158,7 +158,7 @@ cmd_test() {
   ensure_pymupdf
 
   print_section "Repository Guard Tests"
-  run_counted_test_suite "repository-security" 209 \
+  run_counted_test_suite "repository-security" 243 \
     --test-concurrency=1 "$REPO_ROOT"/scripts/tests/*.test.mjs
 
   print_section "Unit Tests"
@@ -196,7 +196,7 @@ cmd_repo_test() {
   ensure_node
 
   print_section "Repository Guard Tests (Static)"
-  run_counted_test_suite "repository-guard-static" 79 \
+  run_counted_test_suite "repository-guard-static" 84 \
     --test-concurrency=1 "$REPO_ROOT/scripts/tests/check-repository.test.mjs"
 }
 
@@ -293,6 +293,13 @@ cmd_provenance() {
   "$NODE_BIN" "$PROVENANCE_CLI" "$action" "$@"
 }
 
+cmd_library_maintenance() {
+  ensure_node
+  local action="$1"
+  shift
+  "$NODE_BIN" "$LIBRARY_MAINTENANCE_CLI" "$action" "$@"
+}
+
 cmd_prepare() {
   ensure_node
   ensure_python
@@ -323,12 +330,18 @@ cmd_migrate() {
   ensure_node
 
   if [ "$#" -lt 1 ]; then
-    echo "Usage: bash scripts/codex-paper.sh migrate <paper-dir-or-slug> [--force] [--external-path] [--context paper-only|canonical|literature] [--profile ...]" >&2
-    exit 1
+    echo "Usage: bash scripts/codex-paper.sh migrate <paper-ref> --dry-run [--backup-id <id>] [--json]" >&2
+    exit 2
   fi
 
-  print_section "Migrate Package"
+  print_section "Migration Dry-run Compatibility Alias"
   "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/migrate-package.js" "$@"
+}
+
+cmd_migration_test() {
+  ensure_node
+  print_section "Compatibility, Doctor, Backup and Restore"
+  "$NODE_BIN" --test "$REPO_ROOT/scripts/tests/library-maintenance.test.mjs"
 }
 
 cmd_benchmark_report() {
@@ -498,6 +511,16 @@ Commands:
   provenance-inspect <paper-or-workspace> [--json] Inspect authoritative or draft provenance
   provenance-verify <paper-or-workspace> [--json] Verify provenance integrity and bindings
   provenance-resolve <workspace> --adopt-current <event-id> Audit and adopt an ambiguous authoring event
+  library-inventory [--json] Read the library inventory without writing
+  library-doctor [--json] Diagnose compatibility and authority drift without repair
+  backup-list [--json] List private target-scoped paper backups
+  backup-inspect <backup-id> [--json] Inspect one backup manifest
+  backup-create <paper-ref> [--json] Create and verify one paper backup
+  backup-verify <backup-id> [--json] Verify one backup payload
+  backup-restore <backup-id> [--json] Restore only an absent or byte-identical target
+  backup-recover [--json] Resume journal-backed restore transactions
+  migration-dry-run <paper-ref> [--backup-id <id>] [--json] Plan P1-2b without writes
+  migration-test Test compatibility goldens, Doctor, backup, restore, and dry-run
   prepare <input> [prepare-paper options] Prepare with the pinned host runtime checks
   workspace-list [--json] List exact generation workspaces
   workspace-inspect <workspace> [--json] Inspect one exact workspace
@@ -509,7 +532,7 @@ Commands:
   reindex [--json] Rebuild index.json from authoritative current records and manifests
   package-test Run package quality fixtures
   benchmark-all  Run mandatory PDF, optional parser, reasoning, and package benchmarks
-  migrate      Migrate a v1 package to v2 evidence/reasoning draft files
+  migrate <paper-ref> --dry-run Deprecated compatibility alias; execution is frozen until P1-2b
   benchmark-report  Print the latest benchmark report
   smoke-test   Run an end-to-end local smoke test
   security-test Run the real HTTP Viewer security integration test
@@ -607,6 +630,45 @@ case "$command_name" in
   provenance-resolve)
     shift
     cmd_workspace resolve-event "$@"
+    ;;
+  library-inventory)
+    shift
+    cmd_library_maintenance inventory "$@"
+    ;;
+  library-doctor)
+    shift
+    cmd_library_maintenance doctor "$@"
+    ;;
+  backup-list)
+    shift
+    cmd_library_maintenance backup-list "$@"
+    ;;
+  backup-inspect)
+    shift
+    cmd_library_maintenance backup-inspect "$@"
+    ;;
+  backup-create)
+    shift
+    cmd_library_maintenance backup-create "$@"
+    ;;
+  backup-verify)
+    shift
+    cmd_library_maintenance backup-verify "$@"
+    ;;
+  backup-restore)
+    shift
+    cmd_library_maintenance backup-restore "$@"
+    ;;
+  backup-recover)
+    shift
+    cmd_library_maintenance backup-recover "$@"
+    ;;
+  migration-dry-run)
+    shift
+    cmd_library_maintenance migration-dry-run "$@"
+    ;;
+  migration-test)
+    cmd_migration_test
     ;;
   prepare)
     shift

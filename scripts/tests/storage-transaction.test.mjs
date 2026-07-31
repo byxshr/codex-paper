@@ -82,6 +82,9 @@ test('shared storage CLI exit mapping distinguishes policy, conflict, and operat
   assert.equal(storageCliExitCode({ code: 'WORKSPACE_WRITE_PATH_FORBIDDEN', statusCode: 403 }), 2)
   assert.equal(storageCliExitCode({ code: 'STORAGE_LOCK_CONFLICT', statusCode: 409 }), 3)
   assert.equal(storageCliExitCode({ code: 'WORKSPACE_EXISTS', statusCode: 409 }), 3)
+  assert.equal(storageCliExitCode({ code: 'BACKUP_RESTORE_CONFLICT', statusCode: 409 }), 3)
+  assert.equal(storageCliExitCode({ code: 'PUBLICATION_IDENTITY_CONFLICT', statusCode: 409 }), 1)
+  assert.equal(storageCliExitCode({ code: 'PUBLICATION_RECOVERY_FAILED', statusCode: 409 }), 1)
   assert.equal(storageCliExitCode({ code: 'PDF_PARSE_FAILED' }), 1)
 })
 

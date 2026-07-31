@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added P1-2a compatibility goldens for legacy v1, package 2.0/2.1, and Manifest/Identity 1.0/2.0; production-reader checks prove zero-write compatibility.
+- Added read-only library inventory/Doctor plus content-addressed paper backups, integrity verification, private journaled restore/recovery, and library-relative diagnostics.
+- Froze the old in-place migration implementation: `migrate` is now a `--dry-run` compatibility alias, while new-generation migration, reindex repair, and rollback remain deferred to P1-2b.
+- Hardened P1-2a after independent review: backups now preserve directory modes and empty directories, corrupt snapshots are quarantined and recreated, malformed restore journals are isolated, Doctor tolerates hostile names, and restore preserves live index envelopes and curated no-op metadata.
+- Closed the second P1-2a review round: Doctor now checks index drift per authority without unrelated fail-open, reports its payload-verification depth, keeps long target diagnostics actionable, cleans sealed private staging safely, emits missing/corrupt backup plan blockers, preserves precise retryable exit codes, and re-reads restore journals under lock.
+- Closed the third P1-2a review round with no blockers: Migration Plan 1.0 now distinguishes missing selected backups from not-found, invalid, and stale states; non-authority junk no longer emits misleading undetermined-drift findings; restore conflicts describe byte/mode divergence; and backup cleanup/race reporting is explicit.
 - Added Generation Manifest 2.0 as the authoritative provenance for new publications, covering redacted source acquisition, content runtime and software attestations, declared authoring WAL events, artifact dependencies, validation, execution bindings, diagnostics, and unsigned integrity metadata.
 - Added Paper Identity / Generation Contract 2.0 so content-affecting runtime and declared authoring model inputs participate in generation fingerprints while timestamps, repository state, OS patch level, cachebusters, and unavailable Codex metadata remain provenance-only.
 - Added `provenance-inspect`, `provenance-verify`, and `provenance-test`; Manifest and Identity 1.0 remain zero-write compatible, unknown versions fail closed, and post-seal execution reports bind the authoritative manifest without mutating it.

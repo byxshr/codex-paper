@@ -300,27 +300,36 @@ The token binds the exact plan and prevents replay; it does not authenticate a h
 
 Without a conformant Docker engine the runner reports `unavailable` or `nonconformant` and never falls back to host Python, Node, or a shell. The container has no network, sees only `code/` read-only, inherits no host credentials, and can write only to a bounded temporary directory.
 
-Migrate an older package to draft evidence/reasoning files without inventing high-level analysis:
+Inventory the library and diagnose compatibility or layout drift without writing to it:
 
 ```bash
-bash scripts/codex-paper.sh migrate ~/codex-papers/papers/{paper-slug}
+bash scripts/codex-paper.sh library-inventory --json
+bash scripts/codex-paper.sh library-doctor --json
 ```
 
-Out-of-library package directories must be migrated explicitly:
+`library-doctor` performs full backup payload verification; the lighter `library-inventory` and
+migration planner report `payloadsVerified: false`. Index drift is checked per paper authority, so one
+broken sibling cannot suppress drift findings for otherwise readable papers.
+
+P1-2a freezes in-place migration. Before a future P1-2b migration, create and verify a content-addressed, paper-scoped backup, then inspect the read-only plan:
 
 ```bash
-bash scripts/codex-paper.sh migrate /path/to/package --external-path
+bash scripts/codex-paper.sh backup-create {paper-route-slug} --json
+bash scripts/codex-paper.sh backup-verify {backup-id} --json
+bash scripts/codex-paper.sh migration-dry-run {paper-route-slug} --backup-id {backup-id} --json
 ```
 
-Migration accepts only a canonical one-level legacy package in the library or an explicitly external package. Managed workspace/store paths, symlinks, and nested in-library paths are rejected even when `--external-path` is present.
+Backups live under `.codex-paper/backups-v1/`, are excluded from the Viewer and index, and preserve directory modes and empty directories as well as file bytes. They can be restored only when the target is absent or byte-identical. An identical-target no-op preserves live curated index metadata; a different existing target is always a conflict. Corrupt snapshots are retained in quarantine and recreated, while unrelated malformed journals cannot block healthy recovery. Private failed staging is permission-normalized before cleanup, including snapshots of sealed generations. Use `backup-recover` to resume a journaled restore after interruption.
 
-Before filling the draft reasoning analysis, you can sanity-check the migrated package:
+The legacy `migrate` command now accepts only `--dry-run` as a compatibility alias:
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js {paper-route-slug} --allow-draft
+bash scripts/codex-paper.sh migrate {paper-route-slug} --dry-run --backup-id {backup-id} --json
 ```
 
-See [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md), the [evidence ledger](docs/evidence-ledger.md), [reasoning analysis](docs/reasoning-analysis.md), [package contract](docs/package-v2.md), and [migration guide](docs/migration-v1-to-v2.md) for the detailed contracts.
+Actual migration, replacement, reindex repair, and rollback remain deferred to P1-2b. External paths, trash entries, and active workspaces are not backup or migration targets.
+
+See [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md), the [compatibility/backup contract](docs/package-compatibility-backup-recovery-1.0.md), [evidence ledger](docs/evidence-ledger.md), [reasoning analysis](docs/reasoning-analysis.md), [package contract](docs/package-v2.md), and [migration guide](docs/migration-v1-to-v2.md) for the detailed contracts.
 
 ---
 

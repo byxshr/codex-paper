@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0.0",
+  "slug": "managed-manifest-1-identity-1",
+  "paperId": "source:sha256:1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "sourceRevisionId": "sha256:1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "generationId": "gen:sha256:9753903eed9d8bbd35dfc7bfe5ce8265e50126f58044e7b28e6e2d77dd0212e1",
+  "source": {
+    "sha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5"
+  },
+  "canonical": {
+    "resolution": "source_fallback",
+    "primary": null,
+    "aliases": [],
+    "candidates": [],
+    "diagnostics": []
+  },
+  "generation": {
+    "fingerprint": {
+      "algorithm": "sha256",
+      "value": "9753903eed9d8bbd35dfc7bfe5ce8265e50126f58044e7b28e6e2d77dd0212e1"
+    },
+    "inputs": {
+      "sourceSha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+      "identityPolicyVersion": "1.0.0",
+      "generationContractVersion": "1.0.0",
+      "packageVersion": "2.1.0",
+      "pluginBaseVersion": "2.0.0",
+      "evidenceSchemaVersion": "2.0.0",
+      "factsSchemaVersion": "2.1.0",
+      "reasoningSchemaVersion": "2.0.0",
+      "workflow": "study",
+      "language": "en",
+      "contextMode": "paper-only",
+      "requestedPaperProfile": "other",
+      "parser": {
+        "backend": "synthetic",
+        "backendVersion": "1.0.0",
+        "contractVersion": "2.0.0"
+      },
+      "externalSourceLocator": null,
+      "contentContract": {
+        "version": "1.0.0",
+        "sha256": "4f463755dc14876f349ec69ebc1636dd7762d6115aafdbafed0734f7a831b0c0",
+        "files": [
+          {
+            "path": "synthetic-contract.txt",
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        ]
+      }
+    }
+  },
+  "provenance": {
+    "createdAt": "2026-07-30T00:00:00.000Z",
+    "pluginBuildVersion": "2.0.0+codex.synthetic",
+    "platform": "synthetic"
+  }
+}

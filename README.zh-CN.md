@@ -298,27 +298,36 @@ bash scripts/codex-paper.sh sandbox-run {paper-route-slug} --approval-token <one
 
 没有通过一致性测试的 Docker 时，runner 会返回 `unavailable` 或 `nonconformant`，绝不会退回宿主机 Python、Node 或 shell。容器无网络，只读挂载 `code/`，不继承宿主凭据，并且只能写入受限临时目录。
 
-将旧学习包迁移为草稿证据/推理文件，不编造高层研究分析：
+以零写回方式盘点论文库并诊断兼容性或布局漂移：
 
 ```bash
-bash scripts/codex-paper.sh migrate ~/codex-papers/papers/{paper-slug}
+bash scripts/codex-paper.sh library-inventory --json
+bash scripts/codex-paper.sh library-doctor --json
 ```
 
-库外 package 目录需要显式迁移：
+`library-doctor` 会完整校验备份 payload；较轻量的 `library-inventory` 和迁移计划会明确返回
+`payloadsVerified: false`。索引漂移按论文权威对象分别检查，因此一个损坏的相邻目录不会
+掩盖其他可读论文的漂移。
+
+P1-2a 已冻结原位迁移。后续 P1-2b 迁移前，先创建并验证内容寻址的单论文备份，再查看只读迁移计划：
 
 ```bash
-bash scripts/codex-paper.sh migrate /path/to/package --external-path
+bash scripts/codex-paper.sh backup-create {paper-route-slug} --json
+bash scripts/codex-paper.sh backup-verify {backup-id} --json
+bash scripts/codex-paper.sh migration-dry-run {paper-route-slug} --backup-id {backup-id} --json
 ```
 
-迁移只接受库内规范化的一层 legacy package，或显式指定的真正库外 package。即使传入 `--external-path`，managed workspace/store 路径、符号链接和库内嵌套路径仍会被拒绝。
+备份位于 `.codex-paper/backups-v1/`，不会进入 Viewer 或 index，并同时保留目录权限、空目录和文件字节。恢复只允许目标不存在或与备份逐字节一致；相同目标的幂等恢复不会回退当前 index 中的人工整理信息，不同的现有目标始终返回冲突。损坏快照会保留到隔离目录后重建，无关的损坏 journal 不会阻断健康恢复；失败的私有 staging（包括已封存 generation 的只读目录）会先规范化权限再清理；中断后可用 `backup-recover` 恢复 journal。
 
-填写草稿推理分析前，可以先做一次迁移结果 sanity check：
+旧 `migrate` 命令现在只保留 `--dry-run` 兼容别名：
 
 ```bash
-node plugins/codex-paper/skills/study/scripts/validate-reasoning.js {paper-route-slug} --allow-draft
+bash scripts/codex-paper.sh migrate {paper-route-slug} --dry-run --backup-id {backup-id} --json
 ```
 
-详细契约见 [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md)、[证据账本](docs/evidence-ledger.md)、[研究推理分析](docs/reasoning-analysis.md)、[学习包契约](docs/package-v2.md)和[迁移指南](docs/migration-v1-to-v2.md)。
+实际迁移、替换、reindex 修复和 rollback 留给 P1-2b；库外路径、回收站条目和活动 workspace 不是备份或迁移目标。
+
+详细契约见 [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md)、[兼容与备份恢复契约](docs/package-compatibility-backup-recovery-1.0.md)、[证据账本](docs/evidence-ledger.md)、[研究推理分析](docs/reasoning-analysis.md)、[学习包契约](docs/package-v2.md)和[迁移指南](docs/migration-v1-to-v2.md)。
 
 ---
 

@@ -1,0 +1,430 @@
+{
+  "schemaVersion": "2.0.0",
+  "manifestId": "gm-sha256-99d7bf803672ebd7f29f1bf26a7ee2a94de49dc9ebaa354d7f26d5a37b091074",
+  "transactionState": "sealed",
+  "transactionId": "pub-11111111111111111111111111111111",
+  "paperKey": "p-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "paperId": "source:sha256:1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "sourceRevisionId": "sha256:1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "generationId": "gen:sha256:55228ce3f4b478a161a90a5e3ca9ffae43ad5934d645eb87707bb8f6d5b6728a",
+  "sourceSha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "generationFingerprint": "55228ce3f4b478a161a90a5e3ca9ffae43ad5934d645eb87707bb8f6d5b6728a",
+  "source": {
+    "kind": "local_file",
+    "requestedLocator": null,
+    "resolvedLocator": null,
+    "queryPresent": false,
+    "credentialsPresent": false,
+    "filename": "paper.pdf",
+    "bytes": 70,
+    "sha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+    "acquiredAt": "2026-07-30T00:00:00.000Z",
+    "canonical": {
+      "doi": null,
+      "arxiv": null,
+      "arxivVersion": null
+    }
+  },
+  "generation": {
+    "parameters": {
+      "sourceSha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+      "identityPolicyVersion": "2.0.0",
+      "generationContractVersion": "2.0.0",
+      "packageVersion": "2.1.0",
+      "pluginBaseVersion": "2.0.0",
+      "evidenceSchemaVersion": "2.0.0",
+      "factsSchemaVersion": "2.1.0",
+      "reasoningSchemaVersion": "2.0.0",
+      "workflow": "study",
+      "language": "en",
+      "contextMode": "paper-only",
+      "requestedPaperProfile": "other",
+      "parser": {
+        "backend": "synthetic",
+        "backendVersion": "1.0.0",
+        "contractVersion": "2.0.0"
+      },
+      "runtimeContract": {
+        "policyVersion": "synthetic-runtime-1.0.0",
+        "policySha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "node": "22.23.1",
+        "python": "3.11.15",
+        "pyMuPDF": "1.28.0",
+        "parserPolicyVersion": "synthetic-parser-1.0.0",
+        "parserPolicySha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "authoringEngine": {
+        "provider": "openai",
+        "model": "synthetic-model",
+        "evidence": "declared"
+      },
+      "externalSourceLocator": null,
+      "contentContract": {
+        "version": "2.0.0",
+        "sha256": "a44b58faa46b84b7bb68d5927d284dc4ca73781ef3d1907d7cfe8d420a16765b",
+        "files": [
+          {
+            "path": "synthetic-contract.txt",
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        ]
+      }
+    },
+    "identitySchemaVersion": "2.0.0",
+    "generationContractVersion": "2.0.0"
+  },
+  "software": {
+    "repository": {
+      "commit": null,
+      "status": "unavailable",
+      "treeState": "unavailable"
+    },
+    "plugin": {
+      "baseVersion": "2.0.0",
+      "buildVersion": "2.0.0+codex.synthetic"
+    },
+    "skill": {
+      "name": "paper-study",
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "codex": {
+      "product": "codex",
+      "cliVersion": null,
+      "status": "unavailable",
+      "authoringEngine": {
+        "provider": "openai",
+        "model": "synthetic-model",
+        "evidence": "declared"
+      }
+    },
+    "schemas": [
+      {
+        "name": "synthetic",
+        "version": "1.0.0",
+        "path": "synthetic.schema.json",
+        "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+      }
+    ],
+    "validator": {
+      "name": "codex-paper-validation",
+      "version": "1.0.0",
+      "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+    },
+    "diagnostics": [
+      {
+        "code": "CODEX_VERSION_UNAVAILABLE",
+        "message": "Codex CLI version was not observable."
+      },
+      {
+        "code": "REPOSITORY_COMMIT_UNAVAILABLE",
+        "message": "Repository commit was not observable for the exact codex-paper repository root."
+      }
+    ]
+  },
+  "runtime": {
+    "schemaVersion": "1.0.0",
+    "policyVersion": "synthetic-runtime-1.0.0",
+    "policySha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "contentStatus": "conformant",
+    "contentChecks": {
+      "node": true,
+      "python": true,
+      "pyMuPDF": true,
+      "parserPolicy": true
+    },
+    "host": {
+      "os": "synthetic",
+      "arch": "synthetic",
+      "release": "synthetic",
+      "node": "22.23.1",
+      "python": {
+        "version": "3.11.15",
+        "implementation": "CPython",
+        "pyMuPDF": "1.28.0"
+      }
+    },
+    "tooling": {
+      "npm": "10.9.8"
+    },
+    "parserPolicy": {
+      "version": "synthetic-parser-1.0.0",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "sandbox": {
+      "node": "20.20.2",
+      "python": "3.11.15",
+      "nodeBaseImage": "node@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "pythonBaseImage": "python@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "scope": "sandbox-only"
+    },
+    "contentAffecting": [
+      "node",
+      "python",
+      "pymupdf",
+      "parser-policy"
+    ],
+    "toolingOnly": [
+      "npm"
+    ]
+  },
+  "artifacts": {
+    "graph": {
+      "nodes": [
+        {
+          "id": "file:.codex-paper/paper-identity.json",
+          "kind": "file",
+          "path": ".codex-paper/paper-identity.json",
+          "sha256": "ea7611909922154d248f0eba3f2c6acdcb2ac6ff3b00745bf08a890052b9eba9"
+        },
+        {
+          "id": "file:.codex-paper/validation-report.json",
+          "kind": "file",
+          "path": ".codex-paper/validation-report.json",
+          "sha256": "9dcccd0383f97cf66dcc727a508a93bb06758d28f1bff2c65d3f5d4734b60a2c"
+        },
+        {
+          "id": "file:analysis.json",
+          "kind": "file",
+          "path": "analysis.json",
+          "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+        },
+        {
+          "id": "file:evidence-ledger.json",
+          "kind": "file",
+          "path": "evidence-ledger.json",
+          "sha256": "fd1c79ebdff7391203eb140d7b0ddc2821a5b922659b1992e7c59f12be3ba28d"
+        },
+        {
+          "id": "file:facts.json",
+          "kind": "file",
+          "path": "facts.json",
+          "sha256": "342090526c1fb2e3f0a611883c3517f7d0e974ac998f127f271caeadc5d07bb6"
+        },
+        {
+          "id": "file:meta.json",
+          "kind": "file",
+          "path": "meta.json",
+          "sha256": "594393a8c761cef74e817cd28dad3547528e1ea465421eaf188770343728bad3"
+        },
+        {
+          "id": "file:paper-data.json",
+          "kind": "file",
+          "path": "paper-data.json",
+          "sha256": "4a0bb46eaf9707e684c6e3e2c292e2766c96ed263cfdcf1f326190145bc3a051"
+        },
+        {
+          "id": "file:paper.pdf",
+          "kind": "file",
+          "path": "paper.pdf",
+          "sha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5"
+        },
+        {
+          "id": "file:paper.pdf.manifest.json",
+          "kind": "file",
+          "path": "paper.pdf.manifest.json",
+          "sha256": "b56d7e1cefbc6481e9119e83484c96a9b205f72109a95191f2b639d7f0969257"
+        },
+        {
+          "id": "file:README.md",
+          "kind": "file",
+          "path": "README.md",
+          "sha256": "284949cc56263c2a5fa086310dbd2ca3e4930ea0332464969a6bb92a2152c94d"
+        },
+        {
+          "id": "file:reasoning-analysis.json",
+          "kind": "file",
+          "path": "reasoning-analysis.json",
+          "sha256": "e5c0eaba50f82d046b99d34bd3a3ff65baf9dc209a4b10ce34aa3c7793efc401"
+        },
+        {
+          "id": "input:runtime-policy",
+          "kind": "input",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        {
+          "id": "input:source",
+          "kind": "input",
+          "sha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5"
+        }
+      ],
+      "edges": [
+        {
+          "from": "file:.codex-paper/paper-identity.json",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:analysis.json",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:evidence-ledger.json",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:evidence-ledger.json",
+          "to": "file:facts.json"
+        },
+        {
+          "from": "file:facts.json",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:facts.json",
+          "to": "file:analysis.json"
+        },
+        {
+          "from": "file:meta.json",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:paper-data.json",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:paper-data.json",
+          "to": "file:analysis.json"
+        },
+        {
+          "from": "file:paper-data.json",
+          "to": "file:evidence-ledger.json"
+        },
+        {
+          "from": "file:paper.pdf",
+          "to": "file:.codex-paper/paper-identity.json"
+        },
+        {
+          "from": "file:paper.pdf",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:paper.pdf",
+          "to": "file:evidence-ledger.json"
+        },
+        {
+          "from": "file:paper.pdf",
+          "to": "file:paper-data.json"
+        },
+        {
+          "from": "file:paper.pdf.manifest.json",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:README.md",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "file:reasoning-analysis.json",
+          "to": "file:.codex-paper/validation-report.json"
+        },
+        {
+          "from": "input:runtime-policy",
+          "to": "file:paper-data.json"
+        },
+        {
+          "from": "input:source",
+          "to": "file:paper.pdf"
+        }
+      ]
+    }
+  },
+  "validation": {
+    "path": ".codex-paper/validation-report.json",
+    "fileSha256": "9dcccd0383f97cf66dcc727a508a93bb06758d28f1bff2c65d3f5d4734b60a2c",
+    "schemaVersion": "1.0.0",
+    "status": "pass",
+    "phase": "complete",
+    "publishable": true,
+    "reportHash": "98d2800d12b49123ba1ce7e411fa3a70074ebd530d4bf74095f31c0c6b4dff9c",
+    "validator": {
+      "name": "codex-paper-validation",
+      "version": "1.0.0",
+      "pluginBaseVersion": "2.0.0"
+    }
+  },
+  "executions": {
+    "atSeal": []
+  },
+  "authoring": {
+    "status": "codex_only",
+    "lastEditedAt": "2026-07-30T00:00:00.000Z",
+    "events": []
+  },
+  "migrations": [],
+  "diagnostics": [
+    {
+      "code": "CODEX_VERSION_UNAVAILABLE",
+      "message": "Codex CLI version was not observable."
+    },
+    {
+      "code": "REPOSITORY_COMMIT_UNAVAILABLE",
+      "message": "Repository commit was not observable for the exact codex-paper repository root."
+    }
+  ],
+  "integrity": {
+    "canonicalization": "sorted-json-v1",
+    "hashAlgorithm": "sha256",
+    "signature": {
+      "status": "unsigned",
+      "reason": "deferred_to_p2_5"
+    }
+  },
+  "sealedAt": "2026-07-30T00:00:00.000Z",
+  "files": [
+    {
+      "path": ".codex-paper/paper-identity.json",
+      "sha256": "ea7611909922154d248f0eba3f2c6acdcb2ac6ff3b00745bf08a890052b9eba9",
+      "bytes": 2479
+    },
+    {
+      "path": ".codex-paper/validation-report.json",
+      "sha256": "9dcccd0383f97cf66dcc727a508a93bb06758d28f1bff2c65d3f5d4734b60a2c",
+      "bytes": 2301
+    },
+    {
+      "path": "README.md",
+      "sha256": "284949cc56263c2a5fa086310dbd2ca3e4930ea0332464969a6bb92a2152c94d",
+      "bytes": 226
+    },
+    {
+      "path": "analysis.json",
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+      "bytes": 3
+    },
+    {
+      "path": "evidence-ledger.json",
+      "sha256": "fd1c79ebdff7391203eb140d7b0ddc2821a5b922659b1992e7c59f12be3ba28d",
+      "bytes": 115
+    },
+    {
+      "path": "facts.json",
+      "sha256": "342090526c1fb2e3f0a611883c3517f7d0e974ac998f127f271caeadc5d07bb6",
+      "bytes": 114
+    },
+    {
+      "path": "meta.json",
+      "sha256": "594393a8c761cef74e817cd28dad3547528e1ea465421eaf188770343728bad3",
+      "bytes": 285
+    },
+    {
+      "path": "paper-data.json",
+      "sha256": "4a0bb46eaf9707e684c6e3e2c292e2766c96ed263cfdcf1f326190145bc3a051",
+      "bytes": 105
+    },
+    {
+      "path": "paper.pdf",
+      "sha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+      "bytes": 70
+    },
+    {
+      "path": "paper.pdf.manifest.json",
+      "sha256": "b56d7e1cefbc6481e9119e83484c96a9b205f72109a95191f2b639d7f0969257",
+      "bytes": 399
+    },
+    {
+      "path": "reasoning-analysis.json",
+      "sha256": "e5c0eaba50f82d046b99d34bd3a3ff65baf9dc209a4b10ce34aa3c7793efc401",
+      "bytes": 410
+    }
+  ],
+  "manifestHash": "ee4dce23e422c184d8e1e0b99a97eb6fc2f8297f47b479545944b63a8e6ae815"
+}

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/byxshr/codex-paper/schemas/library-doctor-report-1.0.schema.json",
+  "title": "Codex Paper Library Doctor Report 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "layoutVersion", "payloadsVerified", "summary", "items", "diagnostics", "generatedAt", "inventoryHash"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "status": { "enum": ["healthy", "warnings", "errors"] },
+    "layoutVersion": { "const": "1.0.0" },
+    "payloadsVerified": { "type": "boolean" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "legacyPackages", "managedPapers", "managedGenerations", "overlays", "workspaces", "backups", "pendingRestores", "errors", "warnings"],
+      "properties": {
+        "total": { "$ref": "#/$defs/count" },
+        "legacyPackages": { "$ref": "#/$defs/count" },
+        "managedPapers": { "$ref": "#/$defs/count" },
+        "managedGenerations": { "$ref": "#/$defs/count" },
+        "overlays": { "$ref": "#/$defs/count" },
+        "workspaces": { "$ref": "#/$defs/count" },
+        "backups": { "$ref": "#/$defs/count" },
+        "pendingRestores": { "$ref": "#/$defs/count" },
+        "errors": { "$ref": "#/$defs/count" },
+        "warnings": { "$ref": "#/$defs/count" }
+      }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 50000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "id", "path", "state", "diagnostics"],
+        "properties": {
+          "kind": { "enum": ["legacy_package", "managed_paper", "managed_generation", "workspace", "overlay", "backup", "restore_transaction"] },
+          "id": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "path": { "$ref": "#/$defs/relativePath" },
+          "state": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "compatibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode", "packageVersion", "identityVersion", "manifestVersion"],
+            "properties": {
+              "mode": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "packageVersion": { "type": ["string", "null"], "maxLength": 128 },
+              "identityVersion": { "type": ["string", "null"], "maxLength": 128 },
+              "manifestVersion": { "type": ["string", "null"], "maxLength": 128 }
+            }
+          },
+          "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+        }
+      }
+    },
+    "diagnostics": { "type": "array", "maxItems": 50000, "items": { "$ref": "#/$defs/diagnostic" } },
+    "generatedAt": { "$ref": "#/$defs/timestamp" },
+    "inventoryHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "relativePath": { "type": "string", "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$", "maxLength": 2048 },
+    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$" },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+        "severity": { "enum": ["warning", "error"] },
+        "message": { "type": "string", "maxLength": 600 },
+        "path": { "$ref": "#/$defs/relativePath" }
+      }
+    }
+  }
+}

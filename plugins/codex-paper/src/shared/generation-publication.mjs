@@ -323,6 +323,7 @@ function manifestBinding(current) {
 }
 
 export function buildManagedIndexEntries(libraryRoot, options = {}) {
+  const strict = options.managedStrict ?? options.strict ?? false
   const entries = []
   for (const { recordDir, record } of listManagedRecords({ libraryRoot })) {
     try {
@@ -361,7 +362,7 @@ export function buildManagedIndexEntries(libraryRoot, options = {}) {
         } : {}),
       })
     } catch (error) {
-      if (options.strict) throw error
+      if (strict) throw error
       options.diagnostics?.push({
         paperKey: record.paperKey,
         ...createWorkspaceDiagnostic(error, {
@@ -374,25 +375,37 @@ export function buildManagedIndexEntries(libraryRoot, options = {}) {
   return entries.sort((left, right) => String(left.slug).localeCompare(String(right.slug)))
 }
 
-export function buildLegacyIndexEntries(libraryRoot) {
+export function buildLegacyIndexEntries(libraryRoot, options = {}) {
+  const strict = options.legacyStrict ?? options.strict ?? false
   const layout = getLibraryLayout(libraryRoot)
   if (!fs.existsSync(layout.legacyPapersRoot)) return []
   const root = requireNoFollowDirectory(layout.libraryRoot, layout.legacyPapersRoot)
   const entries = []
   for (const entry of fs.readdirSync(root, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
     if (entry.isFile() && !entry.isSymbolicLink() && (['.DS_Store', 'Thumbs.db', 'desktop.ini', '.localized'].includes(entry.name) || entry.name.startsWith('._'))) continue
-    if (entry.isSymbolicLink() || !entry.isDirectory() || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(entry.name)) {
-      throw new GenerationPublicationError('LEGACY_INDEX_SOURCE_INVALID', 'Legacy paper registry contains an unsafe entry.', 403)
+    try {
+      if (entry.isSymbolicLink() || !entry.isDirectory() || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(entry.name)) {
+        throw new GenerationPublicationError('LEGACY_INDEX_SOURCE_INVALID', 'Legacy paper registry contains an unsafe entry.', 403)
+      }
+      const packageDir = requireNoFollowDirectory(root, path.join(root, entry.name))
+      const meta = readJsonNoFollow(path.join(packageDir, 'meta.json'), 'meta.json')
+      entries.push({ ...meta, slug: entry.name, title: meta.title || entry.name })
+    } catch (error) {
+      if (strict) throw error
+      options.diagnostics?.push({
+        path: `papers/${entry.name}`,
+        ...createWorkspaceDiagnostic(error, {
+          fallbackCode: 'LEGACY_INDEX_SOURCE_INVALID',
+          redactions: [libraryRoot, root],
+        }),
+      })
     }
-    const packageDir = requireNoFollowDirectory(root, path.join(root, entry.name))
-    const meta = readJsonNoFollow(path.join(packageDir, 'meta.json'), 'meta.json')
-    entries.push({ ...meta, slug: entry.name, title: meta.title || entry.name })
   }
   return entries
 }
 
 export function buildLibraryIndexEntries(libraryRoot, options = {}) {
-  const entries = [...buildLegacyIndexEntries(libraryRoot), ...buildManagedIndexEntries(libraryRoot, options)]
+  const entries = [...buildLegacyIndexEntries(libraryRoot, options), ...buildManagedIndexEntries(libraryRoot, options)]
     .sort((left, right) => String(left.slug).localeCompare(String(right.slug)))
   const slugs = entries.map((entry) => entry.slug)
   if (new Set(slugs).size !== slugs.length) throw new GenerationPublicationError('PUBLICATION_ROUTE_CONFLICT', 'Library index sources contain duplicate route aliases.', 409)
@@ -402,7 +415,11 @@ export function buildLibraryIndexEntries(libraryRoot, options = {}) {
 function writeRebuiltIndexLocked(libraryRoot, lockHandle) {
   const layout = getLibraryLayout(libraryRoot)
   const diagnostics = []
-  const entries = buildLibraryIndexEntries(libraryRoot, { diagnostics })
+  const entries = buildLibraryIndexEntries(libraryRoot, {
+    diagnostics,
+    managedStrict: false,
+    legacyStrict: true,
+  })
   let value = entries
   if (fs.existsSync(layout.indexPath)) {
     const existing = readJsonNoFollow(layout.indexPath, 'index.json')

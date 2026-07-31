@@ -1,0 +1,11 @@
+{
+  "id": "codex-paper-compatibility-source",
+  "kind": "pdf",
+  "origin": "original-synthetic",
+  "copyright": "Copyright (c) 2026 Codex Paper contributors",
+  "spdx": "MIT",
+  "license": "MIT License",
+  "redistributable": true,
+  "sha256": "1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "generator": "node benchmarks/fixtures/generate-compatibility-fixtures.mjs --write"
+}

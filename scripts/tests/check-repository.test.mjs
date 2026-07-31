@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -56,7 +56,13 @@ const SENTINELS = [
   'plugins/codex-paper/src/shared/generation-manifest.mjs',
   'plugins/codex-paper/src/shared/generation-publication.mjs',
   'plugins/codex-paper/src/shared/generation-provenance.mjs',
+  'plugins/codex-paper/src/shared/library-maintenance.mjs',
   'plugins/codex-paper/src/shared/cli-error-format.mjs',
+  'plugins/codex-paper/skills/study/scripts/library-maintenance-cli.js',
+  'plugins/codex-paper/skills/study/schemas/library-doctor-report-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/paper-backup-manifest-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/backup-restore-transaction-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/migration-plan-1.0.schema.json',
   'plugins/codex-paper/skills/study/scripts/provenance-cli.js',
   'plugins/codex-paper/skills/study/scripts/tests/generation-provenance.test.mjs',
   'plugins/codex-paper/src/web/nuxt.config.ts',
@@ -88,6 +94,10 @@ const SENTINELS = [
   'scripts/tests/library-layout.test.mjs',
   'scripts/tests/storage-transaction.test.mjs',
   'scripts/tests/generation-publication.test.mjs',
+  'scripts/tests/library-maintenance.test.mjs',
+  'benchmarks/fixtures/generate-compatibility-fixtures.mjs',
+  'benchmarks/fixtures/pdf/compatibility',
+  'benchmarks/fixtures/pdf/compatibility/manifest.json',
   'benchmarks/run-mandatory-benchmark.mjs',
   'benchmarks/mandatory/run-fixture.mjs',
   'benchmarks/mandatory/contract.mjs',
@@ -121,10 +131,23 @@ function makeFixture() {
     mkdirSync(dirname(join(root, schema.path)), { recursive: true })
     cpSync(join(REPO_ROOT, schema.path), join(root, schema.path), { recursive: true })
   }
-  const trackedFiles = [...fixtureFiles, ...BASELINE.schemas.map((schema) => schema.path)]
+  const trackedFiles = []
+  function collectTracked(relativePath) {
+    const absolutePath = join(root, relativePath)
+    if (!statSync(absolutePath).isDirectory()) {
+      trackedFiles.push(relativePath)
+      return
+    }
+    for (const entry of readdirSync(absolutePath, { withFileTypes: true })) {
+      collectTracked(`${relativePath}/${entry.name}`)
+    }
+  }
+  for (const relativePath of [...fixtureFiles, ...BASELINE.schemas.map((schema) => schema.path)]) {
+    collectTracked(relativePath)
+  }
   return {
     root,
-    trackedFiles,
+    trackedFiles: [...new Set(trackedFiles)],
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   }
 }
@@ -401,20 +424,14 @@ test('package reader compatibility modes cannot be removed', () => withFixture((
   assert.match(errors, /must preserve reader compatibility mode unsupportedVersions/)
 }))
 
-test('round-two and round-three compatibility, legacy, and migration guards cannot be removed', () => withFixture((fixture) => {
+test('round-two and round-three compatibility and legacy guards cannot be removed', () => withFixture((fixture) => {
   const extractorPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/extract-facts.js')
   const validatorPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/validate-study-package.js')
-  const migrationPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/migrate-package.js')
   const viewerPath = join(fixture.root, 'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs')
   writeFileSync(extractorPath, readFileSync(extractorPath, 'utf8').replaceAll('compareCandidatesForMerge', 'removedMergeOrder'))
   writeFileSync(validatorPath, readFileSync(validatorPath, 'utf8')
     .replaceAll('LEGACY_PACKAGE_REQUIRES_LEGACY_OK', 'legacy-soft-pass')
     .replaceAll('classifyInvalidPackageArtifacts', 'ignoreInvalidArtifacts'))
-  writeFileSync(migrationPath, readFileSync(migrationPath, 'utf8')
-    .replaceAll('MIGRATION_SOURCE_VERSION_UNSUPPORTED', 'migration-soft-pass')
-    .replaceAll('isLegacyMigrationSourceVersion', 'declared-v1-unsupported')
-    .replaceAll('classifyPackageCompatibility({ reasoning: existingReasoning, ledger: existingLedger })', 'classifyPackageCompatibility({ meta })')
-    .replaceAll('classifyInvalidPackageArtifacts', 'rawJsonParse'))
   writeFileSync(viewerPath, readFileSync(viewerPath, 'utf8')
     .replaceAll('classifyStoredPackageCompatibility', 'classifyEndpointLocally')
     .replaceAll('classifyInvalidPackageArtifacts', 'ignoreInvalidArtifacts')
@@ -423,10 +440,6 @@ test('round-two and round-three compatibility, legacy, and migration guards cann
   assert.match(errors, /compareCandidatesForMerge/)
   assert.match(errors, /explicit read-only legacy validation/)
   assert.match(errors, /diagnose corrupt compatibility artifacts/)
-  assert.match(errors, /reject unsupported versions before migration writes/)
-  assert.match(errors, /explicit 1\.x migration without partial writes/)
-  assert.match(errors, /preflight ancillary artifact versions/)
-  assert.match(errors, /diagnose corrupt migration inputs/)
   assert.match(errors, /cross-endpoint compatibility classification/)
   assert.match(errors, /corrupt-artifact compatibility diagnostics/)
   assert.match(errors, /corrupt-meta compatibility fallback/)
@@ -478,6 +491,69 @@ test('CI cannot remove or reorder the unified provenance gate', () => withFixtur
   const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
   writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8').replace('bash scripts/codex-paper.sh provenance-test', 'true'))
   assert.match(errorsFor(fixture), /must run provenance-test after publication-test/)
+}))
+
+test('CI cannot remove or reorder the P1-2a migration gate', () => withFixture((fixture) => {
+  const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
+  writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8')
+    .replace('bash scripts/codex-paper.sh migration-test', 'true'))
+  assert.match(errorsFor(fixture), /must run migration-test after provenance-test/)
+}))
+
+test('P1-2a schemas and compatibility golden inventory are mandatory', () => withFixture((fixture) => {
+  const schemaPath = 'plugins/codex-paper/skills/study/schemas/migration-plan-1.0.schema.json'
+  rmSync(join(fixture.root, schemaPath))
+  fixture.trackedFiles = fixture.trackedFiles.filter((entry) => entry !== schemaPath)
+  const manifestPath = join(fixture.root, 'benchmarks/fixtures/pdf/compatibility/manifest.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  manifest.fixtures = manifest.fixtures.filter((fixture) => fixture.id !== 'legacy-v1-flat')
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /maintenance sentinel/)
+  assert.match(errors, /must enumerate the five P1-2a compatibility goldens/)
+}))
+
+test('P1-2a Doctor, cleanup, planner, and retryability boundaries cannot drift', () => withFixture((fixture) => {
+  const maintenancePath = join(fixture.root, 'plugins/codex-paper/src/shared/library-maintenance.mjs')
+  const formatterPath = join(fixture.root, 'plugins/codex-paper/src/shared/cli-error-format.mjs')
+  const publicationPath = join(fixture.root, 'plugins/codex-paper/src/shared/generation-publication.mjs')
+  writeFileSync(
+    maintenancePath,
+    readFileSync(maintenancePath, 'utf8')
+      .replaceAll('removeTreeForcingWritable', 'unsafeRecursiveRemove')
+      .replaceAll('LIBRARY_INDEX_DRIFT_UNDETERMINED', 'INDEX_UNKNOWN')
+      .replace('const existing = existingRestoreJournal(layout, backupId)', 'const existing = null'),
+  )
+  writeFileSync(
+    formatterPath,
+    readFileSync(formatterPath, 'utf8')
+      .replace("code === 'BACKUP_RESTORE_CONFLICT'", "code.includes('CONFLICT')")
+      .replace('return 1', "if (code.includes('RECOVERY')) return 3\n  return 1"),
+  )
+  writeFileSync(
+    publicationPath,
+    readFileSync(publicationPath, 'utf8')
+      .replace('managedStrict: false', 'strict: false')
+      .replace('legacyStrict: true', 'strict: true'),
+  )
+  const errors = errorsFor(fixture)
+  assert.match(errors, /maintenance boundary removeTreeForcingWritable/)
+  assert.match(errors, /maintenance boundary LIBRARY_INDEX_DRIFT_UNDETERMINED/)
+  assert.match(errors, /re-read the deterministic restore journal under the restore lock/)
+  assert.match(errors, /must not classify permanent conflict or recovery failures as retryable/)
+  assert.match(errors, /explicit retryable backup restore conflict mapping/)
+  assert.match(errors, /explicitly preserve managed-tolerant and legacy-strict index rebuild policy/)
+}))
+
+test('compatibility golden file hash and tracking are enforced', () => withFixture((fixture) => {
+  const manifestPath = join(fixture.root, 'benchmarks/fixtures/pdf/compatibility/manifest.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const relativePath = `benchmarks/fixtures/pdf/compatibility/${manifest.fixtures[0].id}/${manifest.fixtures[0].files[0].path}`
+  writeFileSync(join(fixture.root, relativePath), 'drift\n')
+  fixture.trackedFiles = fixture.trackedFiles.filter((entry) => entry !== relativePath)
+  const errors = errorsFor(fixture)
+  assert.match(errors, /fixture inventory mismatch/)
+  assert.match(errors, /fixture file must be tracked/)
 }))
 
 test('generation manifest, authoritative resolver, and mandatory publication boundaries are guarded', () => withFixture((fixture) => {
@@ -558,17 +634,12 @@ test('workspace initialization cleanup cannot move outside the registry lock', (
   assert.match(errorsFor(fixture), /must clean initialization residues while holding the registry lock/)
 }))
 
-test('prepare and migration must retain the shared paper library resolver', () => withFixture((fixture) => {
-  for (const relativePath of [
-    'plugins/codex-paper/skills/study/scripts/prepare-paper.js',
-    'plugins/codex-paper/skills/study/scripts/migrate-package.js',
-  ]) {
-    const target = join(fixture.root, relativePath)
-    writeFileSync(target, readFileSync(target, 'utf8').replaceAll('paper-library.mjs', 'paper-library-bypass.mjs'))
-  }
+test('prepare must retain the shared paper library resolver', () => withFixture((fixture) => {
+  const relativePath = 'plugins/codex-paper/skills/study/scripts/prepare-paper.js'
+  const target = join(fixture.root, relativePath)
+  writeFileSync(target, readFileSync(target, 'utf8').replaceAll('paper-library.mjs', 'paper-library-bypass.mjs'))
   const errors = errorsFor(fixture)
   assert.match(errors, /prepare-paper\.js must use the shared paper library resolver/)
-  assert.match(errors, /migrate-package\.js must use the shared paper library resolver/)
 }))
 
 test('every guarded resolver and workspace-writer consumer has mutation coverage', () => withFixture((fixture) => {
@@ -596,14 +667,48 @@ test('every guarded resolver and workspace-writer consumer has mutation coverage
   for (const relativePath of writerConsumers) assert.ok(errors.includes(`${relativePath} must use the shared workspace writer`))
 }))
 
-test('legacy migration must share the paper lock and preserve existing reviews', () => withFixture((fixture) => {
+test('migration execution stays frozen and maintenance boundaries remain guarded', () => withFixture((fixture) => {
   const migrationPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/migrate-package.js')
+  const maintenancePath = join(fixture.root, 'plugins/codex-paper/src/shared/library-maintenance.mjs')
   writeFileSync(migrationPath, readFileSync(migrationPath, 'utf8')
-    .replace('withStorageLocks([lockKey]', 'withStorageLocks([`legacy:migration:${lockKey}`]')
-    .replace('!fs.existsSync(reviewPath) || options.force', 'options.force'))
+    .replaceAll('MIGRATION_EXECUTION_DEFERRED', 'MIGRATION_EXECUTION_ENABLED')
+    .concat('\nconst unsafe = "--force"; writeFile("package.json", "changed")\n'))
+  writeFileSync(maintenancePath, readFileSync(maintenancePath, 'utf8')
+    .replaceAll('LIBRARY_SCAN_UNSTABLE', 'LIBRARY_SCAN_IGNORED')
+    .replaceAll('executionAvailable: false', 'executionAvailable: true'))
   const errors = errorsFor(fixture)
-  assert.match(errors, /must hold the shared legacy paper lock/)
-  assert.match(errors, /must preserve an existing reasoning review/)
+  assert.match(errors, /must remain a read-only migration planner/)
+  assert.match(errors, /must not retain parser, writer, lock, force, or external-path execution capabilities/)
+  assert.match(errors, /maintenance boundary LIBRARY_SCAN_UNSTABLE/)
+  assert.match(errors, /maintenance boundary executionAvailable: false/)
+}))
+
+test('backup directory fidelity and Doctor recovery hardening remain guarded', () => withFixture((fixture) => {
+  const maintenancePath = join(fixture.root, 'plugins/codex-paper/src/shared/library-maintenance.mjs')
+  const backupSchemaPath = join(fixture.root, 'plugins/codex-paper/skills/study/schemas/paper-backup-manifest-1.0.schema.json')
+  const doctorSchemaPath = join(fixture.root, 'plugins/codex-paper/skills/study/schemas/library-doctor-report-1.0.schema.json')
+  const migrationSchemaPath = join(fixture.root, 'plugins/codex-paper/skills/study/schemas/migration-plan-1.0.schema.json')
+  writeFileSync(maintenancePath, readFileSync(maintenancePath, 'utf8')
+    .replaceAll('inventoryMatchesManifest', 'uncheckedInventory')
+    .replaceAll('readRestoreJournal', 'unsafeRestoreJournal')
+    .replaceAll('lockHandle.assertOwns', 'lockHandle.owns'))
+  const backupSchema = JSON.parse(readFileSync(backupSchemaPath, 'utf8'))
+  backupSchema.required = backupSchema.required.filter((item) => item !== 'directories')
+  writeFileSync(backupSchemaPath, JSON.stringify(backupSchema))
+  const doctorSchema = JSON.parse(readFileSync(doctorSchemaPath, 'utf8'))
+  delete doctorSchema.properties.items.items.additionalProperties
+  writeFileSync(doctorSchemaPath, JSON.stringify(doctorSchema))
+  const migrationSchema = JSON.parse(readFileSync(migrationSchemaPath, 'utf8'))
+  migrationSchema.properties.diagnostics.items.additionalProperties = true
+  migrationSchema.properties.backup.properties.status.enum = ['missing', 'verified', 'stale']
+  writeFileSync(migrationSchemaPath, JSON.stringify(migrationSchema))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /maintenance boundary inventoryMatchesManifest/)
+  assert.match(errors, /maintenance boundary readRestoreJournal/)
+  assert.match(errors, /maintenance boundary lockHandle\.assertOwns/)
+  assert.match(errors, /preserve directory metadata/)
+  assert.match(errors, /strict bounded Doctor item/)
+  assert.match(errors, /strict Migration Plan diagnostics/)
 }))
 
 test('Paper Identity 2.0 schema and generation contract are required while 1.0 remains present', () => withFixture((fixture) => {
@@ -928,8 +1033,9 @@ test('PDF parser cannot trust a caller-movable canonical runtime anchor or ambie
 test('repository and study suites keep explicit execution-count gates and failure diagnostics', () => withFixture((fixture) => {
   const rootScript = join(fixture.root, 'scripts/codex-paper.sh')
   writeFileSync(rootScript, readFileSync(rootScript, 'utf8')
-    .replace('"repository-security" 209', '"repository-security" 208')
+    .replace('"repository-security" 243', '"repository-security" 242')
     .replace('"study" 100', '"study" 99')
+    .replace('"repository-guard-static" 82', '"repository-guard-static" 81')
     .replace('preserved output: $output', 'test output was discarded'))
   assert.match(errorsFor(fixture), /must fail and preserve diagnostics when a regression test is silently not executed/)
 }))

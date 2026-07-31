@@ -23,7 +23,7 @@ function redactPathText(value) {
     .replace(/[A-Za-z]:[\\/][^\s'",;)\]}<>]+(?:[\\/][^\s'",;)\]}<>]+)*/g, '[redacted-path]')
 }
 
-function sanitizeText(value, maxLength = 512) {
+export function sanitizeText(value, maxLength = 512) {
   const normalized = String(value).replace(/[\r\n]+/g, ' ')
   const chunks = []
   let cursor = 0
@@ -34,6 +34,14 @@ function sanitizeText(value, maxLength = 512) {
   }
   chunks.push(redactPathText(normalized.slice(cursor)))
   return chunks.join('').slice(0, maxLength)
+}
+
+export function cliExitCode(error) {
+  if (Number.isInteger(error?.exitCode)) return error.exitCode
+  const code = String(error?.code || '')
+  if (code === 'ARGUMENT_INVALID' || code.endsWith('_INVALID') || [400, 403, 413].includes(error?.statusCode)) return 2
+  if (code.includes('LOCK') || code.startsWith('WORKSPACE_') || code === 'BACKUP_RESTORE_CONFLICT') return 3
+  return 1
 }
 
 function safeDetail(value, key = '', depth = 0) {

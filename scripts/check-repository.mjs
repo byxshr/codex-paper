@@ -26,6 +26,26 @@ const PACKAGE_COMPATIBILITY = 'plugins/codex-paper/src/shared/package-compatibil
 const STUDY_VALIDATOR = 'plugins/codex-paper/skills/study/scripts/validate-study-package.js'
 const REASONING_VALIDATOR = 'plugins/codex-paper/skills/study/scripts/validate-reasoning.js'
 const MIGRATION_SCRIPT = 'plugins/codex-paper/skills/study/scripts/migrate-package.js'
+const LIBRARY_MAINTENANCE = 'plugins/codex-paper/src/shared/library-maintenance.mjs'
+const LIBRARY_MAINTENANCE_CLI = 'plugins/codex-paper/skills/study/scripts/library-maintenance-cli.js'
+const MIGRATION_TEST = 'scripts/tests/library-maintenance.test.mjs'
+const COMPATIBILITY_FIXTURE_GENERATOR = 'benchmarks/fixtures/generate-compatibility-fixtures.mjs'
+const COMPATIBILITY_FIXTURE_ROOT = 'benchmarks/fixtures/pdf/compatibility'
+const COMPATIBILITY_FIXTURE_MANIFEST = `${COMPATIBILITY_FIXTURE_ROOT}/manifest.json`
+const MAINTENANCE_SCHEMAS = [
+  'plugins/codex-paper/skills/study/schemas/library-doctor-report-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/paper-backup-manifest-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/backup-restore-transaction-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/migration-plan-1.0.schema.json',
+]
+const MAINTENANCE_SENTINELS = [
+  LIBRARY_MAINTENANCE,
+  LIBRARY_MAINTENANCE_CLI,
+  MIGRATION_TEST,
+  COMPATIBILITY_FIXTURE_GENERATOR,
+  COMPATIBILITY_FIXTURE_MANIFEST,
+  ...MAINTENANCE_SCHEMAS,
+]
 const VIEWER_COMPATIBILITY = 'plugins/codex-paper/src/web/server/utils/storedPackageCompatibility.mjs'
 const VALIDATION_SCHEMA = 'plugins/codex-paper/skills/study/schemas/validation-report-1.0.schema.json'
 const VALIDATION_ENGINE = 'plugins/codex-paper/skills/study/scripts/validation-report.js'
@@ -176,6 +196,8 @@ const SENTINELS = [
   'plugins/codex-paper/sandbox/policy.json',
   'plugins/codex-paper/src/web/package.json',
   'plugins/codex-paper/hooks/hooks.json',
+  ...MAINTENANCE_SENTINELS,
+  COMPATIBILITY_FIXTURE_ROOT,
 ]
 const CONFIG_EXTENSIONS = new Set([
   '.bash', '.cjs', '.js', '.json', '.mjs', '.mts', '.cts', '.py', '.sh', '.toml', '.ts', '.yaml', '.yml', '.zsh',
@@ -303,6 +325,11 @@ export function checkRepository({
     if (!existsSync(join(root, sentinel))) errors.push(`mandatory regression sentinel is missing: ${sentinel}`)
     else if (isSymlink(join(root, sentinel))) errors.push(`mandatory regression sentinel must not be a symlink: ${sentinel}`)
     if (trackedSet.has(MANDATORY_MANIFEST) && !trackedSet.has(sentinel)) errors.push(`mandatory regression sentinel must be tracked: ${sentinel}`)
+  }
+  for (const sentinel of MAINTENANCE_SENTINELS) {
+    if (trackedSet.has(COMPATIBILITY_FIXTURE_MANIFEST) && !trackedSet.has(sentinel)) {
+      errors.push(`P1-2a maintenance sentinel must be tracked: ${sentinel}`)
+    }
   }
 
   const pluginManifests = tracked.filter((path) => path === '.codex-plugin/plugin.json' || path.endsWith('/.codex-plugin/plugin.json'))
@@ -490,10 +517,17 @@ export function checkRepository({
     if (!rootScript.includes('storage-test') || !rootScript.includes('storage-transaction.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose storage-test`)
     if (!rootScript.includes('publication-test') || !rootScript.includes('generation-publication.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose publication-test`)
     if (!rootScript.includes('provenance-test') || !rootScript.includes('generation-provenance.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose provenance-test`)
+    if (!rootScript.includes('migration-test') || !rootScript.includes('library-maintenance.test.mjs')) errors.push(`${ROOT_SCRIPT} must expose migration-test`)
     for (const command of ['provenance-inspect', 'provenance-verify']) {
       if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
     }
     for (const command of ['publish-workspace', 'publication-recover', 'reindex']) {
+      if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
+    }
+    for (const command of [
+      'library-inventory', 'library-doctor', 'backup-list', 'backup-inspect', 'backup-create',
+      'backup-verify', 'backup-restore', 'backup-recover', 'migration-dry-run',
+    ]) {
       if (!rootScript.includes(command)) errors.push(`${ROOT_SCRIPT} must expose ${command}`)
     }
   }
@@ -526,6 +560,10 @@ export function checkRepository({
     if (provenanceIndex < publicationIndex || provenanceIndex > validationIndex) {
       errors.push(`${CI_WORKFLOW} must run provenance-test after publication-test and before validation-test`)
     }
+    const migrationIndex = workflow.indexOf('migration-test')
+    if (migrationIndex < provenanceIndex || migrationIndex > validationIndex || migrationIndex > mandatoryIndex) {
+      errors.push(`${CI_WORKFLOW} must run migration-test after provenance-test and before validation-test and benchmark-mandatory`)
+    }
   }
 
   if (existsSync(join(root, LIBRARY_RESOLVER))) {
@@ -540,7 +578,6 @@ export function checkRepository({
   }
   for (const consumer of [
     PREPARE_SCRIPT,
-    'plugins/codex-paper/skills/study/scripts/migrate-package.js',
     'plugins/codex-paper/skills/study/scripts/validate-reasoning.js',
     'plugins/codex-paper/skills/study/scripts/validate-study-package.js',
     'plugins/codex-paper/skills/study/scripts/sandbox-code.js',
@@ -643,11 +680,32 @@ export function checkRepository({
       errors.push(`${PREPARE_SCRIPT} must not restore overwrite or force preparation`)
     }
   }
-  const migrationScript = 'plugins/codex-paper/skills/study/scripts/migrate-package.js'
-  if (existsSync(join(root, migrationScript))) {
-    const source = readFileSync(join(root, migrationScript), 'utf8')
-    for (const required of ['getLibraryLayout', 'resolveExplicitPackage', 'generation_workspace_v1', 'MANAGED_LAYOUT_MIGRATION_REFUSED']) {
-      if (!source.includes(required)) errors.push(`${migrationScript} must reject managed generations and workspaces through the shared resolver boundary ${required}`)
+  if (existsSync(join(root, MIGRATION_SCRIPT))) {
+    const source = readFileSync(join(root, MIGRATION_SCRIPT), 'utf8')
+    for (const required of ['MIGRATION_EXECUTION_DEFERRED', '--dry-run', 'buildMigrationPlan']) {
+      if (!source.includes(required)) errors.push(`${MIGRATION_SCRIPT} must remain a read-only migration planner: ${required}`)
+    }
+    if (/parsePdfDetailed|buildEvidenceLedger|withStorageLocks|atomicWrite|writeFile|--force|--external-path/.test(source)) {
+      errors.push(`${MIGRATION_SCRIPT} must not retain parser, writer, lock, force, or external-path execution capabilities`)
+    }
+  }
+  if (existsSync(join(root, LIBRARY_MAINTENANCE))) {
+    const source = readFileSync(join(root, LIBRARY_MAINTENANCE), 'utf8')
+    for (const required of [
+      'BACKUPS_RELATIVE_PATH', 'RESTORE_TRANSACTIONS_RELATIVE_PATH', 'RESTORE_STAGING_RELATIVE_PATH',
+      'O_NOFOLLOW', 'withStorageLocks', 'BACKUP_RESTORE_CONFLICT', 'LIBRARY_SCAN_UNSTABLE',
+      'executionAvailable: false', 'assertSchema', 'rootMode', 'directories',
+      'inventoryMatchesManifest', '.invalid-', 'lockHandle.assertOwns', 'readRestoreJournal',
+      "existing?.state === 'target_restored'", "index.shape === 'object'", 'verifyPayloads',
+      'removeTreeForcingWritable', 'LIBRARY_INDEX_DRIFT_UNDETERMINED', 'targetReportPath',
+      'payloadsVerified', 'MIGRATION_BACKUP_INVALID', 'sourceDiagnosticAuthority', 'maybeFault',
+    ]) {
+      if (!source.includes(required)) errors.push(`${LIBRARY_MAINTENANCE} must preserve maintenance boundary ${required}`)
+    }
+    const lockIndex = source.indexOf('return withStorageLocks(lockKeys')
+    const journalIndex = source.indexOf('const existing = existingRestoreJournal', lockIndex)
+    if (lockIndex < 0 || journalIndex < lockIndex) {
+      errors.push(`${LIBRARY_MAINTENANCE} must re-read the deterministic restore journal under the restore lock`)
     }
   }
   if (existsSync(join(root, WORKSPACE_SCHEMA))) {
@@ -718,6 +776,12 @@ export function checkRepository({
     for (const required of ['formatCliError', 'sanitizeText', 'sanitizeHttpUrl', 'redactPathText', 'matchAll(HTTP_URL)', 'redacted-path', 'Details:', "details === '{}'", 'truncated: true']) {
       if (!source.includes(required)) errors.push(`${CLI_ERROR_FORMAT} must preserve bounded redacted CLI detail ${required}`)
     }
+    if (source.includes("code.includes('CONFLICT')") || source.includes("code.includes('RECOVERY')")) {
+      errors.push(`${CLI_ERROR_FORMAT} must not classify permanent conflict or recovery failures as retryable`)
+    }
+    if (!source.includes("code === 'BACKUP_RESTORE_CONFLICT'")) {
+      errors.push(`${CLI_ERROR_FORMAT} must preserve the explicit retryable backup restore conflict mapping`)
+    }
   }
   if (existsSync(join(root, PUBLICATION_ENGINE))) {
     const source = readFileSync(join(root, PUBLICATION_ENGINE), 'utf8')
@@ -725,6 +789,9 @@ export function checkRepository({
       if (!source.includes(required)) errors.push(`${PUBLICATION_ENGINE} must preserve publication boundary ${required}`)
     }
     if (/rmSync\([^\n]*generation|rmSync\([^\n]*package/.test(source)) errors.push(`${PUBLICATION_ENGINE} must not delete committed generations or workspace packages`)
+    if (!source.includes('managedStrict: false') || !source.includes('legacyStrict: true')) {
+      errors.push(`${PUBLICATION_ENGINE} must explicitly preserve managed-tolerant and legacy-strict index rebuild policy`)
+    }
   }
   if (existsSync(join(root, PUBLICATION_CLI))) {
     const source = readFileSync(join(root, PUBLICATION_CLI), 'utf8')
@@ -996,7 +1063,7 @@ export function checkRepository({
   }
   if (existsSync(join(root, ROOT_SCRIPT))) {
     const source = readFileSync(join(root, ROOT_SCRIPT), 'utf8')
-    for (const required of ['run_counted_test_suite', '"repository-security" 209', '"study" 100', '"repository-guard-static" 79', 'provenance-resolve', 'cmd_prepare', 'preserved output: $output']) {
+    for (const required of ['run_counted_test_suite', '"repository-security" 243', '"study" 100', '"repository-guard-static" 84', 'provenance-resolve', 'cmd_prepare', 'preserved output: $output']) {
       if (!source.includes(required)) errors.push(`${ROOT_SCRIPT} must fail and preserve diagnostics when a regression test is silently not executed: ${required}`)
     }
   }
@@ -1056,17 +1123,67 @@ export function checkRepository({
       errors.push(`${validator} must persist validation state and report through one atomic workspace transaction`)
     }
   }
-  if (existsSync(join(root, MIGRATION_SCRIPT))) {
-    const source = readFileSync(join(root, MIGRATION_SCRIPT), 'utf8')
-    if (!source.includes('MIGRATION_SOURCE_VERSION_UNSUPPORTED')) errors.push(`${MIGRATION_SCRIPT} must reject unsupported versions before migration writes`)
-    if (!source.includes('isLegacyMigrationSourceVersion')) errors.push(`${MIGRATION_SCRIPT} must preserve explicit 1.x migration without partial writes`)
-    if (!source.includes('classifyPackageCompatibility({ reasoning: existingReasoning, ledger: existingLedger })')) errors.push(`${MIGRATION_SCRIPT} must preflight ancillary artifact versions before migration writes`)
-    if (!source.includes('classifyInvalidPackageArtifacts')) errors.push(`${MIGRATION_SCRIPT} must diagnose corrupt migration inputs before writes`)
-    if (!source.includes('withStorageLocks([lockKey]') || !source.includes('`legacy:${legacyRelative}`')) {
-      errors.push(`${MIGRATION_SCRIPT} must hold the shared legacy paper lock for the complete migration`)
+  for (const schemaPath of MAINTENANCE_SCHEMAS) {
+    if (!existsSync(join(root, schemaPath))) continue
+    const schema = readJson(join(root, schemaPath), errors, schemaPath)
+    if (schema?.properties?.schemaVersion?.const !== '1.0.0' || schema?.additionalProperties !== false) {
+      errors.push(`${schemaPath} must define a strict 1.0.0 maintenance contract`)
     }
-    if (!source.includes('!fs.existsSync(reviewPath) || options.force')) {
-      errors.push(`${MIGRATION_SCRIPT} must preserve an existing reasoning review unless force is explicit`)
+    if (schemaPath.endsWith('paper-backup-manifest-1.0.schema.json')
+      && (!schema?.required?.includes('rootMode') || !schema?.required?.includes('directories')
+        || schema?.properties?.directories?.items?.additionalProperties !== false)) {
+      errors.push(`${schemaPath} must preserve directory metadata in the Backup Manifest 1.0 contract`)
+    }
+    if (schemaPath.endsWith('library-doctor-report-1.0.schema.json')
+      && (schema?.properties?.items?.items?.additionalProperties !== false
+        || schema?.properties?.items?.items?.properties?.compatibility?.additionalProperties !== false)) {
+      errors.push(`${schemaPath} must preserve strict bounded Doctor item contracts`)
+    }
+    if (schemaPath.endsWith('migration-plan-1.0.schema.json')
+      && (schema?.properties?.diagnostics?.items?.additionalProperties !== false
+        || !schema?.properties?.diagnostics?.items?.required?.includes('severity')
+        || !schema?.properties?.backup?.properties?.status?.enum?.includes('not_found')
+        || !schema?.properties?.backup?.properties?.status?.enum?.includes('invalid'))) {
+      errors.push(`${schemaPath} must preserve strict Migration Plan diagnostics`)
+    }
+  }
+  if (existsSync(join(root, COMPATIBILITY_FIXTURE_MANIFEST))) {
+    const manifest = readJson(join(root, COMPATIBILITY_FIXTURE_MANIFEST), errors, COMPATIBILITY_FIXTURE_MANIFEST)
+    const requiredIds = new Set([
+      'legacy-v1-flat',
+      'package-2.0-flat',
+      'package-2.1-flat',
+      'managed-manifest-1-identity-1',
+      'managed-manifest-2-identity-2',
+    ])
+    const fixtureIds = new Set(Array.isArray(manifest?.fixtures) ? manifest.fixtures.map((fixture) => fixture.id) : [])
+    if (manifest?.schemaVersion !== '1.0.0' || fixtureIds.size !== requiredIds.size
+      || [...requiredIds].some((fixtureId) => !fixtureIds.has(fixtureId))) {
+      errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} must enumerate the five P1-2a compatibility goldens`)
+    }
+    if (manifest?.generator !== `node ${COMPATIBILITY_FIXTURE_GENERATOR} --write`) {
+      errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} must identify the deterministic compatibility generator`)
+    }
+    for (const fixture of Array.isArray(manifest?.fixtures) ? manifest.fixtures : []) {
+      if (fixture?.origin !== 'original-synthetic' || fixture?.spdx !== 'MIT'
+        || fixture?.license !== 'MIT License' || fixture?.redistributable !== true
+        || !Array.isArray(fixture?.files) || fixture.files.length === 0) {
+        errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} fixture ${fixture?.id || '<unknown>'} must be original MIT synthetic content`)
+        continue
+      }
+      for (const file of fixture.files) {
+        const relativePath = `${COMPATIBILITY_FIXTURE_ROOT}/${fixture.id}/${file.path}`
+        if (!existsSync(join(root, relativePath))) {
+          errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} fixture file is missing: ${relativePath}`)
+          continue
+        }
+        if (file.sha256 !== sha256(join(root, relativePath)) || file.bytes !== statSync(join(root, relativePath)).size) {
+          errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} fixture inventory mismatch: ${relativePath}`)
+        }
+        if (trackedSet.has(COMPATIBILITY_FIXTURE_MANIFEST) && !trackedSet.has(relativePath)) {
+          errors.push(`${COMPATIBILITY_FIXTURE_MANIFEST} fixture file must be tracked: ${relativePath}`)
+        }
+      }
     }
   }
   if (existsSync(join(root, VIEWER_COMPATIBILITY))) {

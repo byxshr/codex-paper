@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "paperKey": "p-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "paperId": "source:sha256:1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "sourceRevisionId": "sha256:1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "generationId": "gen:sha256:9753903eed9d8bbd35dfc7bfe5ce8265e50126f58044e7b28e6e2d77dd0212e1",
+  "packageRelativePath": "sources/sha256-1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5/generations/gen-sha256-9753903eed9d8bbd35dfc7bfe5ce8265e50126f58044e7b28e6e2d77dd0212e1/package",
+  "manifestId": "gm-sha256-4167eaad35b96dcb0bab75c9c8a02068998730af84f1c96552d583cd7eb99a1c",
+  "manifestHash": "02a03e2f501114a81965ef975521167bb0dd88c3ef70c358b024e5f85a933204",
+  "manifestFileSha256": "063276e91c296072e356fe11667dfba635b95a354c204b670f9b8df6a0b226a9",
+  "validationReportHash": "98d2800d12b49123ba1ce7e411fa3a70074ebd530d4bf74095f31c0c6b4dff9c",
+  "publishedAt": "2026-07-30T00:00:00.000Z"
+}

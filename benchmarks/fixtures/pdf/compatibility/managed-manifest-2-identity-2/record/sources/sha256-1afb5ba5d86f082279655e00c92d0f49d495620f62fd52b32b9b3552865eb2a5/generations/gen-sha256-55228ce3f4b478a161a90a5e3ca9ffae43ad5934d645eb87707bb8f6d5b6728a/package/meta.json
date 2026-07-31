@@ -1,0 +1,9 @@
+{
+  "slug": "managed-manifest-2-identity-2",
+  "title": "Synthetic managed-manifest-2-identity-2",
+  "packageVersion": "2.1.0",
+  "generationManifest": {
+    "schemaVersion": "2.0.0",
+    "manifestId": "gm-sha256-99d7bf803672ebd7f29f1bf26a7ee2a94de49dc9ebaa354d7f26d5a37b091074"
+  }
+}

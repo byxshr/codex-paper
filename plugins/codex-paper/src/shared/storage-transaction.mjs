@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import { cliExitCode } from './cli-error-format.mjs'
+
 export const STORAGE_TRANSACTION_VERSION = '1.0.0'
 export const DEFAULT_CLI_LOCK_TIMEOUT_MS = 10_000
 export const MAX_LOCK_TIMEOUT_MS = 30_000
@@ -16,6 +18,8 @@ const LOCK_KIND_RANK = Object.freeze({
   generation: 40,
   workspace: 50,
   trash: 50,
+  backup: 50,
+  restore: 50,
   index: 60,
 })
 
@@ -423,10 +427,7 @@ export function fileWritePrecondition(filePath, maxBytes = 128 * 1024 * 1024) {
 }
 
 export function storageCliExitCode(error) {
-  const code = String(error?.code || '')
-  if (code === 'ARGUMENT_INVALID' || code.endsWith('_INVALID') || [400, 403, 413].includes(error?.statusCode)) return 2
-  if (code.includes('LOCK') || code.startsWith('WORKSPACE_')) return 3
-  return 1
+  return cliExitCode(error)
 }
 
 export function atomicWriteFile({ root, relativePath, data, lockHandle, requiredLock, expectedSha256, expectAbsent = false, mode = 0o600, maxBytes = 128 * 1024 * 1024 }) {

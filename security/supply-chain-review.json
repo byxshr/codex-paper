@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "policyVersion": "p1-3a-1.0.0",
-  "reviewedAt": "2026-07-30",
+  "reviewedAt": "2026-07-31",
   "artifacts": [
     {
       "path": "plugins/codex-paper/package.json",
@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "0d2d800102cc78e483b5ee34272f2130f61f2b5a7e5ac98113826848d763fb3c"
+      "sha256": "8afeba36569273fc8ac5a74cafa6f2cd2a905e7df1879898ab2c04157199978d"
     },
     {
       "path": "plugins/codex-paper/runtime/runtime-baseline.json",
@@ -69,11 +69,11 @@
     },
     {
       "path": "scripts/common.sh",
-      "sha256": "7f2abb0bd30f4e7258dd32f3f11abdad125fe29e4c637d9cd576705ffe0751d9"
+      "sha256": "1d3e649b8f65780447341d1cf3984c1dba8ea364a46bf594966c8cb28e6dc634"
     },
     {
       "path": "scripts/check-repository.mjs",
-      "sha256": "341781a15720ebf0049a24ac956bbc5594f51771a2984a17783541191f09abfe"
+      "sha256": "f551756b7b6f0188f0643bf8ca26bec40768ea55c7a4eb1bf93c79c3e96df209"
     },
     {
       "path": "scripts/tests/supply-chain.test.mjs",

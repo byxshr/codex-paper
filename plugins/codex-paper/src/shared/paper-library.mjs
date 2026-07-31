@@ -7,6 +7,9 @@ import { verifyGenerationManifest } from './generation-manifest.mjs'
 export const LIBRARY_LAYOUT_VERSION = '1.0.0'
 export const STORE_RELATIVE_PATH = '.codex-paper/store-v1'
 export const WORKSPACES_RELATIVE_PATH = '.codex-paper/workspaces-v1'
+export const BACKUPS_RELATIVE_PATH = '.codex-paper/backups-v1'
+export const RESTORE_TRANSACTIONS_RELATIVE_PATH = '.codex-paper/restore-transactions-v1'
+export const RESTORE_STAGING_RELATIVE_PATH = '.codex-paper/restore-staging-v1'
 export const PAPER_RECORD_FILENAME = 'paper.json'
 export const CURRENT_RECORD_FILENAME = 'current.json'
 export const OVERLAY_STATE_FILENAME = 'state.json'
@@ -40,6 +43,9 @@ export function getLibraryLayout(libraryRoot = process.env.PAPERS_DIR || path.jo
     storeRoot,
     recordsRoot: path.join(storeRoot, 'papers'),
     workspacesRoot: path.join(root, WORKSPACES_RELATIVE_PATH),
+    backupsRoot: path.join(root, BACKUPS_RELATIVE_PATH),
+    restoreTransactionsRoot: path.join(root, RESTORE_TRANSACTIONS_RELATIVE_PATH),
+    restoreStagingRoot: path.join(root, RESTORE_STAGING_RELATIVE_PATH),
     locksRoot: path.join(root, '.codex-paper/locks-v1'),
     trashRoot: path.join(root, '.trash')
   }

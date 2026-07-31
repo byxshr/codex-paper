@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "2.0.0",
+  "analysisVersion": "2.0.0",
+  "paperSlug": "managed-manifest-1-identity-1",
+  "status": "complete",
+  "contextMode": "paper-only",
+  "paperProfile": "other",
+  "centralClaims": [],
+  "mechanismMap": [],
+  "keyResults": [],
+  "assumptions": [],
+  "limitations": [],
+  "uncertaintyZones": [],
+  "alternativeExplanations": [],
+  "externalEvidenceRefs": [],
+  "followUpIdeas": []
+}

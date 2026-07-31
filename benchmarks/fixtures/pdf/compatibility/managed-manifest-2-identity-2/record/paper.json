@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "paperKey": "p-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "primaryPaperId": "source:sha256:1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5",
+  "paperIdAliases": [
+    "source:sha256:1afb5ba5d86f082279655e00c92d0f49d495620f62fd52b32b9b3552865eb2a5"
+  ],
+  "routeAliases": [
+    "managed-manifest-2-identity-2"
+  ],
+  "createdAt": "2026-07-30T00:00:00.000Z",
+  "reconciliations": []
+}
