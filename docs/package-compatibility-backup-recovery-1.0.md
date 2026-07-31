@@ -21,9 +21,13 @@
 
 Compatibility reads never update versions, mtimes, hashes, current records, or index entries.
 
-## Doctor Report 1.0
+## Doctor Report 1.0 and 1.1
 
 Doctor status is `healthy`, `warnings`, or `errors`. A warning does not change the CLI exit from `0`; an error returns `1`.
+
+Doctor Report 1.1 is the current native output and adds migration transaction/archive inventory and
+summary fields. The frozen 1.0 shape remains a strict read-only compatibility input; readers do not
+reinterpret an older 1.0 document as 1.1 or write it back. Unknown Doctor versions fail closed.
 
 `inventoryHash` covers the stable intrinsic report and excludes `generatedAt`. The intrinsic payload
 includes `payloadsVerified`, so a shallow inventory and a full Doctor report cannot present different

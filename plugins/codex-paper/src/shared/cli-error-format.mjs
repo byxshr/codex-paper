@@ -40,7 +40,9 @@ export function cliExitCode(error) {
   if (Number.isInteger(error?.exitCode)) return error.exitCode
   const code = String(error?.code || '')
   if (code === 'ARGUMENT_INVALID' || code.endsWith('_INVALID') || [400, 403, 413].includes(error?.statusCode)) return 2
-  if (code.includes('LOCK') || code.startsWith('WORKSPACE_') || code === 'BACKUP_RESTORE_CONFLICT') return 3
+  if (['STORAGE_LOCK_CONFLICT', 'STORAGE_LOCK_TIMEOUT', 'STORAGE_LOCK_INITIALIZING', 'STORAGE_LOCK_OWNERSHIP_LOST'].includes(code)
+    || code.startsWith('WORKSPACE_')
+    || code === 'BACKUP_RESTORE_CONFLICT') return 3
   return 1
 }
 

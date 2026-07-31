@@ -33,7 +33,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "8afeba36569273fc8ac5a74cafa6f2cd2a905e7df1879898ab2c04157199978d"
+      "sha256": "a8d9c3996fcce406be112c740e41a3f8235eff5324d2a6249fab63866bb1fe82"
     },
     {
       "path": "plugins/codex-paper/runtime/runtime-baseline.json",
@@ -73,7 +73,7 @@
     },
     {
       "path": "scripts/check-repository.mjs",
-      "sha256": "f551756b7b6f0188f0643bf8ca26bec40768ea55c7a4eb1bf93c79c3e96df209"
+      "sha256": "53901e5c4f046e5727b8018c5fb51ec6052e821d0d5eac6d305fb78b1f38a3ca"
     },
     {
       "path": "scripts/tests/supply-chain.test.mjs",

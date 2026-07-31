@@ -20,6 +20,7 @@ const LOCK_KIND_RANK = Object.freeze({
   trash: 50,
   backup: 50,
   restore: 50,
+  migration: 50,
   index: 60,
 })
 

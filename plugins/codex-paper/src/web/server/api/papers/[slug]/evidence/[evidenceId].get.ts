@@ -1,4 +1,5 @@
 import { readJsonPath, readOptionalInternalJson, resolveInternalFile, truncateText, validateEvidenceId, validateSlug } from '../../../../utils/librarySecurity.mjs'
+import { resolveEvidenceRefs } from '../../../../utils/packageCompatibility.mjs'
 
 function sectionTitle(ledger: any, sectionId: string | null | undefined) {
   if (!sectionId) return null
@@ -42,7 +43,15 @@ export default defineEventHandler((event) => {
   }
 
   const ledger = readJsonPath(resolveInternalFile(slug!, 'evidence-ledger.json').path, 'evidence-ledger.json')
-  const evidence = (ledger.evidence || []).find((item: any) => item.id === evidenceId)
+  const facts = readJsonPath(resolveInternalFile(slug!, 'facts.json').path, 'facts.json')
+  const aliases = readOptionalInternalJson(slug!, '.codex-paper/evidence-aliases.json', 'evidence-aliases.json')
+  let resolvedId = evidenceId
+  try {
+    resolvedId = resolveEvidenceRefs([evidenceId], facts, ledger, aliases)[0] || evidenceId
+  } catch {
+    throw createError({ statusCode: 422, statusMessage: 'Evidence alias map is invalid' })
+  }
+  const evidence = (ledger.evidence || []).find((item: any) => item.id === resolvedId)
 
   if (!evidence) {
     throw createError({ statusCode: 404, statusMessage: 'Evidence not found' })
@@ -50,6 +59,7 @@ export default defineEventHandler((event) => {
 
   return {
     id: evidence.id,
+    requestedId: evidenceId === evidence.id ? undefined : evidenceId,
     kind: evidence.kind,
     roles: evidence.roles || [],
     text: truncateText(evidence.text || evidence.quote, 700),

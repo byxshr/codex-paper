@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/byxshr/codex-paper/schemas/evidence-alias-map-1.0.schema.json",
+  "title": "Codex Paper Evidence Alias Map 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "target", "aliases", "coverage", "diagnostics"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageVersion", "snapshotHash", "ledgerSha256", "factsSha256"],
+      "properties": {
+        "packageVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "snapshotHash": { "$ref": "#/$defs/hash" },
+        "ledgerSha256": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "factsSha256": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ledgerSha256"],
+      "properties": {
+        "ledgerSha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "maxItems": 20000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceRef", "targetRefs", "method", "sourceArtifactSha256"],
+        "properties": {
+          "sourceRef": { "$ref": "#/$defs/ref" },
+          "targetRefs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/evidenceRef" }
+          },
+          "method": { "enum": ["identity", "fact_projection", "content_hash"] },
+          "sourceArtifactSha256": { "$ref": "#/$defs/hash" }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["referenced", "resolved", "unresolved", "ratio"],
+      "properties": {
+        "referenced": { "type": "integer", "minimum": 0 },
+        "resolved": { "type": "integer", "minimum": 0 },
+        "unresolved": { "type": "integer", "minimum": 0 },
+        "ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+          "message": { "type": "string", "maxLength": 600 },
+          "sourceRef": { "$ref": "#/$defs/ref" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "evidenceRef": { "type": "string", "pattern": "^ev-p[0-9]{3,}-[a-z]+-[a-f0-9]{10}$" },
+    "ref": { "type": "string", "pattern": "^(?:ev-p[0-9]{3,}-[a-z]+-[a-f0-9]{10}|(?:claim|result|limitation):[0-9]+)$", "maxLength": 160 }
+  }
+}

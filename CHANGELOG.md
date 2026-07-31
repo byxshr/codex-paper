@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added P1-2b explicit two-stage migration: verified backup to reviewable generation workspace, current parser regeneration, complete standard Validation gate, and Manifest 2.0 publication.
+- Added Evidence Alias Map, Migration Source Record, Migration Transaction, and Migration Plan 1.1 contracts; direct current evidence, aliases, and frozen 2.0 fact projections now share one read-only resolution order.
+- Added journaled legacy authority archives, current-manifest CAS rollback, retained-target roll-forward, migration recovery, and authority-aware target reindex repair without in-place source mutation.
+- Hardened P1-2b after independent review: legacy commit crash windows now converge, rollback/roll-forward preconditions precede authority mutation, resumed current CAS remains enforced, managed freshness excludes overlay state, Doctor exposes migration residues, reindex plans predict apply output, and migration tests are count-gated.
+- Closed the second P1-2b review round with no blockers: target planning and authority-switch reindex now isolate unrelated damage, transaction scans tolerate corrupt/newer siblings, active/incomplete starts are actionable, Doctor 1.1 preserves Doctor 1.0 compatibility, and lock retryability is explicit.
 - Added P1-2a compatibility goldens for legacy v1, package 2.0/2.1, and Manifest/Identity 1.0/2.0; production-reader checks prove zero-write compatibility.
 - Added read-only library inventory/Doctor plus content-addressed paper backups, integrity verification, private journaled restore/recovery, and library-relative diagnostics.
 - Froze the old in-place migration implementation: `migrate` is now a `--dry-run` compatibility alias, while new-generation migration, reindex repair, and rollback remain deferred to P1-2b.

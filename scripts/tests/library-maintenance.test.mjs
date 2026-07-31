@@ -13,6 +13,7 @@ import {
   inventoryTree,
   recoverBackupRestores,
   restorePaperBackup,
+  validateDoctorReportDocument,
   verifyBackup,
 } from '../../plugins/codex-paper/src/shared/library-maintenance.mjs'
 import { classifyPackageCompatibility } from '../../plugins/codex-paper/src/shared/package-compatibility.mjs'
@@ -198,10 +199,23 @@ test('doctor inventories healthy legacy state without writes or absolute paths',
   addLegacy(root, 'legacy-paper', '2.0.0')
   const before = snapshot(root)
   const report = inspectLibrary({ libraryRoot: root, now: '2026-07-30T00:00:00.000Z' })
+  assert.equal(report.schemaVersion, '1.1.0')
   assert.equal(report.status, 'healthy')
   assert.equal(report.summary.legacyPackages, 1)
   assert.match(report.inventoryHash, /^[a-f0-9]{64}$/)
   assert.equal(JSON.stringify(report).includes(root), false)
+  const legacyReport = structuredClone(report)
+  legacyReport.schemaVersion = '1.0.0'
+  for (const field of ['migrationTransactions', 'pendingMigrations', 'migrationArchives', 'migrationArchiveBytes']) {
+    delete legacyReport.summary[field]
+  }
+  const compatibility = validateDoctorReportDocument(legacyReport)
+  assert.equal(compatibility.compatibilityMode, 'compatible_1_0')
+  assert.equal(compatibility.readOnly, true)
+  assert.throws(
+    () => validateDoctorReportDocument({ ...legacyReport, schemaVersion: '9.0.0' }),
+    { code: 'DOCTOR_REPORT_UNSUPPORTED' },
+  )
   assert.deepEqual(snapshot(root), before)
 })
 

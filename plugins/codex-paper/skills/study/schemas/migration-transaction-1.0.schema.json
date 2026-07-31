@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/byxshr/codex-paper/schemas/migration-transaction-1.0.schema.json",
+  "title": "Codex Paper Migration Transaction 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "migrationId", "planId", "state", "source", "backupId", "workspaceId", "target", "currentBefore", "currentAfter", "archive", "createdAt", "updatedAt", "diagnostics"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "migrationId": { "$ref": "#/$defs/migrationId" },
+    "planId": { "type": "string", "pattern": "^mp-sha256-[a-f0-9]{64}$" },
+    "state": { "enum": ["workspace_created", "committing", "committed", "rolling_back", "rolled_back", "rolling_forward"] },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "relativePath", "snapshotHash", "routeSlug", "paperKey"],
+      "properties": {
+        "kind": { "enum": ["legacy_flat", "managed_paper"] },
+        "relativePath": { "$ref": "#/$defs/path" },
+        "snapshotHash": { "$ref": "#/$defs/hash" },
+        "routeSlug": { "type": ["string", "null"], "maxLength": 160 },
+        "paperKey": { "type": ["string", "null"], "pattern": "^p-[a-f0-9]{64}$" }
+      }
+    },
+    "backupId": { "type": "string", "pattern": "^bk-sha256-[a-f0-9]{64}$" },
+    "workspaceId": { "type": "string", "pattern": "^ws-[a-f0-9]{12}-[a-f0-9]{12}-[a-f0-9]{32}$" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paperKey", "paperId", "sourceRevisionId", "generationId", "routeSlug"],
+      "properties": {
+        "paperKey": { "type": "string", "pattern": "^p-[a-f0-9]{64}$" },
+        "paperId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sourceRevisionId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "generationId": { "type": "string", "pattern": "^gen:sha256:[a-f0-9]{64}$" },
+        "routeSlug": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" }
+      }
+    },
+    "currentBefore": { "anyOf": [{ "$ref": "#/$defs/current" }, { "type": "null" }] },
+    "currentAfter": { "anyOf": [{ "$ref": "#/$defs/current" }, { "type": "null" }] },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRelativePath", "targetRelativePath"],
+      "properties": {
+        "sourceRelativePath": { "type": ["string", "null"], "maxLength": 2048 },
+        "targetRelativePath": { "type": ["string", "null"], "maxLength": 2048 }
+      }
+    },
+    "createdAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+    "updatedAt": { "type": "string", "minLength": 20, "maxLength": 40 },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+          "message": { "type": "string", "maxLength": 600 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "migrationId": { "type": "string", "pattern": "^mig-sha256-[a-f0-9]{64}$" },
+    "path": { "type": "string", "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$", "maxLength": 2048 },
+    "current": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "paperKey", "paperId", "sourceRevisionId", "generationId", "packageRelativePath"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "paperKey": { "type": "string", "pattern": "^p-[a-f0-9]{64}$" },
+        "paperId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sourceRevisionId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "generationId": { "type": "string", "pattern": "^gen:sha256:[a-f0-9]{64}$" },
+        "packageRelativePath": { "type": "string", "pattern": "^sources/sha256-[a-f0-9]{64}/generations/gen-sha256-[a-f0-9]{64}/package$" },
+        "manifestId": { "type": "string", "pattern": "^gm-sha256-[a-f0-9]{64}$" },
+        "manifestHash": { "$ref": "#/$defs/hash" },
+        "manifestFileSha256": { "$ref": "#/$defs/hash" },
+        "validationReportHash": { "$ref": "#/$defs/hash" },
+        "publishedAt": { "type": "string", "minLength": 20, "maxLength": 40 }
+      },
+      "dependentRequired": {
+        "manifestId": ["manifestHash", "manifestFileSha256", "validationReportHash", "publishedAt"],
+        "manifestHash": ["manifestId", "manifestFileSha256", "validationReportHash", "publishedAt"],
+        "manifestFileSha256": ["manifestId", "manifestHash", "validationReportHash", "publishedAt"],
+        "validationReportHash": ["manifestId", "manifestHash", "manifestFileSha256", "publishedAt"],
+        "publishedAt": ["manifestId", "manifestHash", "manifestFileSha256", "validationReportHash"]
+      }
+    }
+  }
+}

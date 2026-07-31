@@ -310,13 +310,15 @@ bash scripts/codex-paper.sh library-doctor --json
 `library-doctor` performs full backup payload verification; the lighter `library-inventory` and
 migration planner report `payloadsVerified: false`. Index drift is checked per paper authority, so one
 broken sibling cannot suppress drift findings for otherwise readable papers.
+The current output is Doctor Report 1.1, which adds migration transaction/archive visibility; Doctor Report 1.0 remains read-only compatible.
 
-P1-2a freezes in-place migration. Before a future P1-2b migration, create and verify a content-addressed, paper-scoped backup, then inspect the read-only plan:
+In-place migration remains retired. Explicit migration requires a content-addressed paper backup and a reviewable new-generation workspace:
 
 ```bash
 bash scripts/codex-paper.sh backup-create {paper-route-slug} --json
 bash scripts/codex-paper.sh backup-verify {backup-id} --json
 bash scripts/codex-paper.sh migration-dry-run {paper-route-slug} --backup-id {backup-id} --json
+bash scripts/codex-paper.sh migration-start {paper-route-slug} --backup-id {backup-id} --json
 ```
 
 Backups live under `.codex-paper/backups-v1/`, are excluded from the Viewer and index, and preserve directory modes and empty directories as well as file bytes. They can be restored only when the target is absent or byte-identical. An identical-target no-op preserves live curated index metadata; a different existing target is always a conflict. Corrupt snapshots are retained in quarantine and recreated, while unrelated malformed journals cannot block healthy recovery. Private failed staging is permission-normalized before cleanup, including snapshots of sealed generations. Use `backup-recover` to resume a journaled restore after interruption.
@@ -327,9 +329,20 @@ The legacy `migrate` command now accepts only `--dry-run` as a compatibility ali
 bash scripts/codex-paper.sh migrate {paper-route-slug} --dry-run --backup-id {backup-id} --json
 ```
 
-Actual migration, replacement, reindex repair, and rollback remain deferred to P1-2b. External paths, trash entries, and active workspaces are not backup or migration targets.
+`migration-start` leaves the source, current record, and index unchanged. Complete authoring and standard validation in the returned exact workspace, then run `migration-commit`. The current parser rebuilds the evidence layer; approved authoring files are preserved through the shared writer, and a validated Evidence Alias Map resolves old references without rewriting sealed sources. Only one migration may be active per paper. Migrated `code/**` files are limited to 1 MiB each; other approved authoring files are limited to 16 MiB.
 
-See [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md), the [compatibility/backup contract](docs/package-compatibility-backup-recovery-1.0.md), [evidence ledger](docs/evidence-ledger.md), [reasoning analysis](docs/reasoning-analysis.md), [package contract](docs/package-v2.md), and [migration guide](docs/migration-v1-to-v2.md) for the detailed contracts.
+```bash
+bash scripts/codex-paper.sh migration-inspect {migration-id-or-workspace} --json
+bash scripts/codex-paper.sh migration-commit {migration-id-or-workspace} --json
+bash scripts/codex-paper.sh migration-recover --json
+bash scripts/codex-paper.sh migration-rollback {migration-id} --expected-current-manifest-hash {sha256} --json
+bash scripts/codex-paper.sh migration-rollforward {migration-id} --json
+bash scripts/codex-paper.sh reindex --dry-run --paper {paper-route-slug} --json
+```
+
+Rollback uses current-manifest compare-and-swap. A legacy rollback restores the original flat authority exactly and retains the managed target privately for explicit roll-forward. External paths, trash entries, and active workspaces are not migration sources.
+
+See [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md), the [compatibility/backup contract](docs/package-compatibility-backup-recovery-1.0.md), [explicit migration contract](docs/explicit-generation-migration-1.0.md), [evidence ledger](docs/evidence-ledger.md), [reasoning analysis](docs/reasoning-analysis.md), [package contract](docs/package-v2.md), and [migration guide](docs/migration-v1-to-v2.md) for the detailed contracts.
 
 ---
 

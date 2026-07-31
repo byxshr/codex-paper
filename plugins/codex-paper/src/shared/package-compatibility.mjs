@@ -1,6 +1,7 @@
 export const PACKAGE_CONTRACT_VERSION = '2.1.0';
 export const PREVIOUS_PACKAGE_VERSION = '2.0.0';
 export const PAPER_EVIDENCE_ID_PATTERN = /^ev-p\d{3,}-[a-z]+-[a-f0-9]{10}$/;
+export const EVIDENCE_ALIAS_MAP_VERSION = '1.0.0';
 
 function diagnostic(code, message) {
   return { code, message };
@@ -111,8 +112,52 @@ export function resolveLegacyEvidenceRef(ref, facts, ledger = null) {
     : [];
 }
 
-export function resolveEvidenceRefs(refs, facts, ledger = null) {
-  return Array.from(new Set((refs || []).flatMap((ref) => resolveLegacyEvidenceRef(ref, facts, ledger))));
+export function validateEvidenceAliasMap(aliasMap, ledger = null) {
+  if (aliasMap == null) return null;
+  const aliases = aliasMap?.aliases;
+  if (aliasMap?.schemaVersion !== EVIDENCE_ALIAS_MAP_VERSION
+    || !Array.isArray(aliases)
+    || aliases.length > 20000
+    || new Set(aliases.map((item) => item?.sourceRef)).size !== aliases.length) {
+    const error = new Error('Evidence alias map is invalid.');
+    error.code = 'EVIDENCE_ALIAS_MAP_INVALID';
+    error.statusCode = 422;
+    throw error;
+  }
+  const ledgerIds = ledger == null ? null : new Set((ledger?.evidence || []).map((item) => item?.id));
+  for (const item of aliases) {
+    if (!(PAPER_EVIDENCE_ID_PATTERN.test(String(item?.sourceRef || '')) || LEGACY_REF.test(String(item?.sourceRef || '')))
+      || !Array.isArray(item?.targetRefs) || item.targetRefs.length === 0 || item.targetRefs.length > 32
+      || new Set(item.targetRefs).size !== item.targetRefs.length
+      || item.targetRefs.some((ref) => !PAPER_EVIDENCE_ID_PATTERN.test(String(ref)) || (ledgerIds && !ledgerIds.has(ref)))
+      || !['identity', 'fact_projection', 'content_hash'].includes(item?.method)
+      || !/^[a-f0-9]{64}$/.test(String(item?.sourceArtifactSha256 || ''))) {
+      const error = new Error('Evidence alias map contains an invalid or unbound alias.');
+      error.code = 'EVIDENCE_ALIAS_MAP_INVALID';
+      error.statusCode = 422;
+      throw error;
+    }
+  }
+  const coverage = aliasMap?.coverage;
+  if (!coverage || !Number.isInteger(coverage.referenced) || !Number.isInteger(coverage.resolved)
+    || !Number.isInteger(coverage.unresolved) || coverage.referenced !== coverage.resolved + coverage.unresolved
+    || coverage.ratio !== (coverage.referenced === 0 ? 1 : coverage.resolved / coverage.referenced)) {
+    const error = new Error('Evidence alias coverage is invalid.');
+    error.code = 'EVIDENCE_ALIAS_MAP_INVALID';
+    error.statusCode = 422;
+    throw error;
+  }
+  return aliasMap;
+}
+
+export function resolveEvidenceRefs(refs, facts, ledger = null, aliasMap = null) {
+  const aliases = validateEvidenceAliasMap(aliasMap, ledger);
+  const bySource = new Map((aliases?.aliases || []).map((item) => [item.sourceRef, item.targetRefs]));
+  return Array.from(new Set((refs || []).flatMap((ref) => {
+    if (PAPER_EVIDENCE_ID_PATTERN.test(String(ref)) && evidenceRefExists(ref, ledger)) return [ref];
+    if (bySource.has(ref)) return bySource.get(ref);
+    return resolveLegacyEvidenceRef(ref, facts, ledger);
+  })));
 }
 
 export function isLegacyFactRef(ref) {

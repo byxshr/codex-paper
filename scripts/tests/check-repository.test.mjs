@@ -60,9 +60,17 @@ const SENTINELS = [
   'plugins/codex-paper/src/shared/cli-error-format.mjs',
   'plugins/codex-paper/skills/study/scripts/library-maintenance-cli.js',
   'plugins/codex-paper/skills/study/schemas/library-doctor-report-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/library-doctor-report-1.1.schema.json',
   'plugins/codex-paper/skills/study/schemas/paper-backup-manifest-1.0.schema.json',
   'plugins/codex-paper/skills/study/schemas/backup-restore-transaction-1.0.schema.json',
   'plugins/codex-paper/skills/study/schemas/migration-plan-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/migration-plan-1.1.schema.json',
+  'plugins/codex-paper/skills/study/schemas/migration-transaction-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/migration-source-record-1.0.schema.json',
+  'plugins/codex-paper/skills/study/schemas/evidence-alias-map-1.0.schema.json',
+  'plugins/codex-paper/src/shared/generation-migration.mjs',
+  'plugins/codex-paper/skills/study/scripts/generation-migration-cli.js',
+  'scripts/tests/generation-migration.test.mjs',
   'plugins/codex-paper/skills/study/scripts/provenance-cli.js',
   'plugins/codex-paper/skills/study/scripts/tests/generation-provenance.test.mjs',
   'plugins/codex-paper/src/web/nuxt.config.ts',
@@ -493,11 +501,94 @@ test('CI cannot remove or reorder the unified provenance gate', () => withFixtur
   assert.match(errorsFor(fixture), /must run provenance-test after publication-test/)
 }))
 
-test('CI cannot remove or reorder the P1-2a migration gate', () => withFixture((fixture) => {
+test('CI cannot remove or reorder the explicit generation migration gate', () => withFixture((fixture) => {
   const workflowPath = join(fixture.root, '.github/workflows/ci.yml')
   writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8')
     .replace('bash scripts/codex-paper.sh migration-test', 'true'))
   assert.match(errorsFor(fixture), /must run migration-test after provenance-test/)
+}))
+
+test('P1-2b migration schemas and engine are mandatory', () => withFixture((fixture) => {
+  const schemaPath = 'plugins/codex-paper/skills/study/schemas/evidence-alias-map-1.0.schema.json'
+  rmSync(join(fixture.root, schemaPath))
+  fixture.trackedFiles = fixture.trackedFiles.filter((entry) => entry !== schemaPath)
+  const enginePath = join(fixture.root, 'plugins/codex-paper/src/shared/generation-migration.mjs')
+  writeFileSync(enginePath, readFileSync(enginePath, 'utf8').replaceAll('verifyBackup', 'skipBackupVerification'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /active plugin sentinel/)
+  assert.match(errors, /must preserve migration boundary verifyBackup/)
+}))
+
+test('P1-2b complete validation and rollback CAS cannot be bypassed', () => withFixture((fixture) => {
+  const enginePath = join(fixture.root, 'plugins/codex-paper/src/shared/generation-migration.mjs')
+  const maintenancePath = join(fixture.root, 'plugins/codex-paper/src/shared/library-maintenance.mjs')
+  const publicationPath = join(fixture.root, 'plugins/codex-paper/src/shared/generation-publication.mjs')
+  const doctorSchemaPath = join(fixture.root, 'plugins/codex-paper/skills/study/schemas/library-doctor-report-1.1.schema.json')
+  writeFileSync(
+    enginePath,
+    readFileSync(enginePath, 'utf8')
+      .replace('MIGRATION_VALIDATION_REQUIRED', 'MIGRATION_VALIDATION_SKIPPED')
+      .replaceAll('expectedManifestHash', 'uncheckedManifestHash')
+      .replaceAll('migrationSourceSnapshot', 'unsafeSourceSnapshot')
+      .replaceAll('sameCurrent', 'uncheckedCurrent')
+      .replaceAll('liveManagedCurrent', 'staleManagedCurrent')
+      .replaceAll('MIGRATION_SOURCE_MISSING', 'MIGRATION_SOURCE_IGNORED')
+      .replaceAll('activeTransactionsForTarget', 'ignoreActiveTransactions')
+      .replaceAll('MIGRATION_START_INCOMPLETE', 'WORKSPACE_EXISTS')
+      .replaceAll('MIGRATION_TRANSACTION_UNSUPPORTED', 'MIGRATION_TRANSACTION_INVALID')
+      .replaceAll('targetedIndex', 'globalIndexOnly')
+      .replaceAll('replaceLegacyRoute', 'rejectLegacyRoute')
+      .replaceAll('replaceManagedRoute', 'rejectManagedRoute'),
+  )
+  writeFileSync(
+    maintenancePath,
+    readFileSync(maintenancePath, 'utf8')
+      .replaceAll('MIGRATION_TRANSACTIONS_RELATIVE_PATH', 'MIGRATION_TRANSACTIONS_DISABLED')
+      .replaceAll('migrationArchiveBytes', 'ignoredArchiveBytes')
+      .replaceAll("DOCTOR_REPORT_VERSION = '1.1.0'", "DOCTOR_REPORT_VERSION = '1.0.0'")
+      .replaceAll('validateDoctorReportDocument', 'validateCurrentDoctorOnly')
+      .replaceAll('descriptorForMigrationTarget', 'resolveLibraryPaper'),
+  )
+  writeFileSync(
+    publicationPath,
+    readFileSync(publicationPath, 'utf8')
+      .replace('after_current_commit', 'current_fault_removed')
+      .replace('before_index_commit', 'index_fault_removed'),
+  )
+  const doctorSchema = JSON.parse(readFileSync(doctorSchemaPath, 'utf8'))
+  doctorSchema.properties.summary.required = doctorSchema.properties.summary.required.filter((field) => field !== 'migrationArchiveBytes')
+  writeFileSync(doctorSchemaPath, JSON.stringify(doctorSchema))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must preserve migration boundary MIGRATION_VALIDATION_REQUIRED/)
+  assert.match(errors, /must preserve migration boundary expectedManifestHash/)
+  assert.match(errors, /must preserve migration boundary migrationSourceSnapshot/)
+  assert.match(errors, /must preserve migration boundary sameCurrent/)
+  assert.match(errors, /must preserve migration boundary liveManagedCurrent/)
+  assert.match(errors, /must preserve migration boundary MIGRATION_SOURCE_MISSING/)
+  assert.match(errors, /must preserve migration boundary activeTransactionsForTarget/)
+  assert.match(errors, /must preserve migration boundary MIGRATION_START_INCOMPLETE/)
+  assert.match(errors, /must preserve migration boundary MIGRATION_TRANSACTION_UNSUPPORTED/)
+  assert.match(errors, /must preserve migration boundary targetedIndex/)
+  assert.match(errors, /must preserve migration boundary replaceLegacyRoute/)
+  assert.match(errors, /must preserve migration boundary replaceManagedRoute/)
+  assert.match(errors, /maintenance boundary MIGRATION_TRANSACTIONS_RELATIVE_PATH/)
+  assert.match(errors, /maintenance boundary migrationArchiveBytes/)
+  assert.match(errors, /maintenance boundary DOCTOR_REPORT_VERSION = '1\.1\.0'/)
+  assert.match(errors, /maintenance boundary validateDoctorReportDocument/)
+  assert.match(errors, /maintenance boundary descriptorForMigrationTarget/)
+  assert.match(errors, /migration-aware Doctor Report 1\.1 contract/)
+  assert.match(errors, /publication boundary after_current_commit/)
+  assert.match(errors, /publication boundary before_index_commit/)
+}))
+
+test('Evidence Alias resolution remains shared by validator and compatibility reader', () => withFixture((fixture) => {
+  const compatibilityPath = join(fixture.root, 'plugins/codex-paper/src/shared/package-compatibility.mjs')
+  const validationPath = join(fixture.root, 'plugins/codex-paper/skills/study/scripts/validation-report.js')
+  writeFileSync(compatibilityPath, readFileSync(compatibilityPath, 'utf8').replace('bySource.has(ref)', 'false'))
+  writeFileSync(validationPath, readFileSync(validationPath, 'utf8').replace('evidence-aliases.json', 'aliases-disabled.json'))
+  const errors = errorsFor(fixture)
+  assert.match(errors, /must preserve Evidence Alias resolution bySource\.has\(ref\)/)
+  assert.match(errors, /must validate Evidence Alias Maps/)
 }))
 
 test('P1-2a schemas and compatibility golden inventory are mandatory', () => withFixture((fixture) => {
@@ -533,8 +624,9 @@ test('P1-2a Doctor, cleanup, planner, and retryability boundaries cannot drift',
   writeFileSync(
     publicationPath,
     readFileSync(publicationPath, 'utf8')
-      .replace('managedStrict: false', 'strict: false')
-      .replace('legacyStrict: true', 'strict: true'),
+      .replaceAll('managedStrict: false', 'strict: false')
+      .replaceAll('legacyStrict: false', 'strict: true')
+      .replaceAll('LIBRARY_INDEX_REPAIR_BLOCKED', 'INDEX_REPAIR_FAILED'),
   )
   const errors = errorsFor(fixture)
   assert.match(errors, /maintenance boundary removeTreeForcingWritable/)
@@ -542,7 +634,7 @@ test('P1-2a Doctor, cleanup, planner, and retryability boundaries cannot drift',
   assert.match(errors, /re-read the deterministic restore journal under the restore lock/)
   assert.match(errors, /must not classify permanent conflict or recovery failures as retryable/)
   assert.match(errors, /explicit retryable backup restore conflict mapping/)
-  assert.match(errors, /explicitly preserve managed-tolerant and legacy-strict index rebuild policy/)
+  assert.match(errors, /preserve tolerant planning and explicit blocked index repair policy/)
 }))
 
 test('compatibility golden file hash and tracking are enforced', () => withFixture((fixture) => {
@@ -675,12 +767,12 @@ test('migration execution stays frozen and maintenance boundaries remain guarded
     .concat('\nconst unsafe = "--force"; writeFile("package.json", "changed")\n'))
   writeFileSync(maintenancePath, readFileSync(maintenancePath, 'utf8')
     .replaceAll('LIBRARY_SCAN_UNSTABLE', 'LIBRARY_SCAN_IGNORED')
-    .replaceAll('executionAvailable: false', 'executionAvailable: true'))
+    .replaceAll("MIGRATION_PLAN_VERSION = '1.1.0'", "MIGRATION_PLAN_VERSION = '9.9.9'"))
   const errors = errorsFor(fixture)
   assert.match(errors, /must remain a read-only migration planner/)
   assert.match(errors, /must not retain parser, writer, lock, force, or external-path execution capabilities/)
   assert.match(errors, /maintenance boundary LIBRARY_SCAN_UNSTABLE/)
-  assert.match(errors, /maintenance boundary executionAvailable: false/)
+  assert.match(errors, /maintenance boundary MIGRATION_PLAN_VERSION = '1\.1\.0'/)
 }))
 
 test('backup directory fidelity and Doctor recovery hardening remain guarded', () => withFixture((fixture) => {
@@ -1033,9 +1125,10 @@ test('PDF parser cannot trust a caller-movable canonical runtime anchor or ambie
 test('repository and study suites keep explicit execution-count gates and failure diagnostics', () => withFixture((fixture) => {
   const rootScript = join(fixture.root, 'scripts/codex-paper.sh')
   writeFileSync(rootScript, readFileSync(rootScript, 'utf8')
-    .replace('"repository-security" 243', '"repository-security" 242')
-    .replace('"study" 100', '"study" 99')
-    .replace('"repository-guard-static" 82', '"repository-guard-static" 81')
+    .replace('"repository-security" 259', '"repository-security" 258')
+    .replace('"study" 102', '"study" 101')
+    .replace('"migration" 55', '"migration" 54')
+    .replace('"repository-guard-static" 87', '"repository-guard-static" 86')
     .replace('preserved output: $output', 'test output was discarded'))
   assert.match(errorsFor(fixture), /must fail and preserve diagnostics when a regression test is silently not executed/)
 }))

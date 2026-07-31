@@ -568,6 +568,31 @@ export function readProvenanceDraft(workspace) {
   return validateProvenanceDraft(draft, { workspaceId: workspace.workspaceId })
 }
 
+export function appendMigrationEvent(workspace, migration, lockHandle) {
+  lockHandle.assertOwns(workspace.workspaceLockKey)
+  const draft = readProvenanceDraft(workspace)
+  if (draft.migrations.some((item) => item.migrationId === migration?.migrationId)) {
+    const existing = draft.migrations.find((item) => item.migrationId === migration.migrationId)
+    if (stableJson(existing) !== stableJson(migration)) {
+      const error = new Error('Workspace provenance already contains a different migration event with this ID.')
+      error.code = 'PROVENANCE_MIGRATION_CONFLICT'
+      error.statusCode = 409
+      throw error
+    }
+    return draft
+  }
+  if (draft.migrations.length >= 256) {
+    const error = new Error('Workspace provenance migration history is full.')
+    error.code = 'PROVENANCE_MIGRATION_LIMIT_EXCEEDED'
+    error.statusCode = 413
+    throw error
+  }
+  return writeDraft(workspace, {
+    ...draft,
+    migrations: [...draft.migrations, migration],
+  }, lockHandle)
+}
+
 export function writeInitialProvenanceDraft(initDir, draft, lockHandle, requiredLock) {
   return atomicWriteJson({
     root: initDir,

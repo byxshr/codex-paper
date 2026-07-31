@@ -476,6 +476,45 @@ test('unknown package versions stay report-free and read-only', () => {
   }
 });
 
+test('validation resolves migrated evidence aliases and rejects an unbound alias map', () => {
+  const dir = makePackage();
+  const legacyEvidence = 'ev-p009-par-cccccccccc';
+  try {
+    const reasoningPath = path.join(dir, 'reasoning-analysis.json');
+    const reasoning = JSON.parse(fs.readFileSync(reasoningPath, 'utf8'));
+    reasoning.uncertaintyZones[0].evidenceRefs = [legacyEvidence, EVIDENCE_B];
+    writeJson(dir, 'reasoning-analysis.json', reasoning);
+    fs.mkdirSync(path.join(dir, '.codex-paper'), { recursive: true });
+    writeJson(path.join(dir, '.codex-paper'), 'evidence-aliases.json', {
+      schemaVersion: '1.0.0',
+      sourceRevisionId: `sha256:${'1'.repeat(64)}`,
+      targetGenerationId: `gen:sha256:${'2'.repeat(64)}`,
+      aliases: [{
+        sourceRef: legacyEvidence,
+        targetRefs: [EVIDENCE_A],
+        method: 'content_hash',
+        sourceArtifactSha256: '3'.repeat(64)
+      }],
+      unresolved: [],
+      coverage: { referenced: 1, resolved: 1, unresolved: 0, ratio: 1 }
+    });
+
+    const valid = inspectPackageArtifacts(dir, { phase: 'complete' });
+    assert.equal(valid.findings.some((finding) => finding.code === 'EVIDENCE_REF_NOT_FOUND'), false);
+    assert.equal(valid.findings.some((finding) => finding.code === 'EVIDENCE_ALIAS_MAP_INVALID'), false);
+
+    const aliasPath = path.join(dir, '.codex-paper', 'evidence-aliases.json');
+    const aliases = JSON.parse(fs.readFileSync(aliasPath, 'utf8'));
+    aliases.aliases[0].targetRefs = ['ev-p999-par-dddddddddd'];
+    writeJson(path.join(dir, '.codex-paper'), 'evidence-aliases.json', aliases);
+    const invalid = inspectPackageArtifacts(dir, { phase: 'complete' });
+    assert.ok(invalid.findings.some((finding) => finding.code === 'EVIDENCE_ALIAS_MAP_INVALID'));
+    assert.ok(invalid.findings.some((finding) => finding.code === 'EVIDENCE_REF_NOT_FOUND'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('identity validation is conditional, fail-closed, and does not affect legacy packages', () => {
   const dir = makePackage();
   try {

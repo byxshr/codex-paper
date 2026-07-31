@@ -8,5 +8,6 @@ export {
   isLegacyFactRef,
   isLegacyMigrationSourceVersion,
   resolveEvidenceRefs,
-  resolveLegacyEvidenceRef
+  resolveLegacyEvidenceRef,
+  validateEvidenceAliasMap
 } from '../../../shared/package-compatibility.mjs'

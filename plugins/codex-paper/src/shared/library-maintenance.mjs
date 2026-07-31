@@ -6,11 +6,13 @@ import Ajv2020 from 'ajv/dist/2020.js'
 
 import {
   BACKUPS_RELATIVE_PATH,
+  descriptorForRecord,
   RESTORE_STAGING_RELATIVE_PATH,
   RESTORE_TRANSACTIONS_RELATIVE_PATH,
   STORE_RELATIVE_PATH,
   WORKSPACES_RELATIVE_PATH,
   getLibraryLayout,
+  readPaperRecord,
   readJsonNoFollow,
   resolveLibraryPaper,
 } from './paper-library.mjs'
@@ -29,10 +31,15 @@ import { sanitizeText } from './cli-error-format.mjs'
 import { readPaperIdentity } from '../../skills/study/scripts/paper-identity.js'
 import { buildLibraryIndexEntries } from './generation-publication.mjs'
 
-export const DOCTOR_REPORT_VERSION = '1.0.0'
+export const DOCTOR_REPORT_VERSION = '1.1.0'
 export const BACKUP_MANIFEST_VERSION = '1.0.0'
 export const RESTORE_TRANSACTION_VERSION = '1.0.0'
-export const MIGRATION_PLAN_VERSION = '1.0.0'
+export const MIGRATION_PLAN_VERSION = '1.1.0'
+export const MIGRATION_POLICY = Object.freeze({
+  version: '1.0.0',
+  authoringProvider: 'codex-paper-migration',
+  authoringModel: 'p1-2b-1.0.0',
+})
 
 const BACKUP_ID_PATTERN = /^bk-sha256-[a-f0-9]{64}$/
 const RESTORE_ID_PATTERN = /^restore-[a-f0-9]{32}$/
@@ -44,13 +51,18 @@ const MAX_DEPTH = 20
 const MAX_FILE_BYTES = 512 * 1024 * 1024
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024 * 1024
 const BUFFER_BYTES = 1024 * 1024
+const MIGRATION_TRANSACTIONS_RELATIVE_PATH = '.codex-paper/migration-transactions-v1'
+const MIGRATION_ARCHIVES_RELATIVE_PATH = '.codex-paper/migration-archives-v1'
 const SCHEMA_DIRECTORY = new URL('../../skills/study/schemas/', import.meta.url)
 const schemaCompiler = new Ajv2020({ allErrors: true, strict: true })
 const schemaValidators = Object.fromEntries([
   ['backup', 'paper-backup-manifest-1.0.schema.json'],
-  ['doctor', 'library-doctor-report-1.0.schema.json'],
+  ['doctorLegacy', 'library-doctor-report-1.0.schema.json'],
+  ['doctor', 'library-doctor-report-1.1.schema.json'],
   ['restore', 'backup-restore-transaction-1.0.schema.json'],
-  ['migration', 'migration-plan-1.0.schema.json'],
+  ['migrationLegacy', 'migration-plan-1.0.schema.json'],
+  ['migration', 'migration-plan-1.1.schema.json'],
+  ['migrationTransaction', 'migration-transaction-1.0.schema.json'],
 ].map(([name, filename]) => [
   name,
   schemaCompiler.compile(JSON.parse(fs.readFileSync(new URL(filename, SCHEMA_DIRECTORY), 'utf8'))),
@@ -88,6 +100,35 @@ function assertSchema(name, value, code) {
     keyword: item.keyword,
   })) || []
   throw new LibraryMaintenanceError(code, `${name} document does not match its 1.0 schema.`, 422, { errors: details })
+}
+
+export function validateMigrationPlanDocument(value) {
+  const version = value?.schemaVersion
+  if (version === '1.0.0') return {
+    plan: assertSchema('migrationLegacy', value, 'MIGRATION_PLAN_INVALID'),
+    compatibilityMode: 'compatible_1_0',
+    readOnly: true,
+  }
+  if (version === MIGRATION_PLAN_VERSION) return {
+    plan: assertSchema('migration', value, 'MIGRATION_PLAN_INVALID'),
+    compatibilityMode: 'native_1_1',
+    readOnly: false,
+  }
+  throw new LibraryMaintenanceError('MIGRATION_PLAN_VERSION_UNSUPPORTED', 'Migration Plan version is unsupported.', 422)
+}
+
+export function validateDoctorReportDocument(value) {
+  if (value?.schemaVersion === '1.0.0') return {
+    report: assertSchema('doctorLegacy', value, 'DOCTOR_REPORT_INVALID'),
+    compatibilityMode: 'compatible_1_0',
+    readOnly: true,
+  }
+  if (value?.schemaVersion === DOCTOR_REPORT_VERSION) return {
+    report: assertSchema('doctor', value, 'DOCTOR_REPORT_INVALID'),
+    compatibilityMode: 'native_1_1',
+    readOnly: false,
+  }
+  throw new LibraryMaintenanceError('DOCTOR_REPORT_UNSUPPORTED', 'Doctor report version is unsupported.', 422)
 }
 
 function relativePosix(root, target) {
@@ -238,6 +279,22 @@ export function inventoryTree(root) {
   }
 }
 
+export function migrationSourceSnapshot(root, kind) {
+  const inventory = inventoryTree(root)
+  if (kind !== 'managed_paper') return inventory
+  const keep = (item) => item.path !== 'overlay' && !item.path.startsWith('overlay/')
+  const directories = inventory.directories.filter(keep)
+  const files = inventory.files.filter(keep)
+  const totalBytes = files.reduce((total, item) => total + item.bytes, 0)
+  return {
+    rootMode: inventory.rootMode,
+    directories,
+    files,
+    totalBytes,
+    snapshotHash: sha256(stableJson({ rootMode: inventory.rootMode, directories, files })),
+  }
+}
+
 function copyFileVerified(source, target, expected) {
   const sourceDescriptor = fs.openSync(source, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0))
   const targetDescriptor = fs.openSync(
@@ -357,7 +414,7 @@ function entriesForTarget(index, target) {
   return index.entries.filter((entry) => entry?.slug === target.routeSlug)
 }
 
-function structuralTarget(input, libraryRoot) {
+export function structuralTarget(input, libraryRoot) {
   if (typeof input !== 'string' || !input || input.includes('\0') || input.includes('/') || input.includes('\\')) {
     throw new LibraryMaintenanceError('BACKUP_TARGET_INVALID', 'Backup targets must be a library paper reference, not a path.', 400)
   }
@@ -413,6 +470,34 @@ function structuralTarget(input, libraryRoot) {
     throw error
   }
   throw new LibraryMaintenanceError('BACKUP_TARGET_UNSUPPORTED', 'Only legacy flat or managed paper records can be backed up.', 400)
+}
+
+export function descriptorForMigrationTarget(target, libraryRoot) {
+  const layout = getLibraryLayout(libraryRoot)
+  if (target?.kind === 'legacy_flat') {
+    return {
+      mode: 'legacy_flat',
+      readOnly: true,
+      libraryRoot: layout.libraryRoot,
+      paperRoot: target.targetDir,
+      packageDir: target.targetDir,
+      generationDir: target.targetDir,
+      overlayDir: null,
+      routeSlug: target.routeSlug,
+      routeAliases: [target.routeSlug],
+      paperKey: null,
+      paperLockKey: `legacy:${target.routeSlug}`,
+      generationLockKey: `legacy:${target.routeSlug}`,
+      record: null,
+      current: null,
+    }
+  }
+  if (target?.kind === 'managed_paper') {
+    const recordDir = path.join(layout.recordsRoot, target.paperKey)
+    const record = readPaperRecord(recordDir)
+    return descriptorForRecord(recordDir, record, { libraryRoot: layout.libraryRoot })
+  }
+  throw new LibraryMaintenanceError('BACKUP_TARGET_UNSUPPORTED', 'Migration target layout is unsupported.', 400)
 }
 
 function backupIntrinsic(manifest) {
@@ -952,6 +1037,8 @@ function scanSignature(layout) {
     layout.backupsRoot,
     layout.restoreTransactionsRoot,
     layout.restoreStagingRoot,
+    path.join(layout.libraryRoot, MIGRATION_TRANSACTIONS_RELATIVE_PATH),
+    path.join(layout.libraryRoot, MIGRATION_ARCHIVES_RELATIVE_PATH),
   ]
   const values = []
   function walk(target, depth = 0) {
@@ -976,7 +1063,7 @@ function scanSignature(layout) {
   return sha256(stableJson(values.sort((a, b) => a[0].localeCompare(b[0]))))
 }
 
-function packageVersions(packageDir) {
+export function packageVersions(packageDir) {
   const compatibility = compatibilityForPackage(packageDir)
   const identityPath = path.join(packageDir, '.codex-paper/paper-identity.json')
   const manifestPath = path.join(packageDir, '.codex-paper/generation-manifest.json')
@@ -1031,6 +1118,7 @@ export function inspectLibrary(options = {}) {
   const before = scanSignature(layout)
   const items = []
   const diagnostics = []
+  let migrationArchiveBytes = 0
 
   if (fs.existsSync(layout.legacyPapersRoot)) {
     try {
@@ -1281,6 +1369,78 @@ export function inspectLibrary(options = {}) {
     }
   }
 
+  const migrationTransactionsRoot = path.join(layout.libraryRoot, MIGRATION_TRANSACTIONS_RELATIVE_PATH)
+  if (fs.existsSync(migrationTransactionsRoot)) {
+    try {
+      requireDirectory(migrationTransactionsRoot, path.join(layout.libraryRoot, '.codex-paper'))
+      for (const entry of fs.readdirSync(migrationTransactionsRoot, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        const itemPath = `${MIGRATION_TRANSACTIONS_RELATIVE_PATH}/${entry.name}`
+        try {
+          if (entry.isSymbolicLink() || !entry.isFile() || !/^mig-sha256-[a-f0-9]{64}\.json$/.test(entry.name)) {
+            throw new LibraryMaintenanceError('MIGRATION_TRANSACTION_INVALID', 'Migration transaction registry contains an unsafe entry.', 403)
+          }
+          const transactionValue = readJsonNoFollow(path.join(migrationTransactionsRoot, entry.name), 'migration transaction', 4 * 1024 * 1024)
+          if (transactionValue?.schemaVersion !== '1.0.0') {
+            const itemDiagnostic = diagnostic(
+              'MIGRATION_TRANSACTION_UNSUPPORTED',
+              'warning',
+              'Migration transaction version is newer or unsupported; use a compatible plugin to inspect it.',
+              itemPath,
+            )
+            items.push({ kind: 'migration_transaction', id: entry.name.slice(0, -5), path: itemPath, state: 'unsupported', diagnostics: [itemDiagnostic] })
+            diagnostics.push(itemDiagnostic)
+            continue
+          }
+          const transaction = assertSchema('migrationTransaction', transactionValue, 'MIGRATION_TRANSACTION_INVALID')
+          const terminal = ['committed', 'rolled_back'].includes(transaction.state)
+          const itemDiagnostics = terminal ? [] : [diagnostic(
+            'MIGRATION_RECOVERY_PENDING',
+            'warning',
+            'Migration transaction requires recovery.',
+            itemPath,
+          )]
+          items.push({ kind: 'migration_transaction', id: transaction.migrationId, path: itemPath, state: transaction.state, diagnostics: itemDiagnostics })
+          diagnostics.push(...itemDiagnostics)
+        } catch (error) {
+          const itemDiagnostic = diagnostic(
+            error.code === 'LIBRARY_RECORD_INVALID' ? 'MIGRATION_TRANSACTION_INVALID' : (error.code || 'MIGRATION_TRANSACTION_INVALID'),
+            'error',
+            error.message,
+            itemPath,
+          )
+          items.push({ kind: 'migration_transaction', id: entry.name, path: itemPath, state: 'invalid', diagnostics: [itemDiagnostic] })
+          diagnostics.push(itemDiagnostic)
+        }
+      }
+    } catch (error) {
+      diagnostics.push(diagnostic(error.code || 'MIGRATION_TRANSACTION_REGISTRY_INVALID', 'error', error.message, MIGRATION_TRANSACTIONS_RELATIVE_PATH))
+    }
+  }
+
+  const migrationArchivesRoot = path.join(layout.libraryRoot, MIGRATION_ARCHIVES_RELATIVE_PATH)
+  if (fs.existsSync(migrationArchivesRoot)) {
+    try {
+      requireDirectory(migrationArchivesRoot, path.join(layout.libraryRoot, '.codex-paper'))
+      for (const entry of fs.readdirSync(migrationArchivesRoot, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        const itemPath = `${MIGRATION_ARCHIVES_RELATIVE_PATH}/${entry.name}`
+        try {
+          if (entry.isSymbolicLink() || !entry.isDirectory() || !/^mig-sha256-[a-f0-9]{64}$/.test(entry.name)) {
+            throw new LibraryMaintenanceError('MIGRATION_ARCHIVE_INVALID', 'Migration archive registry contains an unsafe entry.', 403)
+          }
+          const inventory = inventoryTree(path.join(migrationArchivesRoot, entry.name))
+          migrationArchiveBytes += inventory.totalBytes
+          items.push({ kind: 'migration_archive', id: entry.name, path: itemPath, state: 'retained', diagnostics: [] })
+        } catch (error) {
+          const itemDiagnostic = diagnostic(error.code || 'MIGRATION_ARCHIVE_INVALID', 'error', error.message, itemPath)
+          items.push({ kind: 'migration_archive', id: entry.name, path: itemPath, state: 'invalid', diagnostics: [itemDiagnostic] })
+          diagnostics.push(itemDiagnostic)
+        }
+      }
+    } catch (error) {
+      diagnostics.push(diagnostic(error.code || 'MIGRATION_ARCHIVE_REGISTRY_INVALID', 'error', error.message, MIGRATION_ARCHIVES_RELATIVE_PATH))
+    }
+  }
+
   try {
     const actual = readIndex(layout)
     const sourceDiagnostics = []
@@ -1350,6 +1510,10 @@ export function inspectLibrary(options = {}) {
     workspaces: normalizedItems.filter((item) => item.kind === 'workspace').length,
     backups: normalizedItems.filter((item) => item.kind === 'backup').length,
     pendingRestores: normalizedItems.filter((item) => item.kind === 'restore_transaction' && item.state !== 'index_committed').length,
+    migrationTransactions: normalizedItems.filter((item) => item.kind === 'migration_transaction').length,
+    pendingMigrations: normalizedItems.filter((item) => item.kind === 'migration_transaction' && !['committed', 'rolled_back'].includes(item.state)).length,
+    migrationArchives: normalizedItems.filter((item) => item.kind === 'migration_archive').length,
+    migrationArchiveBytes,
     errors: normalizedDiagnostics.filter((item) => item.severity === 'error').length,
     warnings: normalizedDiagnostics.filter((item) => item.severity === 'warning').length,
   }
@@ -1372,7 +1536,27 @@ export function inspectLibrary(options = {}) {
 export function buildMigrationPlan(input, options = {}) {
   const layout = getLibraryLayout(options.libraryRoot)
   const target = structuralTarget(input, layout.libraryRoot)
-  const versions = packageVersions(target.targetDir)
+  let descriptor = null
+  let resolutionError = null
+  try {
+    descriptor = descriptorForMigrationTarget(target, layout.libraryRoot)
+  } catch (error) {
+    resolutionError = error
+  }
+  const versions = descriptor
+    ? packageVersions(descriptor.packageDir)
+    : {
+        compatibility: {
+          mode: 'unknown_read_only',
+          packageVersion: null,
+          diagnostics: [{
+            code: resolutionError?.code || 'MIGRATION_SOURCE_INVALID',
+            message: 'The migration source authority cannot be resolved safely.',
+          }],
+        },
+        identityVersion: 'invalid',
+        manifestVersion: 'invalid',
+      }
   const doctorReport = inspectLibrary({
     libraryRoot: layout.libraryRoot,
     now: options.now,
@@ -1386,20 +1570,22 @@ export function buildMigrationPlan(input, options = {}) {
     return item.path === targetReportPath || item.path.startsWith(`${targetReportPath}/`)
   })
   let manifestVerified = false
-  if (versions.manifestVersion && versions.manifestVersion !== 'invalid') {
+  if (descriptor && versions.manifestVersion && versions.manifestVersion !== 'invalid') {
     try {
-      verifyGenerationManifest(
-        target.kind === 'managed_paper'
-          ? resolveLibraryPaper(target.paperKey, { libraryRoot: layout.libraryRoot }).packageDir
-          : target.targetDir,
-      )
+      verifyGenerationManifest(descriptor.packageDir)
       manifestVerified = true
     } catch {}
   }
-  const live = inventoryTree(target.targetDir)
-  let backup = { required: true, status: 'missing', backupId: null }
+  const alreadyCurrent = versions.compatibility.mode === 'native_2_1'
+    && versions.identityVersion === '2.0.0'
+    && versions.manifestVersion === '2.0.0'
+    && manifestVerified
+  const live = migrationSourceSnapshot(target.targetDir, target.kind)
+  let backup = alreadyCurrent
+    ? { required: false, status: 'not_required', backupId: null }
+    : { required: true, status: 'missing', backupId: null }
   let backupBlocker = null
-  if (options.backupId) {
+  if (options.backupId && !alreadyCurrent) {
     if (!BACKUP_ID_PATTERN.test(options.backupId)) {
       throw new LibraryMaintenanceError('BACKUP_ID_INVALID', 'Backup ID is invalid.', 400)
     }
@@ -1409,7 +1595,10 @@ export function buildMigrationPlan(input, options = {}) {
       const sameTarget = inspected.manifest.target.relativePath === target.targetRelativePath
       backup = {
         required: true,
-        status: sameTarget && inspected.manifest.snapshotHash === live.snapshotHash ? 'verified' : 'stale',
+        status: sameTarget
+          && migrationSourceSnapshot(inspected.payloadDir, target.kind).snapshotHash === live.snapshotHash
+          ? 'verified'
+          : 'stale',
         backupId: options.backupId,
       }
     } catch (error) {
@@ -1426,6 +1615,14 @@ export function buildMigrationPlan(input, options = {}) {
   }
   const blockers = []
   blockers.push(...doctorBlockers)
+  if (resolutionError && !doctorBlockers.some((item) => item.code === resolutionError.code)) {
+    blockers.push(diagnostic(
+      resolutionError.code || 'MIGRATION_SOURCE_INVALID',
+      'error',
+      'The migration source authority cannot be resolved safely.',
+      target.targetRelativePath,
+    ))
+  }
   if (versions.compatibility.mode === 'unknown_read_only') {
     blockers.push(...versions.compatibility.diagnostics.map((item) => diagnostic(
       item.code || 'PACKAGE_VERSION_UNSUPPORTED',
@@ -1434,8 +1631,8 @@ export function buildMigrationPlan(input, options = {}) {
       target.targetRelativePath,
     )))
   }
-  if (backupBlocker) blockers.push(backupBlocker)
-  else if (backup.status !== 'verified') {
+  if (!alreadyCurrent && backupBlocker) blockers.push(backupBlocker)
+  else if (!alreadyCurrent && backup.status !== 'verified') {
     blockers.push({
       code: backup.status === 'missing' ? 'MIGRATION_BACKUP_REQUIRED' : 'MIGRATION_BACKUP_STALE',
       severity: 'error',
@@ -1444,13 +1641,18 @@ export function buildMigrationPlan(input, options = {}) {
         : 'The selected backup no longer matches the current paper state.',
     })
   }
-  blockers.push({
-    code: 'MIGRATION_EXECUTION_DEFERRED',
-    severity: 'warning',
-    message: 'Migration execution is frozen until P1-2b; this plan is read-only.',
-  })
-  return assertSchema('migration', {
-    schemaVersion: MIGRATION_PLAN_VERSION,
+  const policy = {
+    ...MIGRATION_POLICY,
+    sha256: sha256(stableJson(MIGRATION_POLICY)),
+  }
+  if (alreadyCurrent) {
+    blockers.push({
+      code: 'MIGRATION_NOT_REQUIRED',
+      severity: 'warning',
+      message: 'The current generation already satisfies the migration target contract.',
+    })
+  }
+  const intrinsic = {
     target: {
       kind: target.kind,
       relativePath: target.targetRelativePath,
@@ -1466,12 +1668,6 @@ export function buildMigrationPlan(input, options = {}) {
       manifestVerified,
       snapshotHash: live.snapshotHash,
     },
-    doctor: {
-      status: doctorReport.status,
-      payloadsVerified: doctorReport.payloadsVerified,
-      inventoryHash: doctorReport.inventoryHash,
-      blockers: doctorBlockers,
-    },
     backup,
     targetContract: {
       packageVersion: '2.1.0',
@@ -1479,6 +1675,24 @@ export function buildMigrationPlan(input, options = {}) {
       generationManifestVersion: '2.0.0',
       generationContractVersion: '2.0.0',
     },
+    policy,
+  }
+  const blocking = blockers.some((item) => item.severity === 'error')
+  const planId = `mp-sha256-${sha256(stableJson(intrinsic))}`
+  return assertSchema('migration', {
+    schemaVersion: MIGRATION_PLAN_VERSION,
+    planId,
+    target: intrinsic.target,
+    source: intrinsic.source,
+    doctor: {
+      status: doctorReport.status,
+      payloadsVerified: doctorReport.payloadsVerified,
+      inventoryHash: doctorReport.inventoryHash,
+      blockers: doctorBlockers,
+    },
+    backup: intrinsic.backup,
+    targetContract: intrinsic.targetContract,
+    policy,
     actions: [
       'verify_backup',
       'create_generation_workspace',
@@ -1488,8 +1702,8 @@ export function buildMigrationPlan(input, options = {}) {
       'switch_current_and_rebuild_index',
       'retain_previous_generation_for_rollback',
     ],
-    eligibility: blockers.some((item) => item.code !== 'MIGRATION_EXECUTION_DEFERRED') ? 'blocked' : 'ready_for_p1_2b',
-    executionAvailable: false,
+    eligibility: alreadyCurrent ? 'not_required' : (blocking ? 'blocked' : 'ready'),
+    executionAvailable: !alreadyCurrent && !blocking,
     diagnostics: blockers,
   }, 'MIGRATION_PLAN_INVALID')
 }

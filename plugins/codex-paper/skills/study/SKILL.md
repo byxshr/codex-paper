@@ -57,16 +57,17 @@ Never copy JSON field names, extraction labels, or machine traces into user-faci
 
 ## Existing Packages And Migration
 
-Do not run or recreate the retired in-place migration flow. P1-2a permits only read-only inventory/Doctor, a verified paper-scoped backup, and migration dry-run:
+Do not run or recreate the retired in-place migration flow. Explicit migration requires a verified paper-scoped backup and a private reviewable workspace:
 
 ```bash
 bash ../../../../scripts/codex-paper.sh library-doctor --json
 bash ../../../../scripts/codex-paper.sh backup-create "<paper-ref>" --json
 bash ../../../../scripts/codex-paper.sh backup-verify "<backup-id>" --json
 bash ../../../../scripts/codex-paper.sh migration-dry-run "<paper-ref>" --backup-id "<backup-id>" --json
+bash ../../../../scripts/codex-paper.sh migration-start "<paper-ref>" --backup-id "<backup-id>" --json
 ```
 
-The deprecated `migrate` command is only a `--dry-run` alias. Never pass or recommend `--force`, `--external-path`, or a package filesystem path. Never edit a sealed generation, restore over different existing content, or claim that the dry-run migrated anything. Actual new-generation migration and rollback are deferred to P1-2b.
+The deprecated `migrate` command is only a `--dry-run` alias. Never pass or recommend `--force`, `--external-path`, or a package filesystem path. `migration-start` does not publish: use the exact returned workspace, author only through `workspace-write --actor codex`, run reasoning and complete standard validation, then call `migration-commit <migration-id-or-workspace> --json`. Only one migration may be active per paper; migrated `code/**` files are limited to 1 MiB each and other approved authoring files to 16 MiB. If start reports `MIGRATION_START_INCOMPLETE`, inspect and explicitly abandon the exact returned workspace before retrying. Never edit a sealed generation or bypass Evidence Alias validation. Use `migration-recover` after interruption. Rollback requires `migration-rollback <migration-id> --expected-current-manifest-hash <sha256>`; never guess a current or “latest” workspace.
 
 ## V2 Evidence And Reasoning Contract
 

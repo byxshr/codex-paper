@@ -14,6 +14,7 @@ import {
   readOverlayState,
   readPaperRecord,
   requireNoFollowDirectory,
+  resolveLibraryPaper,
   validatePaperRecord,
 } from './paper-library.mjs'
 import {
@@ -45,6 +46,7 @@ import {
   readFileNoFollowBounded,
   withStorageLocks,
 } from './storage-transaction.mjs'
+import { sanitizeText } from './cli-error-format.mjs'
 import { validateValidationReportForPublication } from '../../skills/study/scripts/validation-report.js'
 
 export const PUBLICATION_TRANSACTION_VERSION = '1.0.0'
@@ -270,14 +272,19 @@ function writeOverlay(recordDir, state, lockHandle, paperLockKey) {
   atomicJson(path.join(recordDir, 'overlay'), OVERLAY_STATE_FILENAME, state, lockHandle, paperLockKey)
 }
 
-function assertRouteAvailable(workspace, existingRecord = null) {
+function assertRouteAvailable(workspace, existingRecord = null, options = {}) {
   const layout = getLibraryLayout(workspace.libraryRoot)
   const legacyRoute = path.join(layout.legacyPapersRoot, workspace.routeSlug)
   if (fs.existsSync(legacyRoute)) {
     const stats = fs.lstatSync(legacyRoute)
     if (stats.isSymbolicLink()) throw new GenerationPublicationError('PUBLICATION_PATH_UNSAFE', 'Legacy route authority is unsafe.', 403)
-    if (stats.isDirectory()) throw new GenerationPublicationError('PUBLICATION_ROUTE_CONFLICT', 'Publication route is owned by a legacy paper.', 409)
-    throw new GenerationPublicationError('LEGACY_INDEX_SOURCE_INVALID', 'Legacy route authority contains an unexpected entry.', 422)
+    if (stats.isDirectory()) {
+      if (options.allowLegacyRoute !== workspace.routeSlug) {
+        throw new GenerationPublicationError('PUBLICATION_ROUTE_CONFLICT', 'Publication route is owned by a legacy paper.', 409)
+      }
+    } else {
+      throw new GenerationPublicationError('LEGACY_INDEX_SOURCE_INVALID', 'Legacy route authority contains an unexpected entry.', 422)
+    }
   }
   for (const { record } of listManagedRecords({ libraryRoot: workspace.libraryRoot })) {
     if (record.paperKey !== workspace.paperKey && record.routeAliases.includes(workspace.routeSlug)) {
@@ -412,17 +419,52 @@ export function buildLibraryIndexEntries(libraryRoot, options = {}) {
   return entries
 }
 
-function writeRebuiltIndexLocked(libraryRoot, lockHandle) {
+export function writeRebuiltIndexLocked(libraryRoot, lockHandle, options = {}) {
   const layout = getLibraryLayout(libraryRoot)
   const diagnostics = []
-  const entries = buildLibraryIndexEntries(libraryRoot, {
+  let entries = buildLibraryIndexEntries(libraryRoot, {
     diagnostics,
     managedStrict: false,
-    legacyStrict: true,
+    legacyStrict: false,
   })
+  if (!options.paperRef && diagnostics.some((item) => String(item.path || '').startsWith('papers/'))) {
+    throw new GenerationPublicationError(
+      'LIBRARY_INDEX_REPAIR_BLOCKED',
+      'Library index repair is blocked by an invalid legacy authority.',
+      409,
+      { diagnostics },
+    )
+  }
+  let existingState = null
+  if (options.paperRef) {
+    const descriptor = (options.descriptor || resolveLibraryPaper(options.paperRef, { libraryRoot }))
+    if (!fs.existsSync(layout.indexPath)) existingState = { value: [], entries: [] }
+    else {
+      const value = readJsonNoFollow(layout.indexPath, 'index.json')
+      const currentEntries = Array.isArray(value) ? value : (value && Array.isArray(value.papers) ? value.papers : null)
+      if (!currentEntries) throw new GenerationPublicationError('LIBRARY_INDEX_INVALID', 'Library index has an unsupported shape.', 422)
+      existingState = { value, entries: currentEntries }
+    }
+    const projected = entries.filter((entry) => descriptor.mode === 'managed_v1'
+      ? entry.storageKey === descriptor.paperKey
+      : entry.slug === descriptor.routeSlug)
+    if (projected.length !== 1) throw new GenerationPublicationError('LIBRARY_INDEX_REPAIR_BLOCKED', 'Target authority cannot be projected uniquely.', 409)
+    const aliases = new Set(descriptor.routeAliases || [descriptor.routeSlug])
+    const conflicts = existingState.entries.filter((entry) => aliases.has(entry?.slug)
+      && (descriptor.mode === 'managed_v1'
+        ? (entry?.storageKey ? entry.storageKey !== descriptor.paperKey : !descriptor.replaceLegacyRoute)
+        : (Boolean(entry?.storageKey) && !descriptor.replaceManagedRoute)))
+    if (conflicts.length > 0) throw new GenerationPublicationError('PUBLICATION_ROUTE_CONFLICT', 'Index repair would overwrite another route authority.', 409)
+    entries = [
+      ...existingState.entries.filter((entry) => descriptor.mode === 'managed_v1'
+        ? entry?.storageKey !== descriptor.paperKey && !aliases.has(entry?.slug)
+        : entry?.slug !== descriptor.routeSlug),
+      projected[0],
+    ].sort((left, right) => String(left.slug).localeCompare(String(right.slug)))
+  }
   let value = entries
   if (fs.existsSync(layout.indexPath)) {
-    const existing = readJsonNoFollow(layout.indexPath, 'index.json')
+    const existing = existingState?.value || readJsonNoFollow(layout.indexPath, 'index.json')
     if (Array.isArray(existing)) value = entries
     else if (existing && typeof existing === 'object' && Array.isArray(existing.papers)) value = { ...existing, papers: entries }
     else throw new GenerationPublicationError('LIBRARY_INDEX_INVALID', 'Library index has an unsupported shape.', 422)
@@ -445,7 +487,7 @@ function existingPublicationState(workspace, journal, layout) {
 function commitPublicationLocked(workspace, journal, lockHandle, options = {}) {
   const layout = ensureManagedStore({ libraryRoot: workspace.libraryRoot })
   const intended = validatePaperRecord(workspace.workspace.publishIntent.paperRecord, workspace.paperKey)
-  assertRouteAvailable(workspace)
+  assertRouteAvailable(workspace, null, options)
   const { recordDir, target, stagingDir } = existingPublicationState(workspace, journal, layout)
   const recordExists = fs.existsSync(path.join(recordDir, PAPER_RECORD_FILENAME))
   const pendingTags = workspace.workspace.publishIntent.tags || []
@@ -531,7 +573,23 @@ function commitPublicationLocked(workspace, journal, lockHandle, options = {}) {
   journal = writeJournal(workspace, { ...journal, state: 'current_committed' }, lockHandle)
   maybeFault(options, 'after_current_commit')
   maybeFault(options, 'before_index_commit')
-  const index = writeRebuiltIndexLocked(layout.libraryRoot, lockHandle)
+  if (typeof options.beforeIndexCommit === 'function') options.beforeIndexCommit({ workspace, journal, current, lockHandle })
+  const index = writeRebuiltIndexLocked(
+    layout.libraryRoot,
+    lockHandle,
+    options.targetedIndex
+      ? {
+          paperRef: workspace.routeSlug,
+          descriptor: {
+            mode: 'managed_v1',
+            paperKey: workspace.paperKey,
+            routeSlug: workspace.routeSlug,
+            routeAliases: intended.routeAliases,
+            replaceLegacyRoute: options.allowLegacyRoute === workspace.routeSlug,
+          },
+        }
+      : {},
+  )
   journal = writeJournal(workspace, { ...journal, state: 'index_committed' }, lockHandle)
   return {
     workspaceId: workspace.workspaceId,
@@ -550,7 +608,7 @@ export async function publishGenerationWorkspace(input, options = {}) {
   const initial = resolveGenerationWorkspace(input, options)
   if (initial.initializationResidue) throw new GenerationPublicationError('WORKSPACE_INITIALIZATION_INCOMPLETE', 'Initialization residues cannot be published.', 409)
   if (initial.workspace.state !== 'validated') throw new GenerationPublicationError('PUBLICATION_WORKSPACE_NOT_VALIDATED', 'Only a validated workspace may be published.', 409)
-  return withStorageLocks(publicationLockKeys(initial), async (lockHandle) => {
+  return withStorageLocks([...publicationLockKeys(initial), ...(options.extraLockKeys || [])], async (lockHandle) => {
     const workspace = resolveGenerationWorkspace(initial.workspaceId, { libraryRoot: initial.libraryRoot })
     let journal = readJournal(workspace)
     try {
@@ -605,6 +663,17 @@ export async function recoverPublications(options = {}) {
 
 export async function rebuildLibraryIndex(options = {}) {
   const layout = ensureManagedStore(options)
+  if (options.paperRef) {
+    const descriptor = resolveLibraryPaper(options.paperRef, { libraryRoot: layout.libraryRoot })
+    return withStorageLocks(['registry', descriptor.paperLockKey, 'index'], async (lockHandle) => writeRebuiltIndexLocked(
+      layout.libraryRoot,
+      lockHandle,
+      { paperRef: options.paperRef, descriptor },
+    ), {
+      libraryRoot: layout.libraryRoot,
+      timeoutMs: options.lockTimeoutMs ?? 10_000,
+    })
+  }
   const paperKeys = fs.existsSync(layout.recordsRoot)
     ? fs.readdirSync(layout.recordsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^p-[a-f0-9]{64}$/.test(entry.name)).map((entry) => `paper:${entry.name}`)
     : []
@@ -612,4 +681,102 @@ export async function rebuildLibraryIndex(options = {}) {
     libraryRoot: layout.libraryRoot,
     timeoutMs: options.lockTimeoutMs ?? 10_000,
   })
+}
+
+export function planLibraryReindex(options = {}) {
+  const layout = getLibraryLayout(options.libraryRoot)
+  const before = fs.existsSync(layout.indexPath)
+    ? crypto.createHash('sha256').update(readFileNoFollowBounded(layout.indexPath, 64 * 1024 * 1024)).digest('hex')
+    : null
+  const diagnostics = []
+  let projected = []
+  let projectionBlocker = null
+  try {
+    projected = buildLibraryIndexEntries(layout.libraryRoot, {
+      diagnostics,
+      managedStrict: false,
+      legacyStrict: false,
+    })
+  } catch (error) {
+    projectionBlocker = {
+      code: error.code || 'LIBRARY_INDEX_REPAIR_BLOCKED',
+      message: sanitizeText(error.message || 'Library authority projection is unsafe.'),
+    }
+  }
+  let entries = projected
+  let targetProjection = projected
+  let projectedEntries = projected.length
+  let blockingDiagnostics = [
+    ...diagnostics.filter((item) => String(item.path || '').startsWith('papers/')),
+    ...(projectionBlocker ? [projectionBlocker] : []),
+  ]
+  if (options.paperRef) {
+    try {
+      const descriptor = resolveLibraryPaper(options.paperRef, { libraryRoot: layout.libraryRoot })
+      const targetEntries = projected.filter((entry) => descriptor.mode === 'managed_v1'
+        ? entry.storageKey === descriptor.paperKey
+        : entry.slug === descriptor.routeSlug)
+      targetProjection = targetEntries
+      projectedEntries = targetEntries.length
+      if (targetEntries.length !== 1) {
+        throw new GenerationPublicationError('LIBRARY_INDEX_REPAIR_BLOCKED', 'Target authority cannot be projected uniquely.', 409)
+      }
+      let existing = []
+      let existingValue = []
+      if (fs.existsSync(layout.indexPath)) {
+        existingValue = readJsonNoFollow(layout.indexPath, 'index.json')
+        existing = Array.isArray(existingValue)
+          ? existingValue
+          : (existingValue && Array.isArray(existingValue.papers) ? existingValue.papers : null)
+        if (!existing) throw new GenerationPublicationError('LIBRARY_INDEX_INVALID', 'Library index has an unsupported shape.', 422)
+      }
+      const aliases = new Set(descriptor.routeAliases || [descriptor.routeSlug])
+      const conflicts = existing.filter((entry) => aliases.has(entry?.slug)
+        && (descriptor.mode === 'managed_v1'
+          ? (entry?.storageKey ? entry.storageKey !== descriptor.paperKey : !descriptor.replaceLegacyRoute)
+          : (Boolean(entry?.storageKey) && !descriptor.replaceManagedRoute)))
+      if (conflicts.length > 0) throw new GenerationPublicationError('PUBLICATION_ROUTE_CONFLICT', 'Index repair would overwrite another route authority.', 409)
+      entries = [
+        ...existing.filter((entry) => descriptor.mode === 'managed_v1'
+          ? entry?.storageKey !== descriptor.paperKey && !aliases.has(entry?.slug)
+          : entry?.slug !== descriptor.routeSlug),
+        targetEntries[0],
+      ].sort((left, right) => String(left.slug).localeCompare(String(right.slug)))
+    } catch (error) {
+      blockingDiagnostics = [{
+        code: error.code || 'LIBRARY_INDEX_REPAIR_BLOCKED',
+        message: sanitizeText(error.message || 'Target index repair is blocked.'),
+      }]
+      entries = []
+      targetProjection = []
+      projectedEntries = 0
+    }
+  }
+  let value = entries
+  if (fs.existsSync(layout.indexPath)) {
+    const existing = readJsonNoFollow(layout.indexPath, 'index.json')
+    if (Array.isArray(existing)) value = entries
+    else if (existing && typeof existing === 'object' && Array.isArray(existing.papers)) value = { ...existing, papers: entries }
+    else {
+      blockingDiagnostics.push({ code: 'LIBRARY_INDEX_INVALID', message: 'Library index has an unsupported shape.' })
+      value = existing
+    }
+  }
+  const applyAvailable = blockingDiagnostics.length === 0
+  const indexAfterBytes = `${JSON.stringify(value, null, 2)}\n`
+  const indexAfterSha256 = crypto.createHash('sha256').update(indexAfterBytes).digest('hex')
+  return {
+    schemaVersion: '1.0.0',
+    scope: options.paperRef ? 'paper' : 'library',
+    paperRef: options.paperRef || null,
+    indexBeforeSha256: before,
+    projectedEntries,
+    projectedSha256: crypto.createHash('sha256').update(stableJson(targetProjection)).digest('hex'),
+    resultEntries: entries.length,
+    indexAfterSha256: applyAvailable ? indexAfterSha256 : null,
+    diagnostics,
+    blockers: blockingDiagnostics,
+    applyAvailable,
+    applyRequired: applyAvailable && before !== indexAfterSha256,
+  }
 }

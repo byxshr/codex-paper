@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/byxshr/codex-paper/schemas/migration-plan-1.1.schema.json",
+  "title": "Codex Paper Migration Plan 1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "planId", "target", "source", "doctor", "backup", "targetContract", "policy", "actions", "eligibility", "executionAvailable", "diagnostics"],
+  "properties": {
+    "schemaVersion": { "const": "1.1.0" },
+    "planId": { "type": "string", "pattern": "^mp-sha256-[a-f0-9]{64}$" },
+    "target": { "$ref": "#/$defs/target" },
+    "source": { "$ref": "#/$defs/source" },
+    "doctor": { "$ref": "#/$defs/doctor" },
+    "backup": { "$ref": "#/$defs/backup" },
+    "targetContract": { "$ref": "#/$defs/targetContract" },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sha256", "authoringProvider", "authoringModel"],
+      "properties": {
+        "version": { "const": "1.0.0" },
+        "sha256": { "$ref": "#/$defs/hash" },
+        "authoringProvider": { "const": "codex-paper-migration" },
+        "authoringModel": { "const": "p1-2b-1.0.0" }
+      }
+    },
+    "actions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+    "eligibility": { "enum": ["blocked", "ready", "not_required"] },
+    "executionAvailable": { "type": "boolean" },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "path": { "type": "string", "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$", "maxLength": 2048 },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+        "severity": { "enum": ["warning", "error"] },
+        "message": { "type": "string", "maxLength": 600 },
+        "path": { "$ref": "#/$defs/path" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "relativePath", "paperKey", "routeSlug"],
+      "properties": {
+        "kind": { "enum": ["legacy_flat", "managed_paper"] },
+        "relativePath": { "$ref": "#/$defs/path" },
+        "paperKey": { "type": ["string", "null"] },
+        "routeSlug": { "type": ["string", "null"] }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layoutMode", "compatibilityMode", "packageVersion", "identityVersion", "manifestVersion", "manifestVerified", "snapshotHash"],
+      "properties": {
+        "layoutMode": { "enum": ["legacy_flat", "managed_paper"] },
+        "compatibilityMode": { "type": "string", "minLength": 1 },
+        "packageVersion": { "type": ["string", "null"] },
+        "identityVersion": { "type": ["string", "null"] },
+        "manifestVersion": { "type": ["string", "null"] },
+        "manifestVerified": { "type": "boolean" },
+        "snapshotHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "doctor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "payloadsVerified", "inventoryHash", "blockers"],
+      "properties": {
+        "status": { "enum": ["healthy", "warnings", "errors"] },
+        "payloadsVerified": { "type": "boolean" },
+        "inventoryHash": { "$ref": "#/$defs/hash" },
+        "blockers": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "status", "backupId"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "status": { "enum": ["missing", "verified", "stale", "not_found", "invalid", "not_required"] },
+        "backupId": { "type": ["string", "null"], "pattern": "^bk-sha256-[a-f0-9]{64}$" }
+      }
+    },
+    "targetContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageVersion", "identityVersion", "generationManifestVersion", "generationContractVersion"],
+      "properties": {
+        "packageVersion": { "const": "2.1.0" },
+        "identityVersion": { "const": "2.0.0" },
+        "generationManifestVersion": { "const": "2.0.0" },
+        "generationContractVersion": { "const": "2.0.0" }
+      }
+    }
+  }
+}

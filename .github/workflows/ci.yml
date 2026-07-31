@@ -83,7 +83,7 @@ jobs:
       - name: Unified Provenance and Generation Manifest 2.0
         run: bash scripts/codex-paper.sh provenance-test
 
-      - name: Compatibility, Doctor, Backup, and Restore
+      - name: Explicit Generation Migration, Repair, and Recovery
         run: bash scripts/codex-paper.sh migration-test
 
       - name: Validation Report 1.0

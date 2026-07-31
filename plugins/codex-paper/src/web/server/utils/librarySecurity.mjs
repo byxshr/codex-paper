@@ -43,7 +43,7 @@ export function validateSlug(slug) {
 }
 
 export function validateEvidenceId(evidenceId) {
-  return typeof evidenceId === 'string' && /^(?:ev-p\d{3,}-[a-z]+-[a-f0-9]{10}|ext-[a-z0-9][a-z0-9-]*-[a-f0-9]{10})$/.test(evidenceId)
+  return typeof evidenceId === 'string' && /^(?:ev-p\d{3,}-[a-z]+-[a-f0-9]{10}|ext-[a-z0-9][a-z0-9-]*-[a-f0-9]{10}|(?:claim|result|limitation):\d+)$/.test(evidenceId)
 }
 
 export function validateTrashId(trashId) {

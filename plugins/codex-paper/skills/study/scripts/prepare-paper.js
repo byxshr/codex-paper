@@ -27,7 +27,8 @@ import {
   reconcilePaperRecord,
   requireSafeDirectory,
   sourceDirectoryName,
-  generationDirectoryName
+  generationDirectoryName,
+  validatePaperRecord
 } from '../../../src/shared/paper-library.mjs';
 import {
   createGenerationWorkspace,
@@ -417,6 +418,43 @@ function resolvePreparationAction(identity, baseSlug, indexState, options = {}) 
   return { action: 'workspace', paperDir, identity, managed, packageRelativePath, reconciliation: managed.reconciled ? { existingPaperKey: managed.record.paperKey, incomingPaperId: identity.paperId } : null };
 }
 
+function resolveMigrationPreparation(identity, routeSlug, paperRecord = null) {
+  if (typeof routeSlug !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(routeSlug)) {
+    throw new PaperIdentityError('MIGRATION_TARGET_INVALID', 'Migration requires an exact safe route alias.');
+  }
+  let record = paperRecord;
+  let reconciliation = null;
+  if (record) {
+    record = validatePaperRecord(record, record.paperKey);
+    if (!record.routeAliases.includes(routeSlug)) {
+      throw new PaperIdentityError('MIGRATION_TARGET_INVALID', 'Migration route is not owned by the selected paper record.');
+    }
+    if (!record.paperIdAliases.includes(identity.paperId)) {
+      const previous = record;
+      record = reconcilePaperRecord(record, identity.paperId, identity);
+      reconciliation = { existingPaperKey: previous.paperKey, incomingPaperId: identity.paperId };
+    }
+  } else {
+    const paperKey = derivePaperKey(identity.paperId);
+    record = {
+      schemaVersion: '1.0.0',
+      paperKey,
+      primaryPaperId: identity.paperId,
+      paperIdAliases: [identity.paperId],
+      routeAliases: [routeSlug],
+      createdAt: new Date().toISOString(),
+      reconciliations: []
+    };
+  }
+  return {
+    action: 'workspace',
+    identity,
+    managed: { record, recordDir: null, isNew: !paperRecord },
+    reconciliation,
+    packageRelativePath: buildPackageRelativePath(identity.sourceRevisionId, identity.generationId)
+  };
+}
+
 export async function preparePaper(userInput, options = {}) {
   if (!userInput) {
     throw new PaperIdentityError('ARGUMENT_INVALID', 'Paper input is required.');
@@ -507,12 +545,14 @@ export async function preparePaper(userInput, options = {}) {
       language: storedIdentity.generation.inputs.language
     };
   }
-  const preparation = resolvePreparationAction(identity, basePaperSlug, indexState, {
-    libraryRoot,
-    resume,
-    newRevision,
-    reconcileIdentity
-  });
+  const preparation = options.migrationRouteSlug
+    ? resolveMigrationPreparation(identity, options.migrationRouteSlug, options.migrationPaperRecord || null)
+    : resolvePreparationAction(identity, basePaperSlug, indexState, {
+      libraryRoot,
+      resume,
+      newRevision,
+      reconcileIdentity
+    });
   if (preparation.action === 'reused') {
     return {
       action: preparation.action,
@@ -531,7 +571,7 @@ export async function preparePaper(userInput, options = {}) {
   }
 
   const { managed } = preparation;
-  const paperSlug = managed.record.routeAliases[0];
+  const paperSlug = options.migrationRouteSlug || managed.record.routeAliases[0];
   identity.slug = paperSlug;
   const projection = identityProjection(identity);
 

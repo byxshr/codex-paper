@@ -60,7 +60,7 @@ when that repository script exists. Otherwise stop and ask the user to run the
 root commands from a codex-paper repository checkout; never bypass the
 content-runtime gate.
 
-The preparation identity includes the summary workflow and output language. A new run creates a private generation workspace and returns its exact `workspaceId`, `workspaceDir`, and package `paperDir`; preparation does not update `paper.json`, `current.json`, or `index.json`, and it is not visible in the Viewer. An already published exact generation may still be reused read-only with `--resume`. Legacy flat packages remain read-only until explicit migration.
+The preparation identity includes the summary workflow and output language. A new run creates a private generation workspace and returns its exact `workspaceId`, `workspaceDir`, and package `paperDir`; preparation does not update `paper.json`, `current.json`, or `index.json`, and it is not visible in the Viewer. An already published exact generation may still be reused read-only with `--resume`. Legacy flat packages remain read-only; if migration is requested, use the repository's verified-backup `migration-start` workflow and do not edit or migrate in place.
 
 Do not bypass this entrypoint with `curl`, `wget`, browser downloads, or in-process parsing. It enforces HTTPS redirect/SSRF checks, DNS pinning, bounded private staging, PDF magic, parser resource/page limits, and private quarantine for rejected inputs.
 

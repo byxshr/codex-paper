@@ -100,6 +100,10 @@ function manifestIntrinsic(manifest) {
   return intrinsic
 }
 
+export function computeGenerationManifestHash(manifest) {
+  return sha256(stableJson(manifestIntrinsic(manifest)))
+}
+
 function sanitizedLocator(value) {
   if (typeof value !== 'string') return false
   const sanitized = sanitizeSourceLocator(value)
@@ -171,7 +175,7 @@ export function buildGenerationManifest({ packageDir, transactionId, paperKey, i
     sealedAt,
     files,
   }
-  const manifest = { ...intrinsic, manifestHash: sha256(stableJson(intrinsic)) }
+  const manifest = { ...intrinsic, manifestHash: computeGenerationManifestHash(intrinsic) }
   return validateGenerationManifest(manifest)
 }
 
@@ -226,7 +230,7 @@ export function validateGenerationManifest(manifest) {
     || new Set(files.map((item) => item.path)).size !== files.length
     || JSON.stringify(files.map((item) => item.path)) !== JSON.stringify(files.map((item) => item.path).sort())
     || !HASH_PATTERN.test(String(manifest?.manifestHash || ''))
-    || sha256(stableJson(manifestIntrinsic(manifest))) !== manifest.manifestHash) {
+    || computeGenerationManifestHash(manifest) !== manifest.manifestHash) {
     throw Object.assign(new Error('Generation manifest is invalid.'), { code: 'GENERATION_MANIFEST_INVALID', statusCode: 422 })
   }
   const expectedId = deriveManifestId({
@@ -328,7 +332,7 @@ function validateLegacyGenerationManifest(manifest) {
     || Number.isNaN(Date.parse(manifest?.sealedAt))
     || !validFiles(files)
     || !HASH_PATTERN.test(String(manifest?.manifestHash || ''))
-    || sha256(stableJson(manifestIntrinsic(manifest))) !== manifest.manifestHash) {
+    || computeGenerationManifestHash(manifest) !== manifest.manifestHash) {
     throw Object.assign(new Error('Generation manifest is invalid.'), { code: 'GENERATION_MANIFEST_INVALID', statusCode: 422 })
   }
   const expectedId = deriveLegacyManifestId({ paperKey: manifest.paperKey, generationId: manifest.generationId, validationReportHash: manifest.validation.reportHash })

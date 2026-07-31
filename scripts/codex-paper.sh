@@ -158,11 +158,11 @@ cmd_test() {
   ensure_pymupdf
 
   print_section "Repository Guard Tests"
-  run_counted_test_suite "repository-security" 243 \
+  run_counted_test_suite "repository-security" 259 \
     --test-concurrency=1 "$REPO_ROOT"/scripts/tests/*.test.mjs
 
   print_section "Unit Tests"
-  run_counted_test_suite "study" 100 \
+  run_counted_test_suite "study" 102 \
     "$PLUGIN_ROOT"/skills/study/scripts/tests/*.mjs
 }
 
@@ -196,7 +196,7 @@ cmd_repo_test() {
   ensure_node
 
   print_section "Repository Guard Tests (Static)"
-  run_counted_test_suite "repository-guard-static" 84 \
+  run_counted_test_suite "repository-guard-static" 87 \
     --test-concurrency=1 "$REPO_ROOT/scripts/tests/check-repository.test.mjs"
 }
 
@@ -340,8 +340,13 @@ cmd_migrate() {
 
 cmd_migration_test() {
   ensure_node
-  print_section "Compatibility, Doctor, Backup and Restore"
-  "$NODE_BIN" --test "$REPO_ROOT/scripts/tests/library-maintenance.test.mjs"
+  ensure_python
+  ensure_pymupdf
+  print_section "Compatibility, Migration, Repair and Recovery"
+  run_counted_test_suite "migration" 55 \
+    "$REPO_ROOT/scripts/tests/library-maintenance.test.mjs" \
+    "$REPO_ROOT/scripts/tests/generation-migration.test.mjs" \
+    "$PLUGIN_ROOT/skills/study/scripts/tests/migrate-package.test.mjs"
 }
 
 cmd_benchmark_report() {
@@ -520,7 +525,13 @@ Commands:
   backup-restore <backup-id> [--json] Restore only an absent or byte-identical target
   backup-recover [--json] Resume journal-backed restore transactions
   migration-dry-run <paper-ref> [--backup-id <id>] [--json] Plan P1-2b without writes
-  migration-test Test compatibility goldens, Doctor, backup, restore, and dry-run
+  migration-start <paper-ref> --backup-id <id> Create a reviewable migration workspace
+  migration-inspect <migration-or-workspace> [--json] Inspect one migration transaction
+  migration-commit <migration-or-workspace> [--json] Commit one validated migration workspace
+  migration-recover [--json] Recover interrupted migration transactions
+  migration-rollback <migration-id> --expected-current-manifest-hash <sha256> Roll back with CAS
+  migration-rollforward <migration-id> [--json] Restore a retained migrated authority
+  migration-test Test compatibility, backup, migration, repair, and rollback
   prepare <input> [prepare-paper options] Prepare with the pinned host runtime checks
   workspace-list [--json] List exact generation workspaces
   workspace-inspect <workspace> [--json] Inspect one exact workspace
@@ -666,6 +677,36 @@ case "$command_name" in
   migration-dry-run)
     shift
     cmd_library_maintenance migration-dry-run "$@"
+    ;;
+  migration-start)
+    shift
+    ensure_node
+    "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/generation-migration-cli.js" start "$@"
+    ;;
+  migration-inspect)
+    shift
+    ensure_node
+    "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/generation-migration-cli.js" inspect "$@"
+    ;;
+  migration-commit)
+    shift
+    ensure_node
+    "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/generation-migration-cli.js" commit "$@"
+    ;;
+  migration-recover)
+    shift
+    ensure_node
+    "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/generation-migration-cli.js" recover "$@"
+    ;;
+  migration-rollback)
+    shift
+    ensure_node
+    "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/generation-migration-cli.js" rollback "$@"
+    ;;
+  migration-rollforward)
+    shift
+    ensure_node
+    "$NODE_BIN" "$PLUGIN_ROOT/skills/study/scripts/generation-migration-cli.js" rollforward "$@"
     ;;
   migration-test)
     cmd_migration_test

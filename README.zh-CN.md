@@ -308,13 +308,15 @@ bash scripts/codex-paper.sh library-doctor --json
 `library-doctor` 会完整校验备份 payload；较轻量的 `library-inventory` 和迁移计划会明确返回
 `payloadsVerified: false`。索引漂移按论文权威对象分别检查，因此一个损坏的相邻目录不会
 掩盖其他可读论文的漂移。
+当前输出为 Doctor Report 1.1，新增 migration transaction/archive 可见性；Doctor Report 1.0 继续保持只读兼容。
 
-P1-2a 已冻结原位迁移。后续 P1-2b 迁移前，先创建并验证内容寻址的单论文备份，再查看只读迁移计划：
+原位迁移继续保持退役。显式迁移必须先创建内容寻址的单论文备份，再创建可审阅的新 generation workspace：
 
 ```bash
 bash scripts/codex-paper.sh backup-create {paper-route-slug} --json
 bash scripts/codex-paper.sh backup-verify {backup-id} --json
 bash scripts/codex-paper.sh migration-dry-run {paper-route-slug} --backup-id {backup-id} --json
+bash scripts/codex-paper.sh migration-start {paper-route-slug} --backup-id {backup-id} --json
 ```
 
 备份位于 `.codex-paper/backups-v1/`，不会进入 Viewer 或 index，并同时保留目录权限、空目录和文件字节。恢复只允许目标不存在或与备份逐字节一致；相同目标的幂等恢复不会回退当前 index 中的人工整理信息，不同的现有目标始终返回冲突。损坏快照会保留到隔离目录后重建，无关的损坏 journal 不会阻断健康恢复；失败的私有 staging（包括已封存 generation 的只读目录）会先规范化权限再清理；中断后可用 `backup-recover` 恢复 journal。
@@ -325,9 +327,20 @@ bash scripts/codex-paper.sh migration-dry-run {paper-route-slug} --backup-id {ba
 bash scripts/codex-paper.sh migrate {paper-route-slug} --dry-run --backup-id {backup-id} --json
 ```
 
-实际迁移、替换、reindex 修复和 rollback 留给 P1-2b；库外路径、回收站条目和活动 workspace 不是备份或迁移目标。
+`migration-start` 不修改源包、current 或 index。在返回的精确 workspace 中完成 authoring 和标准完整验证后，才运行 `migration-commit`。迁移会用当前 parser 重建 evidence 层，只通过共享 writer 保留允许的 authoring 文件，并用经过验证的 Evidence Alias Map 解析旧引用，而不改写已封存来源。每篇论文只允许一个 active migration；迁移的 `code/**` 单文件上限为 1 MiB，其他允许的 authoring 文件上限为 16 MiB。
 
-详细契约见 [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md)、[兼容与备份恢复契约](docs/package-compatibility-backup-recovery-1.0.md)、[证据账本](docs/evidence-ledger.md)、[研究推理分析](docs/reasoning-analysis.md)、[学习包契约](docs/package-v2.md)和[迁移指南](docs/migration-v1-to-v2.md)。
+```bash
+bash scripts/codex-paper.sh migration-inspect {migration-id-or-workspace} --json
+bash scripts/codex-paper.sh migration-commit {migration-id-or-workspace} --json
+bash scripts/codex-paper.sh migration-recover --json
+bash scripts/codex-paper.sh migration-rollback {migration-id} --expected-current-manifest-hash {sha256} --json
+bash scripts/codex-paper.sh migration-rollforward {migration-id} --json
+bash scripts/codex-paper.sh reindex --dry-run --paper {paper-route-slug} --json
+```
+
+Rollback 使用 current manifest hash 做 CAS。Legacy rollback 会精确恢复原 flat authority，并私有保留 managed 目标以供显式 roll-forward。库外路径、回收站条目和活动 workspace 不是迁移来源。
+
+详细契约见 [Paper Library Layout 1.0](docs/paper-library-layout-1.0.md)、[兼容与备份恢复契约](docs/package-compatibility-backup-recovery-1.0.md)、[显式迁移契约](docs/explicit-generation-migration-1.0.md)、[证据账本](docs/evidence-ledger.md)、[研究推理分析](docs/reasoning-analysis.md)、[学习包契约](docs/package-v2.md)和[迁移指南](docs/migration-v1-to-v2.md)。
 
 ---
 

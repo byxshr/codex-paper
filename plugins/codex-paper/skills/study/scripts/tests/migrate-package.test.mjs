@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { validateMigrationPlanDocument } from '../../../../src/shared/library-maintenance.mjs'
 
 const MIGRATE_SCRIPT = path.resolve('plugins/codex-paper/skills/study/scripts/migrate-package.js')
 
@@ -128,11 +129,42 @@ test('legacy migrate --dry-run delegates to the read-only P1-2b planner', (t) =>
   })
   assert.equal(result.status, 0, result.stderr)
   const plan = JSON.parse(result.stdout)
-  assert.equal(plan.schemaVersion, '1.0.0')
+  assert.equal(plan.schemaVersion, '1.1.0')
   assert.equal(plan.executionAvailable, false)
   assert.equal(plan.backup.status, 'missing')
-  assert.equal(plan.diagnostics.some((item) => item.code === 'MIGRATION_EXECUTION_DEFERRED'), true)
+  assert.equal(plan.diagnostics.some((item) => item.code === 'MIGRATION_BACKUP_REQUIRED'), true)
   assert.deepEqual(snapshot(packageDir), before)
+})
+
+test('Migration Plan 1.0 remains a read-only compatibility document', () => {
+  const hash = 'a'.repeat(64)
+  const document = {
+    schemaVersion: '1.0.0',
+    target: { kind: 'legacy_flat', relativePath: 'papers/legacy-paper', paperKey: null, routeSlug: 'legacy-paper' },
+    source: {
+      layoutMode: 'legacy_flat', compatibilityMode: 'compatible_2_0', packageVersion: '2.0.0',
+      identityVersion: null, manifestVersion: null, manifestVerified: false, snapshotHash: hash,
+    },
+    doctor: { status: 'warnings', payloadsVerified: false, inventoryHash: hash, blockers: [] },
+    backup: { required: true, status: 'missing', backupId: null },
+    targetContract: {
+      packageVersion: '2.1.0', identityVersion: '2.0.0',
+      generationManifestVersion: '2.0.0', generationContractVersion: '2.0.0',
+    },
+    actions: ['verify_backup'],
+    eligibility: 'ready_for_p1_2b',
+    executionAvailable: false,
+    diagnostics: [{ code: 'MIGRATION_EXECUTION_DEFERRED', severity: 'warning', message: 'Execution is deferred.' }],
+  }
+  const before = JSON.stringify(document)
+  const result = validateMigrationPlanDocument(document)
+  assert.equal(result.compatibilityMode, 'compatible_1_0')
+  assert.equal(result.readOnly, true)
+  assert.equal(JSON.stringify(document), before)
+  assert.throws(
+    () => validateMigrationPlanDocument({ ...document, schemaVersion: '9.0.0' }),
+    (error) => error.code === 'MIGRATION_PLAN_VERSION_UNSUPPORTED',
+  )
 })
 
 test('removed in-place migration flags are rejected without side effects', (t) => {

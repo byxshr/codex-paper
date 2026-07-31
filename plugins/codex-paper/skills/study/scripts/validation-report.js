@@ -7,7 +7,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import {
   classifyInvalidPackageArtifacts,
   classifyPackageCompatibility,
-  resolveEvidenceRefs
+  resolveEvidenceRefs,
+  validateEvidenceAliasMap
 } from '../../../src/shared/package-compatibility.mjs';
 import { resolveLibraryPaper } from '../../../src/shared/paper-library.mjs';
 import { requireWritableWorkspace, replaceWorkspaceJson, withWorkspaceMutationSync } from '../../../src/shared/workspace-writer.mjs';
@@ -581,6 +582,25 @@ export function inspectPackageArtifacts(paperDir, { reasoning = null, ledger = n
   findings.push(...paperIdentityFindings(paperDir, meta, paperData));
   const resolvedLedger = ledger || readJsonArtifact(paperDir, 'evidence-ledger.json', findings, invalidArtifacts);
   const resolvedReasoning = reasoning || readJsonArtifact(paperDir, 'reasoning-analysis.json', findings, invalidArtifacts);
+  let evidenceAliases = null;
+  const aliasRelativePath = '.codex-paper/evidence-aliases.json';
+  const aliasPath = path.join(paperDir, aliasRelativePath);
+  if (fs.existsSync(aliasPath)) {
+    try {
+      const stats = fs.lstatSync(aliasPath);
+      if (stats.isSymbolicLink() || !stats.isFile()) throw new Error('alias map is not a regular file');
+      evidenceAliases = validateEvidenceAliasMap(JSON.parse(fs.readFileSync(aliasPath, 'utf8')), resolvedLedger);
+    } catch {
+      findings.push(makeFinding({
+        severity: 'error',
+        code: 'EVIDENCE_ALIAS_MAP_INVALID',
+        category: 'evidence',
+        artifact: aliasRelativePath,
+        path: '/',
+        message: 'The Evidence Alias Map is unsafe, invalid, or is not bound to the current evidence ledger.'
+      }));
+    }
+  }
   const compatibility = invalidArtifacts.includes('meta.json')
     ? classifyInvalidPackageArtifacts(['meta.json'])
     : classifyPackageCompatibility({ meta, reasoning: resolvedReasoning, ledger: resolvedLedger });
@@ -624,7 +644,7 @@ export function inspectPackageArtifacts(paperDir, { reasoning = null, ledger = n
   ];
   for (const { artifact, refs } of refGroups) {
     refs.forEach((ref, index) => {
-      const resolved = resolveEvidenceRefs([ref], facts, resolvedLedger);
+      const resolved = resolveEvidenceRefs([ref], facts, resolvedLedger, evidenceAliases);
       const exists = validRefs.has(ref) || resolved.some((candidate) => validRefs.has(candidate));
       if (!exists) {
         findings.push(makeFinding({
@@ -640,7 +660,7 @@ export function inspectPackageArtifacts(paperDir, { reasoning = null, ledger = n
   }
   const coverageRefs = refGroups.map((group) => ({
     artifact: group.artifact,
-    refs: group.refs.map((ref) => resolveEvidenceRefs([ref], facts, resolvedLedger)[0] || ref)
+    refs: group.refs.map((ref) => resolveEvidenceRefs([ref], facts, resolvedLedger, evidenceAliases)[0] || ref)
   }));
   const referenceCoverage = buildReferenceCoverage(coverageRefs, validRefs);
   const hasNativeResultClaims = compatibility.mode === 'native_2_1' && facts?.schemaVersion === '2.1.0';
@@ -670,7 +690,7 @@ export function inspectPackageArtifacts(paperDir, { reasoning = null, ledger = n
         }));
         continue;
       }
-      const analysisRefs = new Set(resolveEvidenceRefs(row.evidenceRefs || [], facts, resolvedLedger));
+      const analysisRefs = new Set(resolveEvidenceRefs(row.evidenceRefs || [], facts, resolvedLedger, evidenceAliases));
       const citesClaimEvidence = claim.evidenceRefs.some((ref) => analysisRefs.has(ref));
       const citesCorroboratingEvidence = Array.from(analysisRefs).some((ref) => {
         const text = String(paperEvidence.get(ref)?.text || '');

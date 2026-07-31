@@ -1,6 +1,6 @@
 # Migrating Legacy Packages
 
-P1-2a freezes the old in-place migration implementation. Reading an old package, running Doctor, creating a backup, or building a migration plan must not rewrite the package.
+Migration never rewrites an old package or sealed generation. P1-2b creates a new reviewable generation workspace, then performs a separate explicit commit after complete standard validation.
 
 ## Inspect first
 
@@ -41,9 +41,55 @@ The deprecated command name remains available only as an alias:
 bash scripts/codex-paper.sh migrate {paper-ref} --dry-run --backup-id {backup-id} --json
 ```
 
-The plan records the source compatibility, Identity and Manifest versions, Doctor blockers and verification depth, backup freshness, target Generation Contract, and expected P1-2b actions. Backup state distinguishes `missing`, `verified`, `stale`, `not_found`, and `invalid`; a selected absent or corrupt backup is represented by the matching stable `MIGRATION_BACKUP_*` blocker instead of aborting the plan. The embedded Doctor scan is intentionally shallow, while the selected backup is verified separately. The plan always returns `executionAvailable: false` with `MIGRATION_EXECUTION_DEFERRED`.
+Migration Plan 1.1 records the source compatibility, Identity and Manifest versions, Doctor blockers and verification depth, backup freshness, target Generation Contract, stable `planId`, policy hash, and executable status. Backup state distinguishes `missing`, `verified`, `stale`, `not_found`, and `invalid`; a complete native 2.1 / Identity 2.0 / Manifest 2.0 generation returns `not_required`. Migration Plan 1.0 remains read-only compatible.
 
-Passing no `--dry-run`, `--force`, `--external-path`, or any former write option is rejected. P1-2b will implement explicit new-generation migration, evidence aliases, reindex/drift repair, and rollback on top of the verified P1-2a backup format. Sealed generations will not be modified in place.
+The deprecated `migrate` command still rejects every write mode. It is only a planner alias.
+
+## Create and review a migration workspace
+
+```bash
+bash scripts/codex-paper.sh migration-start {paper-ref} --backup-id {backup-id} --json
+bash scripts/codex-paper.sh migration-inspect {migration-id-or-workspace} --json
+```
+
+Start rechecks the backup, Doctor result, source snapshot, authority, and pinned content runtime. It reparses the original PDF and creates a private current-contract workspace. It never changes the source, current record, or index. Only one active migration is allowed per paper. If an interrupted start leaves an unregistered workspace, retry reports its exact workspace ID; inspect and explicitly abandon that workspace before starting again.
+
+The workspace contains an Evidence Alias Map. Readers resolve direct current-ledger IDs first, then validated aliases, then frozen 2.0 fact projections. Referenced migrated JSON must reach 100% unique alias coverage. Old validation, manifest, identity, and execution reports are not copied. Migrated `code/**` files are limited to 1 MiB each; other approved authoring files are limited to 16 MiB.
+
+Complete any required authoring with `workspace-write --actor codex`, run reasoning validation, create the visible package, and run the complete standard validator. Do not publish an unvalidated workspace.
+
+## Commit
+
+```bash
+bash scripts/codex-paper.sh migration-commit {migration-id-or-workspace} --json
+```
+
+Commit rechecks the backup, source snapshot, alias coverage, runtime, provenance DAG, Validation Report, and index CAS. Managed sources gain a new immutable generation. Legacy flat sources are moved into a private migration archive while a complete managed authority is committed. `current.json` remains the visibility boundary. Index replacement is target scoped, so unrelated damaged library entries cannot block the selected authority transition.
+
+Interrupted transactions are resumed explicitly:
+
+```bash
+bash scripts/codex-paper.sh migration-recover --json
+```
+
+## Roll back or roll forward
+
+```bash
+bash scripts/codex-paper.sh migration-rollback {migration-id} \
+  --expected-current-manifest-hash {sha256} --json
+bash scripts/codex-paper.sh migration-rollforward {migration-id} --json
+```
+
+The manifest hash is a compare-and-swap guard. Managed rollback switches to the exact previous current binding. Legacy rollback verifies and restores the original flat bytes and modes, while privately retaining the managed target for roll-forward. A changed current, source/archive drift, route collision, or damaged manifest fails closed.
+
+## Repair the index projection
+
+```bash
+bash scripts/codex-paper.sh reindex --dry-run --paper {paper-ref} --json
+bash scripts/codex-paper.sh reindex --paper {paper-ref} --json
+```
+
+Apply recomputes authority under lock and preserves every unrelated entry and the live index envelope. It never guesses through damaged record/current/manifest authority.
 
 Legacy validation remains explicitly read-only:
 
